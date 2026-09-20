@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 6" width="1200" height="6" role="img" aria-label="A thin rule in Zusia's accent colours, from red through clay, rose, violet, teal and forest">
+	<defs>
+		<linearGradient id="accents" x1="0" y1="0" x2="1" y2="0">
+			<stop offset="0" stop-color="#111111"/>
+			<stop offset="0.14" stop-color="#d42a3c"/>
+			<stop offset="0.30" stop-color="#b85a38"/>
+			<stop offset="0.45" stop-color="#c03a64"/>
+			<stop offset="0.60" stop-color="#6d4fd6"/>
+			<stop offset="0.74" stop-color="#0d7f78"/>
+			<stop offset="0.87" stop-color="#2d7d46"/>
+			<stop offset="1" stop-color="#111111"/>
+		</linearGradient>
+	</defs>
+	<rect width="1200" height="6" rx="3" fill="url(#accents)"/>
+</svg>

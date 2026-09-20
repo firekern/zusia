@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 84" width="560" height="84" role="img" aria-label="The eight accent colours Zusia offers: Zotero, Red, Clay, Rose, Violet, Teal, Forest and Graphite">
+	<rect width="560" height="84" rx="10" fill="#111111"/>
+	<g font-family="-apple-system, Segoe UI, Roboto, sans-serif" font-size="10" fill="#9aa0ab" text-anchor="middle">
+		<circle cx="45" cy="34" r="17" fill="#4072e5"/><text x="45" y="70">Zotero</text>
+		<circle cx="114" cy="34" r="17" fill="#d42a3c"/><text x="114" y="70">Red</text>
+		<circle cx="183" cy="34" r="17" fill="#b85a38"/><text x="183" y="70">Clay</text>
+		<circle cx="252" cy="34" r="17" fill="#c03a64"/><text x="252" y="70">Rose</text>
+		<circle cx="321" cy="34" r="17" fill="#6d4fd6"/><text x="321" y="70">Violet</text>
+		<circle cx="390" cy="34" r="17" fill="#0d7f78"/><text x="390" y="70">Teal</text>
+		<circle cx="459" cy="34" r="17" fill="#2d7d46"/><text x="459" y="70">Forest</text>
+		<circle cx="528" cy="34" r="17" fill="#5a6070"/><text x="528" y="70">Graphite</text>
+	</g>
+</svg>
