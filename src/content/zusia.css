@@ -1,0 +1,2563 @@
+/*
+ * Zusia.
+ *
+ * Layout and surfaces follow the two established Zotero AI plugins:
+ *  - Beaver (jlegewie/beaver-zotero): raised composer card mixed from Zotero's
+ *    own tokens, 6px control / 10px card radii, 22px ghost icon buttons, round
+ *    send button, quiet answer footer, overlay menus.
+ *  - llm-for-zotero (yilewang/llm-for-zotero): pill quick prompts, model and
+ *    reasoning dropdowns in the composer's control row.
+ * Everything resolves through Zotero's theme tokens, so light and dark follow
+ * Zotero. The only custom colour is --zs-accent (Settings → Appearance).
+ */
+
+.zs-root,
+.zs-prefs {
+	--zs-accent: var(--accent-blue, #4072e5);
+	--zs-accent-text: #fff;
+	--zs-font-size: 13px;
+
+	--zs-text: var(--fill-primary, rgba(0, 0, 0, 0.85));
+	--zs-muted: var(--fill-secondary, rgba(0, 0, 0, 0.55));
+	--zs-faint: var(--fill-tertiary, rgba(0, 0, 0, 0.25));
+	--zs-line: var(--fill-quarternary, rgba(0, 0, 0, 0.1));
+	--zs-hover: var(--fill-quinary, rgba(0, 0, 0, 0.05));
+
+	/* Surfaces, as in Beaver: ground is the pane, raised cards sit one step off it. */
+	--zs-ground: var(--material-sidepane, #f2f2f2);
+	--zs-raised: color-mix(in srgb, var(--material-mix-quarternary, #e5e5e5) 60%, var(--zs-ground));
+	--zs-overlay: var(--material-mix-quarternary, #e5e5e5);
+	--zs-border: color-mix(in srgb, var(--material-mix-quarternary, #e5e5e5) 50%, var(--zs-line));
+	--zs-border-strong: var(--zs-line);
+	--zs-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+
+	--zs-radius-control: 6px;
+	--zs-radius-card: 10px;
+	--zs-radius-root: 12px;
+
+	--zs-accent-soft: color-mix(in srgb, var(--zs-accent) 12%, transparent);
+	--zs-accent-line: color-mix(in srgb, var(--zs-accent) 55%, transparent);
+	--zs-accent-ink: color-mix(in srgb, var(--zs-accent) 80%, var(--zs-text));
+}
+
+.zs-root {
+	/* The item pane sizes sections by their content; without containment a wide
+	   formula or table would widen the whole pane instead of scrolling. */
+	contain: inline-size;
+	position: relative;
+	box-sizing: border-box;
+	width: 100%;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 0 0 6px;
+	color: var(--zs-text);
+	font-size: var(--zs-font-size);
+}
+.zs-root *,
+.zs-prefs * {
+	box-sizing: border-box;
+}
+/* Component display rules must never un-hide an element hidden by the script. */
+.zs-root [hidden],
+.zs-prefs [hidden] {
+	display: none !important;
+}
+.zs-root button,
+.zs-prefs button {
+	appearance: none;
+	margin: 0;
+	font: inherit;
+	color: inherit;
+	cursor: pointer;
+}
+.zs-root button:focus-visible,
+.zs-prefs button:focus-visible {
+	outline: 2px solid var(--zs-accent);
+	outline-offset: 1px;
+}
+.zs-root .zs-i,
+.zs-prefs .zs-i {
+	display: block;
+	flex: none;
+}
+
+/* ---- buttons ---- */
+
+/* Ghost icon button (Beaver .icon-button). */
+.zs-icon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 24px;
+	height: 24px;
+	padding: 0;
+	border: none;
+	border-radius: var(--zs-radius-control);
+	color: var(--zs-muted) !important;
+	background: transparent;
+	transition: background-color 0.15s ease, color 0.15s ease;
+}
+.zs-icon .zs-i {
+	width: 16px;
+	height: 16px;
+}
+.zs-icon:hover:not(:disabled) {
+	color: var(--zs-text) !important;
+	background: var(--zs-hover);
+}
+.zs-icon:disabled {
+	color: var(--zs-faint) !important;
+	cursor: default;
+}
+.zs-icon.zs-small {
+	width: 22px;
+	height: 22px;
+}
+.zs-icon.zs-small .zs-i {
+	width: 14px;
+	height: 14px;
+}
+
+/* Ghost text button (Beaver .variant-ghost). */
+.zs-ghost {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	min-width: 0;
+	height: 24px;
+	padding: 0 7px;
+	border: none;
+	border-radius: var(--zs-radius-control);
+	font-size: 0.92em !important;
+	white-space: nowrap;
+	color: var(--zs-muted) !important;
+	background: transparent;
+	transition: background-color 0.15s ease, color 0.15s ease;
+}
+.zs-ghost .zs-i {
+	width: 14px;
+	height: 14px;
+}
+.zs-ghost:hover:not(:disabled),
+.zs-ghost[aria-expanded="true"] {
+	color: var(--zs-text) !important;
+	background: var(--zs-hover);
+}
+.zs-ghost:disabled {
+	color: var(--zs-faint) !important;
+	cursor: default;
+}
+.zs-ghost .zs-label {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.zs-chevron {
+	width: 10px !important;
+	height: 10px !important;
+	opacity: 0.7;
+}
+
+/* ---- icons: Zotero's own icon set, inlined as SVG (see ICON_FILES) ---- */
+.zs-i {
+	display: inline-block;
+	flex: none;
+	width: 16px;
+	height: 16px;
+}
+.zs-i > svg {
+	display: block;
+	width: 100%;
+	height: 100%;
+}
+.zs-i[data-icon="chevronRight"] { transform: rotate(-90deg); }
+/* Stop is a plain filled square, as in every chat app. */
+.zs-i[data-icon="stop"] {
+	background: currentColor;
+	border-radius: 2px;
+	transform: scale(0.62);
+}
+/* Phosphor Duotone: the solid outline takes the text colour, the soft layer a wash of the accent. */
+.zs-i .zs-duo {
+	fill: var(--zs-accent);
+	opacity: 0.22;
+}
+.zs-send .zs-i .zs-duo,
+.zs-mode[aria-pressed="true"] .zs-i .zs-duo {
+	fill: currentColor;
+	opacity: 0.3;
+}
+.zs-header-icon {
+	width: 15px;
+	height: 15px;
+	margin-inline-end: 5px;
+	color: var(--zs-accent-ink);
+}
+/* The empty chat's mascot: a nerdy cat reading, in the accent colour. */
+.zs-mascot {
+	width: 72px;
+	height: 72px;
+	margin: 0 auto 4px;
+	color: var(--zs-muted);
+	animation: zs-mascot-float 4s ease-in-out infinite;
+}
+.zs-mascot > svg {
+	stroke-width: 1.6;
+}
+.zs-mascot .zs-mascot-spark {
+	fill: var(--zs-accent);
+	animation: zs-mascot-twinkle 2.4s ease-in-out infinite;
+	transform-origin: 55px 9.5px;
+}
+.zs-mascot .zs-mascot-blush {
+	stroke: color-mix(in srgb, var(--accent-red, #db2c3a) 55%, transparent);
+	stroke-width: 2.2;
+}
+@keyframes zs-mascot-float {
+	0%, 100% { transform: translateY(0); }
+	50% { transform: translateY(-3px); }
+}
+@keyframes zs-mascot-twinkle {
+	0%, 100% { transform: scale(0.7); opacity: 0.6; }
+	50% { transform: scale(1.15); opacity: 1; }
+}
+
+/* ---- header ---- */
+
+.zs-header {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	min-height: 26px;
+}
+.zs-header-title {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 0.92em;
+	color: var(--zs-muted);
+}
+
+/* ---- conversation ---- */
+
+.zs-log-wrap {
+	position: relative;
+	min-width: 0;
+}
+/* Beaver's scroll-to-latest: a small floating round button over the log. */
+.zs-jump {
+	position: absolute;
+	left: 50%;
+	bottom: 10px;
+	z-index: 5;
+	width: 28px !important;
+	height: 28px !important;
+	margin-left: -14px;
+	border: 1px solid var(--zs-border-strong) !important;
+	border-radius: 999px !important;
+	background: var(--zs-overlay) !important;
+	box-shadow: var(--zs-shadow);
+	animation: zs-fade-in 0.15s ease-out;
+}
+.zs-jump .zs-i {
+	width: 14px !important;
+	height: 14px !important;
+}
+
+.zs-log {
+	display: flex;
+	flex-direction: column;
+	gap: var(--zs-log-gap, 18px);
+	max-height: 60vh;
+	min-height: 120px;
+	overflow-y: auto;
+	overflow-x: hidden;
+	scrollbar-width: thin;
+	scrollbar-color: var(--color-scrollbar, var(--zs-faint)) transparent;
+	padding: 2px 2px 4px;
+	user-select: text;
+}
+/* A question and its answer read as one pair: close together, with more room between pairs. */
+.zs-log > .zs-user + .zs-turn,
+.zs-log > .zs-user + .zs-error {
+	margin-top: -8px;
+}
+.zs-log > *,
+.zs-turn > *,
+.zs-rich > * {
+	min-width: 0;
+	max-width: 100%;
+}
+/* The log scrolls; its messages must keep their height instead of shrinking to fit. */
+.zs-log > * {
+	flex-shrink: 0;
+}
+
+.zs-msg {
+	line-height: 1.5;
+	overflow-wrap: break-word;
+	user-select: text;
+}
+
+/* Your messages: a raised card, full width (Beaver's user request view). */
+.zs-user {
+	position: relative;
+	padding: 8px 11px;
+	border: 1px solid var(--zs-border);
+	border-radius: var(--zs-radius-card);
+	background: var(--zs-raised);
+	white-space: pre-wrap;
+}
+/* Long prompts: clamped with a fade, click to expand (Beaver user request view). */
+/* Beaver's edit affordance: appears in the corner on hover. */
+.zs-user-edit {
+	position: absolute;
+	top: 5px;
+	right: 5px;
+	opacity: 0;
+	background: var(--zs-raised) !important;
+	transition: opacity 0.12s ease;
+}
+.zs-user:hover .zs-user-edit,
+.zs-user-edit:focus-visible {
+	opacity: 1;
+}
+.zs-user-edit:hover {
+	background: var(--zs-overlay) !important;
+}
+.zs-user.zs-clamped {
+	max-height: 150px;
+	overflow: hidden;
+	cursor: pointer;
+	mask-image: linear-gradient(to bottom, black 65%, transparent);
+}
+.zs-user.zs-clamped:hover {
+	border-color: var(--zs-border-strong);
+}
+.zs-root[data-bubble="accent"] .zs-user {
+	border-color: color-mix(in srgb, var(--zs-accent) 30%, transparent);
+	background: color-mix(in srgb, var(--zs-accent) 10%, var(--zs-ground));
+}
+
+/* Answers: plain prose on the pane, with a quiet footer. */
+.zs-turn {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+.zs-assistant {
+	padding: 0 2px;
+}
+/* Beaver keeps every answer's footer in place; earlier ones are just quieter. */
+.zs-footer {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	min-height: 24px;
+	opacity: 0.45;
+	transition: opacity 0.12s ease;
+}
+.zs-turn:hover .zs-footer,
+.zs-turn:focus-within .zs-footer,
+.zs-turn.zs-last .zs-footer {
+	opacity: 1;
+}
+.zs-footer .zs-spacer {
+	flex: 1;
+}
+.zs-footer .zs-ghost {
+	margin-inline-start: -5px;
+}
+.zs-footer .zs-ghost.zs-explain {
+	color: var(--zs-accent-ink) !important;
+}
+.zs-footer .zs-ghost.zs-explain:hover:not(:disabled) {
+	background: var(--zs-accent-soft);
+}
+.zs-by {
+	font-size: 0.85em;
+	color: var(--zs-faint);
+	margin-inline-end: 4px;
+}
+
+/* Error card (Beaver RunErrorDisplay): tinted red, a title row that expands. */
+.zs-error {
+	--zs-red: var(--accent-red, #db2c3a);
+	display: flex;
+	flex-direction: column;
+	border: 1px solid color-mix(in srgb, var(--zs-red) 30%, transparent);
+	border-radius: var(--zs-radius-card);
+	background: color-mix(in srgb, var(--zs-red) 7%, transparent);
+	overflow: hidden;
+}
+.zs-error-head {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	width: 100%;
+	padding: 7px 10px;
+	border: none;
+	text-align: start;
+	font-weight: 600;
+	color: var(--color-invalid, #b81d29) !important;
+	background: transparent;
+}
+.zs-error-head:hover {
+	background: color-mix(in srgb, var(--zs-red) 6%, transparent);
+}
+.zs-error-icon .zs-i {
+	width: 15px;
+	height: 15px;
+}
+.zs-error-title {
+	flex: 1;
+	min-width: 0;
+}
+.zs-error-chevron {
+	width: 12px;
+	height: 12px;
+	opacity: 0.7;
+	transition: transform 0.15s ease;
+}
+/* chevronRight is Zotero's down chevron turned right; open turns it back down. */
+.zs-error.zs-open .zs-error-chevron {
+	transform: none;
+}
+.zs-error-details {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	padding: 0 10px 8px 33px;
+}
+.zs-error-text {
+	font-size: 0.9em;
+	line-height: 1.45;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	color: var(--zs-text);
+	user-select: text;
+}
+.zs-error-actions {
+	display: flex;
+	gap: 2px;
+	margin-inline-start: -7px;
+}
+.zs-notice {
+	padding: 24px 8px;
+	text-align: center;
+	font-size: 0.92em;
+	color: var(--zs-muted);
+}
+.zs-stopped {
+	font-size: 0.85em;
+	color: var(--zs-faint);
+	font-style: italic;
+}
+
+/* ---- rich text ---- */
+
+.zs-rich > :first-child { margin-top: 0 !important; }
+.zs-rich > :last-child { margin-bottom: 0 !important; }
+.zs-rich p { margin: 0 0 8px; }
+.zs-rich .zs-h {
+	margin: 14px 0 6px;
+	font-weight: 650;
+	line-height: 1.3;
+}
+.zs-rich .zs-h1 { font-size: 1.15em; }
+.zs-rich .zs-h2 { font-size: 1.07em; }
+.zs-rich .zs-h3 { font-size: 1em; }
+.zs-rich ul,
+.zs-rich ol {
+	margin: 0 0 8px;
+	padding-inline-start: 20px;
+}
+.zs-rich li { margin: 2px 0; }
+.zs-rich li > ul,
+.zs-rich li > ol { margin: 2px 0 0; }
+.zs-rich li::marker { color: var(--zs-muted); }
+.zs-rich strong { font-weight: 650; }
+.zs-rich hr {
+	border: none;
+	border-top: 1px solid var(--zs-line);
+	margin: 12px 0;
+}
+.zs-rich code {
+	font-family: ui-monospace, "JetBrains Mono", "DejaVu Sans Mono", Menlo, monospace;
+	font-size: 0.88em;
+	padding: 1px 4px;
+	border-radius: 4px;
+	background: var(--zs-hover);
+}
+.zs-code {
+	margin: 0 0 10px;
+	border: 1px solid var(--zs-border);
+	border-radius: 8px;
+	background: var(--zs-raised);
+	overflow: hidden;
+}
+.zs-code-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	min-height: 26px;
+	padding: 0 4px 0 10px;
+	border-bottom: 1px solid var(--zs-border);
+}
+.zs-code-lang {
+	font-size: 0.82em;
+	color: var(--zs-muted);
+	text-transform: lowercase;
+}
+.zs-code-copy {
+	height: 22px !important;
+	font-size: 0.85em !important;
+}
+.zs-rich .zs-code pre {
+	margin: 0;
+	border: none;
+	border-radius: 0;
+	background: transparent;
+}
+.zs-rich pre {
+	margin: 0 0 8px;
+	padding: 8px 10px;
+	border-radius: 6px;
+	overflow-x: auto;
+	background: var(--zs-hover);
+	border: 1px solid var(--zs-line);
+}
+.zs-rich pre code {
+	padding: 0;
+	background: none;
+	white-space: pre;
+}
+.zs-rich .zs-quote {
+	margin: 0 0 8px;
+	padding: 2px 0 2px 10px;
+	border-inline-start: 3px solid var(--zs-line);
+	color: var(--zs-muted);
+}
+.zs-rich .zs-quote > :last-child { margin-bottom: 0; }
+.zs-link {
+	color: var(--zs-accent-ink);
+	text-decoration: underline;
+	text-decoration-color: var(--zs-accent-line);
+}
+.zs-plain { white-space: pre-wrap; }
+
+/* ---- tables ---- */
+
+.zs-table-wrap {
+	margin: 0 0 10px;
+	overflow-x: auto;
+	scrollbar-width: none;
+	border: 1px solid var(--zs-line);
+	border-radius: 6px;
+}
+.zs-rich table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 0.93em;
+	line-height: 1.4;
+}
+.zs-rich th,
+.zs-rich td {
+	padding: 5px 9px;
+	text-align: start;
+	vertical-align: middle;
+	overflow-wrap: normal;
+	border-bottom: 1px solid var(--zs-line);
+}
+.zs-rich th + th,
+.zs-rich td + td {
+	border-inline-start: 1px solid var(--zs-line);
+}
+.zs-rich tbody tr:last-child td { border-bottom: none; }
+.zs-rich th {
+	font-weight: 600;
+	white-space: nowrap;
+	background: var(--zs-hover);
+}
+.zs-rich td { min-width: 3em; }
+.zs-rich [data-align="center"] { text-align: center; }
+.zs-rich [data-align="right"] { text-align: end; }
+
+/* Still too wide after fitting: scroll sideways behind a soft fade on the hidden side,
+   with a thin scrollbar only while hovering. */
+.zs-overflow:hover {
+	scrollbar-width: thin;
+}
+.zs-overflow:not(.zs-at-end) {
+	mask-image: linear-gradient(to right, black calc(100% - 28px), transparent);
+}
+.zs-overflow:not(.zs-at-start):not(.zs-at-end) {
+	mask-image: linear-gradient(to right, transparent, black 28px, black calc(100% - 28px), transparent);
+}
+.zs-overflow.zs-at-end:not(.zs-at-start) {
+	mask-image: linear-gradient(to right, transparent, black 28px);
+}
+
+/* ---- LaTeX (native MathML from KaTeX) ---- */
+
+/* Latin Modern Math is bundled so formulas look like LaTeX output on every system. */
+@font-face {
+	font-family: "Claude Sidebar Latin Modern Math";
+	src: url("lib/latinmodern-math.otf") format("opentype");
+	font-display: swap;
+}
+.zs-root math,
+.zs-prefs math {
+	font-family: "Claude Sidebar Latin Modern Math", "Latin Modern Math", "STIX Two Math", "DejaVu Math TeX Gyre", math;
+	font-size: 1.18em;
+}
+.zs-math { white-space: nowrap; }
+.zs-math code { background: none; padding: 0; }
+.zs-math-block {
+	position: relative;
+	margin: 2px 0 10px;
+}
+.zs-math-scroll {
+	overflow-x: auto;
+	overflow-y: hidden;
+	padding: 4px 0;
+	scrollbar-width: none;
+}
+.zs-math-block math[display="block"] {
+	margin: 0 auto;
+}
+.zs-tex-error {
+	font-family: ui-monospace, monospace;
+	font-size: 0.88em;
+	color: var(--color-invalid, #b81d29);
+	background: none !important;
+}
+.zs-copy-tex {
+	position: absolute;
+	top: 0;
+	inset-inline-end: 0;
+	padding: 1px 6px !important;
+	border: 1px solid var(--zs-line) !important;
+	border-radius: 5px;
+	font-size: 10.5px !important;
+	color: var(--zs-muted) !important;
+	background: var(--zs-overlay);
+	opacity: 0;
+	transition: opacity 0.12s ease;
+}
+.zs-math-block:hover .zs-copy-tex,
+.zs-copy-tex:focus-visible {
+	opacity: 1;
+}
+
+/* Theorem-like environments. */
+.zs-env {
+	margin: 2px 0 10px;
+	padding: 8px 11px;
+	border-radius: 6px;
+	border: 1px solid var(--zs-border);
+	border-inline-start: 3px solid var(--zs-accent);
+	background: var(--zs-raised);
+}
+.zs-env-head {
+	margin-bottom: 4px;
+	font-size: 0.8em;
+	font-weight: 700;
+	letter-spacing: 0.05em;
+	text-transform: uppercase;
+	color: var(--zs-accent-ink);
+}
+.zs-env-title {
+	font-weight: 600;
+	text-transform: none;
+	letter-spacing: 0;
+}
+.zs-env-body > :last-child { margin-bottom: 0; }
+.zs-env-thm .zs-env-body { font-style: italic; }
+.zs-env-thm .zs-env-body math,
+.zs-env-thm .zs-env-body code { font-style: normal; }
+.zs-env-def {
+	border-inline-start-color: var(--accent-teal, #59adc4);
+}
+.zs-env-def .zs-env-head { color: color-mix(in srgb, var(--accent-teal, #59adc4) 65%, var(--zs-text)); }
+.zs-env-rem {
+	border-inline-start-color: var(--zs-faint);
+}
+.zs-env-rem .zs-env-head { color: var(--zs-muted); }
+.zs-env-proof {
+	border-color: transparent;
+	border-inline-start-color: var(--zs-line);
+	background: transparent;
+	padding-block: 2px;
+}
+.zs-env-proof .zs-env-head {
+	color: var(--zs-muted);
+	font-style: italic;
+	text-transform: none;
+	letter-spacing: 0;
+	font-size: 0.95em;
+}
+.zs-qed {
+	text-align: end;
+	line-height: 1;
+	color: var(--zs-muted);
+}
+.zs-li-body > p { margin: 0; }
+
+/* ---- empty state (llm-for-zotero start page) ---- */
+
+.zs-empty {
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	gap: 6px;
+	min-height: 150px;
+	padding: 18px 10px 10px;
+	text-align: center;
+}
+.zs-empty-title {
+	font-size: 1.25em;
+	font-weight: 600;
+}
+.zs-empty-paper {
+	max-width: 32em;
+	margin: -2px auto 4px;
+	font-style: italic;
+	color: var(--zs-muted);
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 2;
+	overflow: hidden;
+}
+.zs-empty-sub {
+	color: var(--zs-muted);
+	line-height: 1.45;
+}
+
+/* ---- activity: what the assistant read, searched and how long it thought ---- */
+
+.zs-activity {
+	margin: 0 0 2px;
+}
+.zs-activity-head {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	max-width: 100%;
+	min-height: 22px;
+	margin-inline-start: -4px;
+	padding: 0 6px 0 4px;
+	border: none;
+	border-radius: var(--zs-radius-control);
+	font-size: 0.9em !important;
+	color: var(--zs-muted) !important;
+	background: transparent;
+}
+.zs-activity-head:hover {
+	color: var(--zs-text) !important;
+	background: var(--zs-hover);
+}
+.zs-activity-summary {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.zs-activity-chevron {
+	width: 11px;
+	height: 11px;
+	opacity: 0.7;
+	transition: transform 0.15s ease;
+}
+.zs-activity.zs-open .zs-activity-chevron {
+	transform: none;
+}
+.zs-activity-list,
+.zs-live-steps {
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+}
+.zs-activity-list {
+	margin: 2px 0 6px 5px;
+	padding-inline-start: 10px;
+	border-inline-start: 1px solid var(--zs-line);
+}
+.zs-live-steps:not(:empty) {
+	margin-bottom: 6px;
+}
+.zs-step {
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	min-width: 0;
+	min-height: 20px;
+	font-size: 0.9em;
+	color: var(--zs-muted);
+	animation: zs-fade-in 0.16s ease-out;
+}
+.zs-step-icon {
+	width: 13px;
+	height: 13px;
+	opacity: 0.8;
+}
+.zs-step-label {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* ---- live answer ---- */
+
+.zs-live-content:empty {
+	display: none;
+}
+.zs-typing {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-height: 22px;
+	padding: 2px 2px 0;
+	animation: zs-fade-in 0.2s ease-out;
+}
+.zs-spinner {
+	flex: none;
+	width: 12px;
+	height: 12px;
+	border-radius: 50%;
+	border: 1.5px solid var(--zs-line);
+	border-top-color: var(--zs-muted);
+	animation: zs-spin 0.8s linear infinite;
+}
+.zs-elapsed {
+	font-size: 0.92em;
+	color: var(--zs-muted);
+}
+/* Beaver's shimmering status text. */
+.zs-shimmer {
+	background: linear-gradient(90deg, var(--zs-faint) 30%, var(--zs-text) 50%, var(--zs-faint) 70%);
+	background-size: 200% 100%;
+	background-clip: text;
+	color: transparent;
+	-webkit-text-fill-color: transparent;
+	animation: zs-shimmer 1.4s linear infinite;
+}
+.zs-seconds {
+	font-size: 0.85em;
+	font-variant-numeric: tabular-nums;
+	color: var(--zs-faint);
+}
+
+/* ---- quick prompts (llm-for-zotero shortcut pills) ---- */
+
+.zs-quick {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	padding: 0 1px;
+}
+/* Once the chat has started the prompts shrink to one sideways-scrolling row. */
+.zs-root[data-chatting="true"] .zs-quick {
+	flex-wrap: nowrap;
+	overflow-x: auto;
+	scrollbar-width: none;
+}
+.zs-root[data-chatting="true"] .zs-pill {
+	flex: none;
+	min-height: 24px;
+	padding: 2px 10px;
+}
+.zs-pill {
+	display: inline-flex;
+	align-items: center;
+	max-width: 100%;
+	min-height: 26px;
+	padding: 3px 11px;
+	border: 1px solid var(--zs-border) !important;
+	border-radius: 999px;
+	font-size: 0.92em !important;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	color: var(--zs-text) !important;
+	background: var(--zs-hover);
+	transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+.zs-pill:hover:not(:disabled) {
+	border-color: var(--zs-accent) !important;
+	background: var(--zs-accent-soft);
+}
+.zs-pill:disabled {
+	opacity: 0.5;
+	cursor: default;
+}
+
+/* ---- composer (Beaver .user-message-display + .composer-controls) ---- */
+
+.zs-composer {
+	display: flex;
+	flex-direction: column;
+	padding: 10px 10px 6px;
+	border: 1px solid var(--zs-border);
+	border-radius: var(--zs-radius-card);
+	background: var(--zs-raised);
+	transition: border-color 0.15s ease;
+	cursor: text;
+}
+.zs-composer:focus-within {
+	border-color: var(--zs-border-strong);
+}
+/* Paper chip at the top of the composer (llm-for-zotero paper context chip). */
+.zs-context {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 5px;
+	margin: -3px 0 8px -2px;
+}
+.zs-context-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	max-width: 100%;
+	min-height: 22px;
+	padding: 1px 3px 1px 6px;
+	border: 1px solid var(--zs-border);
+	border-radius: var(--zs-radius-control);
+	font-size: 0.88em;
+	color: var(--zs-muted);
+	background: var(--zs-hover);
+	cursor: default;
+}
+.zs-context-icon {
+	width: 13px;
+	height: 13px;
+	color: var(--zs-accent-ink);
+}
+.zs-context-label {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--zs-text);
+}
+/* Images attached to the message being written, and to sent messages. */
+.zs-attachments,
+.zs-user-images {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+.zs-attachments {
+	margin: -2px 0 8px;
+}
+.zs-user-images {
+	margin: 1px 0 6px;
+}
+.zs-user-images:last-child {
+	margin-bottom: 0;
+}
+.zs-thumb {
+	position: relative;
+	display: inline-flex;
+	flex: none;
+	width: 64px;
+	height: 64px;
+	border: 1px solid var(--zs-border);
+	border-radius: var(--zs-radius-control);
+	background: var(--zs-hover);
+	overflow: hidden;
+	animation: zs-fade-in 0.16s ease-out;
+}
+.zs-user-images .zs-thumb {
+	width: 88px;
+	height: 72px;
+}
+.zs-thumb img {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+}
+.zs-thumb-open {
+	cursor: zoom-in;
+}
+.zs-thumb-open:hover {
+	border-color: var(--zs-border-strong);
+}
+.zs-thumb-missing img {
+	visibility: hidden;
+}
+.zs-thumb-remove {
+	position: absolute;
+	top: 3px;
+	right: 3px;
+	width: 18px !important;
+	height: 18px !important;
+	border-radius: 999px !important;
+	color: #fff !important;
+	background: rgba(0, 0, 0, 0.55) !important;
+	opacity: 0;
+	transition: opacity 0.12s ease;
+}
+.zs-thumb-remove .zs-i {
+	width: 10px !important;
+	height: 10px !important;
+}
+.zs-thumb:hover .zs-thumb-remove,
+.zs-thumb-remove:focus-visible {
+	opacity: 1;
+}
+.zs-composer.zs-drop {
+	border-color: var(--zs-accent) !important;
+	box-shadow: 0 0 0 3px var(--zs-accent-soft);
+}
+.zs-controls .zs-attach {
+	margin-inline-end: 2px;
+}
+.zs-input {
+	width: 100%;
+	min-height: 20px;
+	max-height: 180px;
+	margin: 0;
+	padding: 1px 1px;
+	border: none !important;
+	outline: none !important;
+	box-shadow: none !important;
+	resize: none;
+	appearance: none;
+	background: transparent !important;
+	color: var(--zs-text);
+	font: inherit;
+	line-height: 1.4;
+}
+.zs-input::placeholder {
+	color: var(--zs-faint);
+	opacity: 1;
+}
+.zs-controls {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	min-width: 0;
+	margin: 6px -4px 0;
+	cursor: default;
+}
+.zs-controls .zs-spacer {
+	flex: 1;
+	min-width: 4px;
+}
+.zs-controls .zs-ghost {
+	flex: 0 1 auto;
+}
+/* The effort label is short and must stay readable; the model name truncates instead. */
+.zs-controls .zs-effort-btn {
+	flex: none;
+}
+/* Drawing / LaTeX toggles: ghost buttons that light up in the accent colour when on. */
+.zs-controls {
+	container: zs-controls / inline-size;
+}
+.zs-controls .zs-mode {
+	flex: none;
+	padding: 0 6px;
+	transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+.zs-controls .zs-mode[aria-pressed="true"] {
+	color: var(--zs-accent-ink) !important;
+	background: var(--zs-accent-soft);
+	box-shadow: inset 0 0 0 1px var(--zs-accent-line);
+}
+.zs-controls .zs-mode[aria-pressed="true"]:hover:not(:disabled) {
+	background: color-mix(in srgb, var(--zs-accent) 20%, transparent);
+}
+/* In a narrow pane the toggles keep their icon and drop the label. */
+@container zs-controls (max-width: 360px) {
+	.zs-controls .zs-mode .zs-label {
+		display: none;
+	}
+}
+.zs-user-modes {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+	margin-top: 6px;
+}
+.zs-user-mode {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	min-height: 18px;
+	padding: 0 7px 0 5px;
+	border-radius: 999px;
+	font-size: 0.8em;
+	color: var(--zs-accent-ink);
+	background: var(--zs-accent-soft);
+	white-space: normal;
+}
+.zs-user-mode .zs-i {
+	width: 11px;
+	height: 11px;
+}
+
+.zs-send {
+	flex: none;
+	width: 24px;
+	height: 24px;
+	margin-inline-start: 4px;
+	padding: 0;
+	border: none;
+	border-radius: 999px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	color: var(--zs-accent-text) !important;
+	background: var(--zs-accent);
+	transition: filter 0.15s ease;
+}
+.zs-send .zs-i {
+	width: 15px;
+	height: 15px;
+}
+.zs-send:hover:not(:disabled) {
+	filter: brightness(1.1);
+}
+.zs-send:disabled {
+	color: var(--zs-faint) !important;
+	background: var(--zs-line);
+	cursor: default;
+}
+.zs-send.zs-stop {
+	color: var(--zs-text) !important;
+	background: var(--zs-line);
+}
+.zs-send.zs-stop .zs-i {
+	width: 11px;
+	height: 11px;
+}
+
+/* ---- menus (Beaver ContextMenu: overlay surface, strong border, shadow) ---- */
+
+.zs-menu {
+	position: absolute;
+	z-index: 20;
+	min-width: 180px;
+	max-width: min(300px, 100%);
+	max-height: min(420px, 70vh);
+	overflow-y: auto;
+	padding: 4px;
+	border: 1px solid var(--zs-border-strong);
+	border-radius: var(--zs-radius-control);
+	background: var(--zs-overlay);
+	box-shadow: var(--zs-shadow);
+	scrollbar-width: thin;
+}
+.zs-menu-section {
+	padding: 6px 8px 3px;
+	font-size: 0.8em;
+	font-weight: 600;
+	letter-spacing: 0.02em;
+	color: var(--zs-muted);
+	user-select: none;
+}
+.zs-menu-section:not(:first-child) {
+	margin-top: 4px;
+	border-top: 1px solid var(--zs-line);
+	padding-top: 8px;
+}
+.zs-menu-item {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	width: 100%;
+	min-height: 24px;
+	padding: 3px 8px;
+	border: none;
+	border-radius: 4px;
+	text-align: start;
+	font-size: 0.95em !important;
+	color: var(--zs-text) !important;
+	background: transparent;
+}
+.zs-menu-item:hover:not(:disabled),
+.zs-menu-item:focus-visible {
+	background: var(--zs-hover);
+	outline: none;
+}
+.zs-menu-item:disabled {
+	color: var(--zs-faint) !important;
+	cursor: default;
+}
+.zs-menu-item .zs-check {
+	width: 14px;
+	height: 14px;
+	color: var(--zs-accent-ink);
+	visibility: hidden;
+}
+.zs-menu-item[aria-checked="true"] .zs-check {
+	visibility: visible;
+}
+.zs-menu-item[aria-checked="true"] .zs-menu-label {
+	font-weight: 600;
+}
+.zs-menu-text {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+}
+.zs-menu-label {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.zs-menu-desc {
+	font-size: 0.85em;
+	color: var(--zs-muted);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.zs-history-menu {
+	width: min(300px, 100%);
+}
+.zs-history-menu .zs-menu-item {
+	min-height: 36px;
+}
+.zs-menu-note {
+	padding: 4px 8px 6px;
+	font-size: 0.85em;
+	color: var(--zs-muted);
+}
+
+/* ---- corners, spacing and font (Settings → Appearance) ---- */
+
+.zs-root[data-corners="square"],
+.zs-prefs[data-corners="square"] {
+	--zs-radius-control: 3px;
+	--zs-radius-card: 4px;
+	--zs-radius-root: 6px;
+}
+.zs-root[data-corners="rounded"],
+.zs-prefs[data-corners="rounded"] {
+	--zs-radius-control: 6px;
+	--zs-radius-card: 10px;
+	--zs-radius-root: 12px;
+}
+.zs-root[data-corners="round"],
+.zs-prefs[data-corners="round"] {
+	--zs-radius-control: 9px;
+	--zs-radius-card: 16px;
+	--zs-radius-root: 20px;
+}
+.zs-root[data-density="compact"] {
+	--zs-log-gap: 10px;
+	gap: 6px;
+}
+.zs-root[data-density="compact"] .zs-msg { line-height: 1.4; }
+.zs-root[data-density="compact"] .zs-user { padding: 5px 9px; }
+.zs-root[data-density="compact"] .zs-composer { padding: 7px 8px 4px; }
+.zs-root[data-density="roomy"] {
+	--zs-log-gap: 28px;
+	gap: 12px;
+}
+.zs-root[data-density="roomy"] .zs-msg { line-height: 1.62; }
+.zs-root[data-density="roomy"] .zs-user { padding: 11px 14px; }
+.zs-root[data-density="roomy"] .zs-composer { padding: 13px 13px 8px; }
+.zs-root[data-font="sans"] {
+	font-family: system-ui, -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+}
+.zs-root[data-font="serif"] {
+	font-family: "Iowan Old Style", Charter, "Source Serif 4", Georgia, "Times New Roman", serif;
+}
+.zs-root[data-font="mono"] {
+	font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+}
+
+/* ---- drawings: SVG from the assistant, in the theme's colours on the sidebar's background ---- */
+
+.zs-root {
+	--zs-d-ink: var(--zs-text);
+	--zs-d-muted: var(--zs-muted);
+	--zs-d-line: var(--zs-faint);
+	--zs-d-surface: color-mix(in srgb, var(--zs-text) 6%, transparent);
+	--zs-d-accent: var(--zs-accent);
+	--zs-d-teal: var(--accent-teal, #59adc4);
+	--zs-d-violet: var(--tag-purple, #a28ae5);
+	--zs-d-orange: var(--accent-orange, #ff794c);
+	--zs-d-red: var(--accent-red, #db2c3a);
+	--zs-d-green: var(--accent-green, #39bf68);
+	--zs-d-accent-soft: color-mix(in srgb, var(--zs-d-accent) 18%, transparent);
+	--zs-d-teal-soft: color-mix(in srgb, var(--zs-d-teal) 20%, transparent);
+	--zs-d-violet-soft: color-mix(in srgb, var(--zs-d-violet) 20%, transparent);
+	--zs-d-orange-soft: color-mix(in srgb, var(--zs-d-orange) 18%, transparent);
+	--zs-d-red-soft: color-mix(in srgb, var(--zs-d-red) 16%, transparent);
+	--zs-d-green-soft: color-mix(in srgb, var(--zs-d-green) 18%, transparent);
+}
+.zs-figure {
+	position: relative;
+	margin: 4px 0 12px;
+}
+.zs-figure-canvas svg {
+	display: block;
+	width: 100%;
+	height: auto;
+	max-height: 560px;
+	overflow: visible;
+	color: var(--zs-d-ink);
+	fill: var(--zs-d-ink);
+	font-family: inherit;
+	font-size: 12px;
+}
+.zs-figure-canvas svg text {
+	font-family: inherit;
+	stroke: none;
+}
+.zs-figure-tools {
+	position: absolute;
+	top: -4px;
+	inset-inline-end: 0;
+	display: flex;
+	gap: 2px;
+	padding: 1px;
+	border-radius: var(--zs-radius-control);
+	background: var(--zs-overlay);
+	opacity: 0;
+	transition: opacity 0.12s ease;
+}
+.zs-figure:hover > .zs-figure-tools,
+.zs-figure-tools:focus-within,
+.zs-figure-tools:has([aria-expanded="true"]) {
+	opacity: 1;
+}
+.zs-figure-tools .zs-ghost {
+	height: 22px;
+	font-size: 0.85em !important;
+}
+.zs-figure > .zs-code {
+	margin: 8px 0 0;
+}
+.zs-figure-pending {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	min-height: 120px;
+	border: 1px dashed var(--zs-line);
+	border-radius: var(--zs-radius-card);
+}
+
+/* ---- icon-first: labels, buddies, patterns, tiles ---- */
+
+/* Icons only: button names move to tooltips, and descriptive text steps aside. */
+.zs-root[data-labels="icons"] .zs-ghost:not(.zs-model-btn) .zs-label,
+.zs-root[data-labels="icons"] .zs-header-title,
+.zs-root[data-labels="icons"] .zs-empty-sub,
+.zs-root[data-labels="icons"] .zs-empty-paper,
+.zs-root[data-labels="icons"] .zs-by {
+	display: none;
+}
+.zs-root[data-labels="icons"] .zs-ghost:not(.zs-model-btn) {
+	gap: 0;
+	min-width: 24px;
+	justify-content: center;
+	padding: 0 5px;
+}
+.zs-root[data-labels="icons"] .zs-header {
+	gap: 4px;
+}
+/* With the title hidden, the buddy icon pushes the header buttons to the right. */
+.zs-root[data-labels="icons"] .zs-header > .zs-header-icon {
+	margin-inline-end: auto;
+}
+.zs-root[data-labels="icons"] .zs-back {
+	padding: 0 9px !important;
+}
+
+/* Buddy colours: outline in the text colour, the soft body washed with the accent. */
+.zs-mascot {
+	color: var(--zs-text);
+}
+.zs-mascot .zs-duo {
+	opacity: 0.28;
+}
+.zs-root[data-labels="icons"] .zs-empty {
+	min-height: 180px;
+	gap: 10px;
+}
+.zs-root[data-labels="icons"] .zs-mascot {
+	width: 96px;
+	height: 96px;
+}
+
+/* Patterns sit in the backdrop, so the backdrop also shows for flat style when one is on. */
+.zs-root:not([data-pattern="none"]) {
+	isolation: isolate;
+}
+.zs-root:not([data-pattern="none"]) > .zs-backdrop {
+	display: block;
+	position: absolute;
+	inset: 0;
+	z-index: -1;
+	overflow: hidden;
+	border-radius: inherit;
+	pointer-events: none;
+}
+.zs-root:not([data-pattern="none"]) > .zs-backdrop::before {
+	content: "";
+	position: absolute;
+	inset: 0;
+	z-index: 1;
+	background-color: var(--zs-text);
+	opacity: 0.07;
+	mask-repeat: repeat;
+}
+.zs-root[data-pattern="math"] > .zs-backdrop::before { mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140' font-family='serif' font-size='18' fill='black'%3E%3Ctext x='12' y='30'%3E%E2%88%91%3C/text%3E%3Ctext x='78' y='22' font-size='14'%3E%CF%80%3C/text%3E%3Ctext x='104' y='70'%3E%E2%88%AB%3C/text%3E%3Ctext x='40' y='84' font-size='13'%3E%CE%BB%3C/text%3E%3Ctext x='16' y='124' font-size='15'%3E%E2%88%9E%3C/text%3E%3Ctext x='86' y='122' font-size='13'%3E%E2%88%82%3C/text%3E%3C/svg%3E"); opacity: 0.09; }
+.zs-root[data-pattern="grid"] > .zs-backdrop::before { mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Cpath d='M24 0H0V24' fill='none' stroke='black' stroke-width='1'/%3E%3C/svg%3E"); opacity: 0.06; }
+.zs-root[data-pattern="dots"] > .zs-backdrop::before { mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16'%3E%3Ccircle cx='2' cy='2' r='1.2' fill='black'/%3E%3C/svg%3E"); opacity: 0.12; }
+.zs-root[data-pattern="stars"] > .zs-backdrop::before { mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='90' height='90' fill='black'%3E%3Cpath d='M20 12l1.6 5 5 1.6-5 1.6-1.6 5-1.6-5-5-1.6 5-1.6z'/%3E%3Cpath d='M66 50l1 3 3 1-3 1-1 3-1-3-3-1 3-1z'/%3E%3Ccircle cx='50' cy='16' r='1.3'/%3E%3Ccircle cx='14' cy='70' r='1.1'/%3E%3C/svg%3E"); background-color: var(--zs-accent); opacity: 0.22; }
+
+/* Tiles: icon cards used for visual choices (Settings, setup wizard). */
+.zs-tiles {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+.zs-tile {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 5px;
+	width: 74px;
+	min-height: 74px;
+	padding: 8px 4px 6px;
+	border: 1px solid var(--zs-line) !important;
+	border-radius: var(--zs-radius-card);
+	color: var(--zs-text) !important;
+	background: var(--zs-hover) !important;
+	transition: border-color 0.15s ease, background-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+.zs-tile:hover {
+	transform: translateY(-1px);
+	border-color: var(--zs-accent-line) !important;
+}
+.zs-tile[aria-checked="true"] {
+	border-color: var(--zs-accent) !important;
+	background: var(--zs-accent-soft) !important;
+	box-shadow: 0 0 0 3px color-mix(in srgb, var(--zs-accent) 14%, transparent);
+}
+.zs-tile-icon {
+	width: 36px !important;
+	height: 36px !important;
+}
+.zs-tile-label {
+	font-size: 0.82em;
+	color: var(--zs-muted);
+}
+.zs-tile[aria-checked="true"] .zs-tile-label {
+	color: var(--zs-accent-ink);
+	font-weight: 600;
+}
+@media (prefers-reduced-motion: reduce) {
+	.zs-tile:hover { transform: none; }
+}
+
+/* ---- theorem links ---- */
+
+.zs-ref {
+	display: inline-flex;
+	align-items: baseline;
+	gap: 3px;
+	padding: 0 5px 0 4px;
+	border-radius: 999px;
+	font-size: 0.92em;
+	font-weight: 550;
+	white-space: nowrap;
+	vertical-align: baseline;
+	cursor: pointer;
+	color: var(--zs-accent-ink);
+	background: var(--zs-accent-soft);
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--zs-accent) 22%, transparent);
+	transition: background-color 0.12s ease, box-shadow 0.12s ease;
+}
+.zs-ref:hover,
+.zs-ref:focus-visible {
+	outline: none;
+	background: color-mix(in srgb, var(--zs-accent) 22%, transparent);
+	box-shadow: inset 0 0 0 1px var(--zs-accent-line);
+}
+.zs-ref-icon {
+	align-self: center;
+	width: 11px !important;
+	height: 11px !important;
+}
+.zs-ref-missing {
+	cursor: help;
+	color: var(--zs-muted);
+	background: transparent;
+	box-shadow: inset 0 0 0 1px var(--zs-line);
+	text-decoration: line-through dotted;
+}
+.zs-env-num {
+	letter-spacing: 0;
+}
+/* "Back" floats over the bottom-left of the conversation after following a link. */
+.zs-back {
+	position: absolute;
+	left: 6px;
+	bottom: 10px;
+	z-index: 5;
+	height: 28px !important;
+	padding: 0 11px 0 9px !important;
+	border: 1px solid var(--zs-accent-line) !important;
+	border-radius: 999px !important;
+	color: var(--zs-accent-ink) !important;
+	background: var(--zs-overlay) !important;
+	box-shadow: var(--zs-shadow);
+	animation: zs-fade-in 0.15s ease-out;
+}
+.zs-back:hover:not(:disabled) {
+	background: color-mix(in srgb, var(--zs-accent) 16%, var(--zs-overlay)) !important;
+}
+.zs-root[data-style="glass"] .zs-back {
+	backdrop-filter: blur(var(--zs-blur, 18px)) saturate(170%);
+}
+
+/* ---- search across chats ---- */
+
+.zs-search-menu {
+	width: min(340px, 100%);
+	max-width: 100%;
+	padding: 6px;
+}
+.zs-search-input {
+	width: 100%;
+	height: 28px;
+	margin: 0 0 4px;
+	padding: 0 9px;
+	border: 1px solid var(--zs-border-strong);
+	border-radius: var(--zs-radius-control);
+	font: inherit;
+	color: var(--zs-text);
+	background: var(--zs-hover);
+	outline: none;
+}
+.zs-search-input:focus {
+	border-color: var(--zs-accent);
+	box-shadow: 0 0 0 2px var(--zs-accent-soft);
+}
+.zs-search-results .zs-menu-item {
+	align-items: flex-start;
+	min-height: 40px;
+	padding-block: 5px;
+}
+.zs-search-results .zs-menu-desc {
+	white-space: normal;
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 2;
+}
+/* A message reached from search glows briefly. */
+.zs-flash {
+	animation: zs-flash 1.8s ease-out;
+	border-radius: var(--zs-radius-card);
+}
+@keyframes zs-flash {
+	0%, 35% { box-shadow: 0 0 0 3px var(--zs-accent-line); }
+	100% { box-shadow: 0 0 0 3px transparent; }
+}
+
+@keyframes zs-spin {
+	to { transform: rotate(360deg); }
+}
+@keyframes zs-shimmer {
+	from { background-position: 100% 0; }
+	to { background-position: -100% 0; }
+}
+@keyframes zs-fade-in {
+	from { opacity: 0; transform: translateY(3px); }
+	to { opacity: 1; transform: none; }
+}
+/* New content eases in (Beaver fadeInShift); menus pop from their anchor. */
+.zs-live-content > .zs-enter,
+.zs-menu {
+	animation: zs-fade-in 0.16s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+	.zs-spinner { animation-duration: 2.4s; }
+	.zs-shimmer,
+	.zs-mascot,
+	.zs-mascot .zs-mascot-spark,
+	.zs-live-content > .zs-enter,
+	.zs-menu,
+	.zs-typing,
+	.zs-back,
+	.zs-jump { animation: none; }
+	.zs-shimmer { color: var(--zs-muted); -webkit-text-fill-color: currentColor; background: none; }
+}
+
+/* =====================================================================
+ * Glass style (Settings → Appearance → Style, the default).
+ * A soft glow of the accent colour, and optionally the user's image, sit
+ * behind the sidebar in .zs-backdrop; cards are translucent over it. Only
+ * floating surfaces (composer, menus, jump button) blur what is behind them,
+ * so a long conversation stays cheap to scroll. Opacity, blur and glow come
+ * from Settings as --zs-glass-pct, --zs-blur and --zs-glow-strength.
+ * ===================================================================== */
+
+.zs-root[data-style="glass"] {
+	--zs-glass-tint: #ffffff;
+	--zs-glass-strong-tint: #ffffff;
+	--zs-glass: color-mix(in srgb, var(--zs-glass-tint) var(--zs-glass-pct, 55%), transparent);
+	--zs-glass-strong: color-mix(in srgb, var(--zs-glass-strong-tint) var(--zs-glass-strong-pct, 85%), transparent);
+	--zs-glass-edge: color-mix(in srgb, #ffffff 75%, transparent);
+	--zs-glass-line: rgba(30, 40, 70, 0.1);
+	--zs-glass-sheen: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+	--zs-glass-shadow: 0 10px 28px -12px rgba(25, 35, 70, 0.28), 0 1px 3px rgba(25, 35, 70, 0.07);
+
+	--zs-raised: var(--zs-glass);
+	--zs-overlay: var(--zs-glass-strong);
+	--zs-border: var(--zs-glass-line);
+	--zs-border-strong: color-mix(in srgb, var(--zs-accent) 35%, var(--zs-glass-line));
+	--zs-shadow: var(--zs-glass-shadow);
+	--zs-hover: rgba(255, 255, 255, 0.55);
+}
+@media (prefers-color-scheme: dark) {
+	.zs-root[data-style="glass"] {
+		--zs-glass-tint: #45454d;
+		--zs-glass-strong-tint: #2a2a30;
+		--zs-glass-edge: rgba(255, 255, 255, 0.14);
+		--zs-glass-line: rgba(255, 255, 255, 0.1);
+		--zs-glass-sheen: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+		--zs-glass-shadow: 0 12px 30px -12px rgba(0, 0, 0, 0.6), 0 1px 3px rgba(0, 0, 0, 0.3);
+		--zs-hover: rgba(255, 255, 255, 0.08);
+	}
+}
+
+/* The backdrop: an optional image, a veil that fades it into the pane, and the glow. */
+.zs-backdrop {
+	display: none;
+}
+.zs-root[data-style="glass"],
+.zs-root[data-bg="image"] {
+	isolation: isolate;
+	padding: 10px 9px;
+	border-radius: var(--zs-radius-root);
+}
+.zs-root[data-style="glass"] > .zs-backdrop,
+.zs-root[data-bg="image"] > .zs-backdrop {
+	display: block;
+	position: absolute;
+	inset: 0;
+	z-index: -1;
+	overflow: hidden;
+	border-radius: inherit;
+	pointer-events: none;
+	box-shadow: inset 0 0 0 1px var(--zs-line);
+}
+.zs-backdrop-image {
+	display: none;
+}
+.zs-root[data-bg="image"] .zs-backdrop-image {
+	display: block;
+	position: absolute;
+	/* Oversized so the blur never shows a soft transparent edge. */
+	inset: calc(var(--zs-bg-blur, 0px) * -3);
+	/* background-image is set inline by applyAppearance(). */
+	background-position: center;
+	background-size: cover;
+	background-repeat: no-repeat;
+	filter: blur(var(--zs-bg-blur, 0px));
+}
+.zs-backdrop::after {
+	content: "";
+	position: absolute;
+	inset: 0;
+}
+.zs-root[data-style="glass"] .zs-backdrop::after {
+	background:
+		radial-gradient(70% 38% at 0% 0%, color-mix(in srgb, var(--zs-accent) var(--zs-glow-strength, 30%), transparent), transparent 72%),
+		radial-gradient(60% 34% at 100% 42%, color-mix(in srgb, var(--accent-teal, #59adc4) calc(var(--zs-glow-strength, 30%) * 0.8), transparent), transparent 72%),
+		radial-gradient(75% 36% at 20% 100%, color-mix(in srgb, var(--tag-purple, #a28ae5) var(--zs-glow-strength, 30%), transparent), transparent 72%),
+		linear-gradient(165deg, color-mix(in srgb, var(--zs-accent) 5%, var(--zs-ground)), var(--zs-ground));
+}
+.zs-root[data-bg="image"] .zs-backdrop::after {
+	background: color-mix(in srgb, var(--zs-ground) var(--zs-bg-veil, 45%), transparent);
+}
+.zs-root[data-style="glass"][data-bg="image"] .zs-backdrop::after {
+	background:
+		radial-gradient(70% 38% at 0% 0%, color-mix(in srgb, var(--zs-accent) var(--zs-glow-strength, 30%), transparent), transparent 72%),
+		radial-gradient(75% 36% at 20% 100%, color-mix(in srgb, var(--tag-purple, #a28ae5) var(--zs-glow-strength, 30%), transparent), transparent 72%),
+		color-mix(in srgb, var(--zs-ground) var(--zs-bg-veil, 45%), transparent);
+}
+
+/* Cards: translucent, a bright top edge and a soft drop shadow. */
+.zs-root[data-style="glass"] :is(.zs-user, .zs-code, .zs-env:not(.zs-env-proof), .zs-table-wrap) {
+	border-color: var(--zs-glass-line);
+	background: var(--zs-glass);
+	box-shadow: var(--zs-glass-sheen), 0 4px 14px -8px rgba(25, 35, 70, 0.2);
+}
+.zs-root[data-style="glass"] .zs-env:not(.zs-env-proof) {
+	border-inline-start-color: var(--zs-accent);
+}
+.zs-root[data-style="glass"] .zs-env-def {
+	border-inline-start-color: var(--accent-teal, #59adc4);
+}
+.zs-root[data-style="glass"] .zs-env-rem {
+	border-inline-start-color: var(--zs-faint);
+}
+.zs-root[data-style="glass"][data-bubble="accent"] .zs-user {
+	border-color: color-mix(in srgb, var(--zs-accent) 30%, transparent);
+	background: linear-gradient(135deg,
+		color-mix(in srgb, var(--zs-accent) 20%, var(--zs-glass)),
+		color-mix(in srgb, var(--tag-purple, #a28ae5) 12%, var(--zs-glass)));
+}
+.zs-root[data-style="glass"] .zs-user-edit {
+	background: var(--zs-glass-strong) !important;
+}
+.zs-root[data-style="glass"] .zs-rich pre {
+	background: var(--zs-glass);
+	border-color: var(--zs-glass-line);
+}
+.zs-root[data-style="glass"] .zs-code pre {
+	background: transparent;
+}
+.zs-root[data-style="glass"] .zs-code-head {
+	background: color-mix(in srgb, var(--zs-glass-strong) 40%, transparent);
+}
+
+/* Floating surfaces: frosted. */
+.zs-root[data-style="glass"] :is(.zs-composer, .zs-menu, .zs-jump) {
+	border: 1px solid var(--zs-glass-edge) !important;
+	backdrop-filter: blur(var(--zs-blur, 18px)) saturate(170%);
+	box-shadow: var(--zs-glass-sheen), var(--zs-glass-shadow);
+}
+.zs-root[data-style="glass"] .zs-composer {
+	background: var(--zs-glass);
+	transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.zs-root[data-style="glass"] .zs-composer:focus-within {
+	border-color: color-mix(in srgb, var(--zs-accent) 45%, var(--zs-glass-edge)) !important;
+	box-shadow:
+		var(--zs-glass-sheen),
+		0 0 0 3px color-mix(in srgb, var(--zs-accent) 16%, transparent),
+		var(--zs-glass-shadow);
+}
+.zs-root[data-style="glass"] .zs-menu {
+	padding: 5px;
+	border-radius: var(--zs-radius-card);
+	background: var(--zs-glass-strong);
+	backdrop-filter: blur(calc(var(--zs-blur, 18px) * 1.5)) saturate(180%);
+}
+.zs-root[data-style="glass"] .zs-menu-item {
+	border-radius: 7px;
+}
+.zs-root[data-style="glass"] .zs-menu-item:hover:not(:disabled),
+.zs-root[data-style="glass"] .zs-menu-item:focus-visible {
+	background: color-mix(in srgb, var(--zs-accent) 14%, transparent);
+}
+.zs-root[data-style="glass"] .zs-jump {
+	background: var(--zs-glass-strong) !important;
+}
+
+/* Paper chip and quick prompts: small glass pills. */
+.zs-root[data-style="glass"] .zs-context-chip {
+	border-color: var(--zs-glass-line);
+	border-radius: 999px;
+	padding-inline-start: 8px;
+	background: var(--zs-hover);
+}
+.zs-root[data-style="glass"] .zs-pill {
+	border-color: var(--zs-glass-edge) !important;
+	background: var(--zs-glass);
+	box-shadow: var(--zs-glass-sheen), 0 2px 8px -4px rgba(25, 35, 70, 0.2);
+	transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+.zs-root[data-style="glass"] .zs-pill:hover:not(:disabled) {
+	border-color: color-mix(in srgb, var(--zs-accent) 55%, transparent) !important;
+	background: color-mix(in srgb, var(--zs-accent) 14%, var(--zs-glass));
+	transform: translateY(-1px);
+}
+
+/* Send: an accent-to-violet gem with a glow. */
+.zs-root[data-style="glass"] .zs-send {
+	width: 26px;
+	height: 26px;
+	background: linear-gradient(135deg, var(--zs-accent), color-mix(in srgb, var(--zs-accent) 55%, var(--tag-purple, #a28ae5)));
+	box-shadow:
+		inset 0 1px 0 rgba(255, 255, 255, 0.35),
+		0 4px 12px -3px color-mix(in srgb, var(--zs-accent) 70%, transparent);
+	transition: filter 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+.zs-root[data-style="glass"] .zs-send:hover:not(:disabled) {
+	transform: translateY(-1px);
+}
+.zs-root[data-style="glass"] .zs-send:disabled,
+.zs-root[data-style="glass"] .zs-send.zs-stop {
+	background: var(--zs-hover);
+	box-shadow: inset 0 0 0 1px var(--zs-glass-line);
+}
+
+/* Error card keeps its red, on glass. */
+.zs-root[data-style="glass"] .zs-error {
+	background: color-mix(in srgb, var(--zs-red) 9%, var(--zs-glass));
+	box-shadow: var(--zs-glass-sheen);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.zs-root[data-style="glass"] :is(.zs-pill, .zs-send):hover:not(:disabled) {
+		transform: none;
+	}
+}
+
+/* =====================================================================
+ * Settings pane (Zotero Settings → Zusia)
+ * Card layout after llm-for-zotero's preference sections. Literal surface
+ * colours on purpose: the Settings content area is --material-sidepane, and
+ * Zotero's own mix tokens either vanish against it (light) or sink (dark).
+ * ===================================================================== */
+
+.zs-prefs {
+	--zs-card: #ffffff;
+	--zs-card-head: #fafafa;
+	--zs-field: #ffffff;
+	--zs-stroke: #dadada;
+	display: flex;
+	flex-direction: column;
+	gap: 16px;
+	width: 100%;
+	min-width: 0;
+	max-width: 680px;
+	padding-bottom: 12px;
+	color: var(--zs-text);
+	font-size: 13px;
+	user-select: text;
+}
+@media (prefers-color-scheme: dark) {
+	.zs-prefs {
+		--zs-card: #3a3a3a;
+		--zs-card-head: #333333;
+		--zs-field: #282828;
+		--zs-stroke: #4f4f4f;
+	}
+}
+.zs-card {
+	border: 1px solid var(--zs-stroke);
+	border-radius: var(--zs-radius-card);
+	background: var(--zs-card);
+	overflow: hidden;
+}
+.zs-card-head {
+	padding: 10px 14px;
+	border-bottom: 1px solid var(--zs-stroke);
+	background: var(--zs-card-head);
+}
+.zs-card-title {
+	margin: 0;
+	font-size: 1.08em;
+	font-weight: 600;
+}
+.zs-card-desc {
+	margin: 2px 0 0;
+	font-size: 0.92em;
+	line-height: 1.45;
+	color: var(--zs-muted);
+}
+.zs-card-body {
+	display: flex;
+	flex-direction: column;
+}
+.zs-row {
+	display: grid;
+	grid-template-columns: minmax(120px, 34%) minmax(0, 1fr);
+	align-items: center;
+	gap: 6px 14px;
+	padding: 10px 14px;
+}
+.zs-row + .zs-row,
+.zs-card-body > * + .zs-row,
+.zs-card-body > .zs-row + * {
+	border-top: 1px solid var(--zs-stroke);
+}
+.zs-row-stack {
+	grid-template-columns: minmax(0, 1fr);
+}
+.zs-row-control > * {
+	min-width: 0;
+}
+.zs-row-label {
+	font-weight: 500;
+}
+.zs-row-hint {
+	grid-column: 1 / -1;
+	margin-top: -2px;
+	font-size: 0.88em;
+	line-height: 1.4;
+	color: var(--zs-muted);
+}
+.zs-row-stack .zs-row-hint {
+	grid-column: auto;
+}
+.zs-row-control {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 6px;
+	min-width: 0;
+}
+
+/* Assistant rows: collapsible, with a status dot (llm-for-zotero Agent tab). */
+.zs-agent + .zs-agent {
+	border-top: 1px solid var(--zs-stroke);
+}
+.zs-agent > summary {
+	display: grid;
+	grid-template-columns: auto 1fr auto auto;
+	align-items: center;
+	gap: 10px;
+	padding: 10px 14px;
+	cursor: pointer;
+	list-style: none;
+}
+.zs-agent > summary:hover {
+	background: var(--zs-hover);
+}
+.zs-agent-dot {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: var(--zs-faint);
+}
+.zs-agent[data-found="true"] .zs-agent-dot {
+	background: var(--accent-green, #39bf68);
+}
+.zs-agent-name {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+}
+.zs-agent-name strong {
+	font-weight: 600;
+}
+.zs-agent-status {
+	font-size: 0.88em;
+	color: var(--zs-muted);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.zs-badge {
+	padding: 1px 8px;
+	border-radius: 999px;
+	font-size: 0.82em;
+	font-weight: 600;
+	color: var(--zs-accent-ink);
+	background: var(--zs-accent-soft);
+}
+.zs-agent-chevron {
+	width: 12px;
+	height: 12px;
+	color: var(--zs-muted);
+	transition: transform 0.15s ease;
+}
+.zs-agent[open] .zs-agent-chevron {
+	transform: rotate(180deg);
+}
+.zs-agent-body {
+	border-top: 1px solid var(--zs-stroke);
+	background: color-mix(in srgb, var(--zs-card-head) 60%, var(--zs-card));
+}
+
+/* Form controls */
+.zs-field,
+.zs-select,
+.zs-textarea {
+	width: 100%;
+	min-width: 0;
+	min-height: 28px;
+	margin: 0;
+	padding: 4px 8px;
+	font: inherit;
+	color: var(--zs-text);
+	background: var(--zs-field);
+	border: 1px solid var(--zs-stroke);
+	border-radius: var(--zs-radius-control);
+}
+/* Zotero's chrome drops the native dropdown arrow once a select is restyled, so draw one. */
+.zs-select {
+	appearance: none;
+	padding-inline-end: 28px;
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 6l4 4 4-4' fill='none' stroke='%23888' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+	background-repeat: no-repeat;
+	background-position: right 8px center;
+	background-size: 12px 12px;
+	cursor: pointer;
+}
+.zs-textarea {
+	resize: vertical;
+	line-height: 1.45;
+}
+/* Prompt fields size themselves to their text instead of showing a resize grip. */
+.zs-textarea.zs-autogrow {
+	resize: none;
+	overflow: hidden;
+	min-height: 28px;
+}
+.zs-field:focus,
+.zs-select:focus,
+.zs-textarea:focus {
+	outline: none;
+	border-color: var(--zs-accent);
+	box-shadow: 0 0 0 2px var(--zs-accent-soft);
+}
+.zs-field::placeholder,
+.zs-textarea::placeholder {
+	color: var(--zs-faint);
+	opacity: 1;
+}
+.zs-button {
+	min-height: 28px;
+	padding: 3px 12px;
+	border: 1px solid var(--zs-stroke);
+	border-radius: var(--zs-radius-control);
+	color: var(--zs-text);
+	background: var(--zs-field);
+}
+.zs-button:hover {
+	background: var(--zs-hover);
+}
+.zs-button-row {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
+/* Switch */
+.zs-switch {
+	position: relative;
+	display: inline-flex;
+	flex: none;
+	width: 32px;
+	height: 18px;
+	padding: 0;
+	border: none;
+	border-radius: 999px;
+	background: var(--zs-line);
+	transition: background-color 0.15s ease;
+}
+.zs-switch::after {
+	content: "";
+	position: absolute;
+	top: 2px;
+	left: 2px;
+	width: 14px;
+	height: 14px;
+	border-radius: 50%;
+	background: #fff;
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+	transition: transform 0.15s ease;
+}
+.zs-switch[aria-checked="true"] {
+	background: var(--zs-accent);
+}
+.zs-switch[aria-checked="true"]::after {
+	transform: translateX(14px);
+}
+
+/* Accent swatches */
+.zs-swatches {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	align-items: center;
+}
+.zs-swatch {
+	position: relative;
+	width: 22px;
+	height: 22px;
+	padding: 0;
+	border: none;
+	border-radius: 50%;
+	box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.15);
+}
+.zs-swatch[aria-checked="true"] {
+	box-shadow: 0 0 0 2px var(--zs-card), 0 0 0 4px var(--zs-text);
+}
+.zs-swatch-custom {
+	overflow: hidden;
+	background: conic-gradient(#f55, #fc3, #5d5, #3cf, #66f, #e5e, #f55);
+}
+.zs-swatch-custom input {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	opacity: 0;
+	cursor: pointer;
+}
+.zs-segmented {
+	display: inline-flex;
+	padding: 2px;
+	gap: 2px;
+	border: 1px solid var(--zs-stroke);
+	border-radius: var(--zs-radius-control);
+	background: var(--zs-hover);
+}
+.zs-segmented button {
+	min-height: 22px;
+	padding: 1px 10px;
+	border: none;
+	border-radius: 4px;
+	color: var(--zs-muted);
+	background: transparent;
+}
+.zs-segmented button[aria-checked="true"] {
+	color: var(--zs-text);
+	font-weight: 600;
+	background: var(--zs-field);
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+/* Quick prompt editor */
+.zs-prompt-list {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+.zs-prompt-row {
+	display: grid;
+	grid-template-columns: minmax(90px, 30%) minmax(0, 1fr) auto;
+	gap: 6px;
+	align-items: start;
+}
+.zs-prompt-tools {
+	display: flex;
+}
+.zs-prefs .zs-icon {
+	width: 26px;
+	height: 28px;
+}
+.zs-range {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	width: min(260px, 100%);
+}
+.zs-range input[type="range"] {
+	flex: 1;
+	min-width: 0;
+	margin: 0;
+	accent-color: var(--zs-accent);
+}
+.zs-range-value {
+	min-width: 3.2em;
+	text-align: end;
+	font-variant-numeric: tabular-nums;
+	color: var(--zs-muted);
+}
+.zs-bg-preview {
+	flex: none;
+	width: 44px;
+	height: 28px;
+	border: 1px solid var(--zs-stroke);
+	border-radius: 5px;
+	background: center / cover no-repeat;
+}
+
+/* Behaviour: hidden thinking steps and quick prompts. */
+.zs-root[data-steps="hidden"] .zs-activity,
+.zs-root[data-steps="hidden"] .zs-live-steps {
+	display: none;
+}
+.zs-root[data-quick="hidden"] .zs-quick {
+	display: none;
+}
+
+/* ---- first-run setup wizard ---- */
+
+.zs-wizard {
+	position: absolute;
+	inset: 0;
+	z-index: 30;
+	display: flex;
+	align-items: flex-start;
+	justify-content: center;
+	padding: 10px 8px;
+	border-radius: inherit;
+	background: color-mix(in srgb, var(--zs-ground) 55%, transparent);
+	backdrop-filter: blur(10px) saturate(140%);
+	animation: zs-fade-in 0.2s ease-out;
+}
+.zs-wizard-panel {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	width: 100%;
+	max-width: 420px;
+	min-height: min(460px, 100%);
+	padding: 18px 14px 12px;
+	border: 1px solid var(--zs-border-strong);
+	border-radius: var(--zs-radius-root, 18px);
+	background: var(--zs-overlay);
+	box-shadow: var(--zs-shadow);
+}
+.zs-wizard-skip {
+	position: absolute;
+	top: 8px;
+	inset-inline-end: 8px;
+}
+.zs-wizard-stage {
+	flex: 1;
+}
+.zs-wizard-enter {
+	animation: zs-wizard-in 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes zs-wizard-in {
+	from { opacity: 0; transform: translateX(14px); }
+	to { opacity: 1; transform: none; }
+}
+.zs-wizard-step {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 12px;
+	text-align: center;
+}
+.zs-wizard-hero {
+	width: 64px !important;
+	height: 64px !important;
+	color: var(--zs-accent-ink);
+}
+.zs-wizard-hero.zs-mascot {
+	width: 104px !important;
+	height: 104px !important;
+	color: var(--zs-text);
+}
+.zs-wizard-title {
+	font-size: 1.35em;
+	font-weight: 700;
+	letter-spacing: -0.01em;
+}
+.zs-wizard-sub {
+	color: var(--zs-muted);
+}
+.zs-wizard-section {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 7px;
+	width: 100%;
+}
+.zs-wizard-section-head {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	font-size: 0.8em;
+	font-weight: 600;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--zs-muted);
+}
+.zs-wizard-section-head .zs-i {
+	width: 13px;
+	height: 13px;
+}
+.zs-wizard .zs-tiles {
+	justify-content: center;
+}
+.zs-wizard .zs-select {
+	min-width: 200px;
+}
+.zs-wizard .zs-swatches {
+	justify-content: center;
+}
+.zs-tile[aria-pressed="true"] {
+	border-color: var(--zs-accent) !important;
+	background: var(--zs-accent-soft) !important;
+}
+.zs-tile[data-missing="true"] {
+	position: relative;
+	opacity: 0.6;
+}
+.zs-tile[data-missing="true"]::after {
+	content: "";
+	position: absolute;
+	top: 6px;
+	inset-inline-end: 6px;
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	background: var(--zs-faint);
+}
+.zs-wizard-nav {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+.zs-wizard-dots {
+	flex: 1;
+	display: flex;
+	justify-content: center;
+	gap: 6px;
+}
+.zs-wizard-dot {
+	width: 7px;
+	height: 7px;
+	border-radius: 999px;
+	background: var(--zs-line);
+	transition: width 0.2s ease, background-color 0.2s ease;
+}
+.zs-wizard-dot-done {
+	background: var(--zs-accent-line);
+}
+.zs-wizard-dot[aria-current="step"] {
+	width: 20px;
+	background: var(--zs-accent);
+}
+.zs-wizard-prev,
+.zs-wizard-next {
+	width: 36px !important;
+	height: 36px !important;
+	border-radius: 999px !important;
+}
+.zs-wizard-next {
+	color: var(--zs-accent-text) !important;
+	background: linear-gradient(135deg, var(--zs-accent), color-mix(in srgb, var(--zs-accent) 55%, var(--tag-purple, #a28ae5))) !important;
+	box-shadow: 0 4px 12px -3px color-mix(in srgb, var(--zs-accent) 70%, transparent);
+}
+.zs-wizard-next .zs-duo {
+	fill: currentColor;
+	opacity: 0.3;
+}
+.zs-wizard-next .zs-i,
+.zs-wizard-prev .zs-i {
+	width: 18px;
+	height: 18px;
+}
+@media (prefers-reduced-motion: reduce) {
+	.zs-wizard,
+	.zs-wizard-enter { animation: none; }
+}
+.zs-wizard .zs-tiles {
+	gap: 6px;
+}
+.zs-wizard .zs-tile {
+	width: 62px;
+	min-height: 64px;
+	padding: 7px 2px 5px;
+}
+.zs-wizard .zs-tile-icon {
+	width: 30px !important;
+	height: 30px !important;
+}
+
+/* ---- clarifications panel ---- */
+
+.zs-panel {
+	position: absolute;
+	inset: 0;
+	z-index: 25;
+	display: flex;
+	flex-direction: column;
+	padding: 10px 9px;
+	border-radius: inherit;
+	background: var(--zs-overlay);
+	backdrop-filter: blur(var(--zs-blur, 18px)) saturate(160%);
+	animation: zs-fade-in 0.18s ease-out;
+}
+.zs-panel-head {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	min-height: 28px;
+	margin-bottom: 8px;
+}
+.zs-panel-title {
+	flex: 1;
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font-weight: 650;
+}
+.zs-panel-title .zs-i {
+	width: 18px;
+	height: 18px;
+	color: var(--zs-accent-ink);
+}
+.zs-panel-body {
+	flex: 1;
+	min-height: 0;
+	overflow-y: auto;
+	scrollbar-width: thin;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	user-select: text;
+}
+.zs-clar-item {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	width: 100%;
+	padding: 9px 10px;
+	border: 1px solid var(--zs-border) !important;
+	border-radius: var(--zs-radius-card);
+	text-align: start;
+	color: var(--zs-text) !important;
+	background: var(--zs-raised) !important;
+	transition: border-color 0.15s ease, transform 0.15s ease;
+}
+.zs-clar-item:hover,
+.zs-clar-item:focus-visible {
+	border-color: var(--zs-accent-line) !important;
+	transform: translateY(-1px);
+}
+.zs-clar-item-top {
+	display: flex;
+	gap: 7px;
+}
+.zs-clar-quote-icon {
+	flex: none;
+	width: 16px !important;
+	height: 16px !important;
+	color: var(--zs-accent-ink);
+}
+.zs-clar-passage {
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 3;
+	overflow: hidden;
+	font-style: italic;
+	line-height: 1.4;
+}
+.zs-clar-meta {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding-inline-start: 23px;
+	font-size: 0.82em;
+	color: var(--zs-muted);
+}
+.zs-clar-page {
+	padding: 0 6px;
+	border-radius: 999px;
+	font-weight: 600;
+	color: var(--zs-accent-ink);
+	background: var(--zs-accent-soft);
+}
+.zs-clar-backend {
+	width: 13px !important;
+	height: 13px !important;
+	margin-inline-start: auto;
+}
+.zs-clar-empty {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	min-height: 220px;
+	text-align: center;
+}
+.zs-clar-empty-title {
+	font-weight: 650;
+}
+.zs-clar-empty-sub {
+	color: var(--zs-muted);
+}
+.zs-clar-empty-icon {
+	width: 48px !important;
+	height: 48px !important;
+	color: var(--zs-accent-ink);
+}
+.zs-clar-detail {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+.zs-clar-actions {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	position: sticky;
+	top: 0;
+	z-index: 1;
+	padding: 2px 0 4px;
+	background: var(--zs-overlay);
+}
+.zs-clar-actions .zs-spacer {
+	flex: 1;
+}
+.zs-clar-delete:hover:not(:disabled) {
+	color: var(--accent-red, #db2c3a) !important;
+}
+.zs-clar-section {
+	display: flex;
+	flex-direction: column;
+	gap: 5px;
+}
+.zs-clar-heading {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	font-size: 0.78em;
+	font-weight: 650;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--zs-muted);
+}
+.zs-clar-heading .zs-i {
+	width: 14px;
+	height: 14px;
+}
+.zs-clar-passage-full {
+	margin: 0;
+	padding: 8px 11px;
+	border-inline-start: 3px solid var(--zs-accent);
+	border-radius: var(--zs-radius-control);
+	font-style: italic;
+	line-height: 1.5;
+	background: var(--zs-accent-soft);
+}
+.zs-clar-prompt,
+.zs-clar-instructions pre {
+	margin: 0;
+	padding: 8px 10px;
+	border: 1px solid var(--zs-line);
+	border-radius: var(--zs-radius-control);
+	font-family: ui-monospace, "SF Mono", Menlo, monospace;
+	font-size: 0.86em;
+	line-height: 1.45;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	background: var(--zs-hover);
+}
+.zs-clar-instructions summary {
+	cursor: pointer;
+	font-size: 0.85em;
+	color: var(--zs-muted);
+}
+.zs-clar-instructions pre {
+	margin-top: 6px;
+	max-height: 220px;
+	overflow-y: auto;
+}
+.zs-clar-answer {
+	padding: 8px 11px;
+	border: 1px solid var(--zs-border);
+	border-radius: var(--zs-radius-card);
+	background: var(--zs-raised);
+}
+@media (prefers-reduced-motion: reduce) {
+	.zs-panel { animation: none; }
+	.zs-clar-item:hover { transform: none; }
+}
+/* Panels and the wizard need room even when the chat is short. */
+.zs-root:has(> .zs-panel),
+.zs-root:has(> .zs-wizard) {
+	min-height: 520px;
+}

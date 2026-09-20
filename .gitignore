@@ -1,0 +1,9 @@
+*.xpi
+.DS_Store
+node_modules/
+test/out/
+test/integration/out/
+test/fixtures.generated.js
+docs/videos/candidates/
+
+updates.json

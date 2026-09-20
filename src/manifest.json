@@ -1,0 +1,14 @@
+{
+	"manifest_version": 2,
+	"name": "Zusia",
+	"version": "1.0.0",
+	"description": "Zusia, a study buddy for Zotero: ask Claude Code, Codex or Antigravity about the paper you're reading.",
+	"applications": {
+		"zotero": {
+			"id": "zusia@firekern.github.io",
+			"update_url": "https://github.com/firekern/zusia/releases/latest/download/updates.json",
+			"strict_min_version": "6.999",
+			"strict_max_version": "10.*"
+		}
+	}
+}

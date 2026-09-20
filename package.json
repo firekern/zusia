@@ -1,0 +1,17 @@
+{
+	"name": "zusia",
+	"private": true,
+	"version": "1.0.0",
+	"description": "Zusia, a study buddy for Zotero: chat with Claude Code, Codex or Antigravity about the paper you are reading.",
+	"type": "module",
+	"scripts": {
+		"test": "node --test test/*.test.mjs",
+		"build": "bash build.sh",
+		"shots": "bash test/screenshots.sh",
+		"test:zotero": "bash test/integration/run.sh",
+		"videos": "bash test/videos/zotero/record.sh"
+	},
+	"devDependencies": {
+		"jsdom": "^26.1.0"
+	}
+}
