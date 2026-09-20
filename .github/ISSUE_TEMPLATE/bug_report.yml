@@ -1,0 +1,29 @@
+name: Bug report
+description: Something in the sidebar does not work
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you saw instead. Screenshots help.
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      placeholder: "Plugin 2.15.0, Zotero 8.0, macOS 15"
+    validations:
+      required: true
+  - type: dropdown
+    id: assistant
+    attributes:
+      label: Assistant
+      options: [Claude Code, OpenAI Codex, Google Antigravity, Not assistant-related]
+  - type: textarea
+    id: log
+    attributes:
+      label: Debug log
+      description: Settings → Troubleshooting → Open debug log. Remove anything private.
+      render: text

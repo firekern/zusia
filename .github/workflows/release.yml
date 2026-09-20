@@ -1,0 +1,44 @@
+name: Release
+
+# Tagging is the release. Push v1.0.0 and this builds it; nothing ships from a
+# branch, so main can move without publishing anything.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: The tag, package.json and the manifest must agree
+        run: |
+          tagged="${GITHUB_REF_NAME#v}"
+          packaged=$(node -p "require('./package.json').version")
+          declared=$(node -p "require('./src/manifest.json').version")
+          if [ "$tagged" != "$packaged" ] || [ "$tagged" != "$declared" ]; then
+            echo "tag $GITHUB_REF_NAME, package.json $packaged, manifest $declared" >&2
+            echo "Bump all three before tagging." >&2
+            exit 1
+          fi
+
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - run: node scripts/updates.mjs
+
+      - name: Publish the release with the .xpi attached
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" zusia.xpi updates.json \
+            --title "Zusia $GITHUB_REF_NAME" \
+            --generate-notes

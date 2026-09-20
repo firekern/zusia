@@ -1,0 +1,11 @@
+name: Feature request
+description: An idea for the sidebar
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: Idea
+      description: What you would like, and the study situation where it would help.
+    validations:
+      required: true
