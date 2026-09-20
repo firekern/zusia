@@ -1,0 +1,239 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Claude Sidebar harness</title>
+<link rel="stylesheet" href="zotero-tokens.css">
+<link rel="stylesheet" href="../src/content/zusia.css">
+<style>
+	html, body { margin: 0; background: var(--color-sidepane); color: var(--fill-primary); }
+	body { font: 13px "Noto Sans", Cantarell, system-ui, sans-serif; padding: 12px; }
+	/* Mimics Zotero's item pane section body. */
+	/* Zotero lays item-pane sections out as flex columns (item-pane-custom-section .body),
+	   which is where min-width overflow bugs show up, so the harness does the same. */
+	.pane { width: var(--pane-width, 380px); display: flex; flex-direction: column; background: var(--material-sidepane); border-inline: var(--material-panedivider); padding: 6px 8px 8px; }
+	.pane-body { display: flex; flex-direction: column; margin: 0; }
+	.overflow-banner { position: fixed; top: 0; left: 0; right: 0; padding: 6px; background: #d00; color: #fff; font: bold 14px sans-serif; z-index: 9; }
+	.pane-head { font-weight: 600; padding: 4px 0 8px; }
+	.no-anim *, .no-anim *::before, .no-anim *::after { animation: none !important; transition: none !important; }
+</style>
+<script>
+	// Any script error becomes a red banner in the screenshot.
+	window.addEventListener("error", (event) => {
+		const banner = document.createElement("div");
+		banner.className = "overflow-banner";
+		banner.style.top = "auto";
+		banner.style.bottom = "0";
+		banner.textContent = "JS ERROR: " + event.message + " @ " + (event.filename || "").split("/").pop() + ":" + event.lineno;
+		(document.body || document.documentElement).appendChild(banner);
+	});
+</script>
+<script src="../src/content/lib/katex.min.js"></script>
+<script src="fixtures.generated.js"></script>
+<script>
+	var ChromeUtils = { importESModule: () => ({ OS: { Path: { join: (...p) => p.join("/") } }, Subprocess: {} }) };
+	var prefs = {};
+	var Zotero = {
+		debug: m => console.log(m),
+		Promise: { delay: () => new Promise(() => {}) },
+		Prefs: { get: k => prefs[k], set: (k, v) => { prefs[k] = v; } },
+		Utilities: { Internal: { copyTextToClipboard() {}, openPreferences() {} } },
+		getMainWindow: () => window,
+	};
+	var Services = { scriptloader: { loadSubScript: (u, scope) => { scope.module.exports = window.katex; } } };
+	var Zusia;
+</script>
+<script src="../src/content/zusia.js"></script>
+</head>
+<body class="no-anim">
+<script>
+	// ?scenario=chat|empty|streaming|prefs  &fixture=<name>  &width=<px>  &theme=<json>
+	const params = new URLSearchParams(location.search);
+	const CS = Zusia;
+	CS.rootURI = "../src/";
+	CS.iconBase = "../src/content/icons/";
+	CS.findBinary = async key => { if (key === "codex") throw new Error("missing"); return "/bin/" + key; };
+	if (params.get("theme")) prefs["extensions.zusia.theme"] = params.get("theme");
+	// &appearance=<json> sets the Appearance pref; &bg=<url> stands in for the copied background image.
+	if (params.get("appearance")) prefs["extensions.zusia.appearance"] = params.get("appearance");
+	// Setup is done unless the scenario is the wizard (&step=<n> opens that step).
+	prefs["extensions.zusia.onboarded"] = params.get("scenario") !== "wizard";
+	if (params.get("bg")) CS.backgroundURL = () => params.get("bg");
+	if (params.get("width")) document.documentElement.style.setProperty("--pane-width", params.get("width") + "px");
+	if (params.get("zoom")) document.documentElement.style.zoom = params.get("zoom");
+	const scenario = params.get("scenario") || "chat";
+	const fixture = FIXTURES[params.get("fixture") || "fft-real.md"];
+
+	function pane(title) {
+		const wrap = document.createElement("div");
+		wrap.className = "pane";
+		wrap.innerHTML = '<div class="pane-head"></div><div class="pane-body"></div>';
+		wrap.querySelector(".pane-head").textContent = title;
+		document.body.appendChild(wrap);
+		return wrap.querySelector(".pane-body");
+	}
+	function sidebar(body) {
+		CS.renderSkeleton(document, body);
+		const root = body.querySelector(".zs-root");
+		root._installed = { claude: "/bin/claude", codex: null, agy: "/bin/agy" };
+		const view = {
+			doc: document, root, ctx: { dir: "/tmp/harness" },
+			logEl: root.querySelector(".zs-log"),
+			input: root.querySelector(".zs-input"),
+			send() {},
+		};
+		root.querySelector(".zs-log").style.maxHeight = "none";
+		CS._views.set(root, view);
+		CS.renderPaperChip(root, { label: "Dohare et al., 2024", title: "Loss of plasticity in deep continual learning" });
+		return view;
+	}
+	CS._agyModels = [
+		{ id: "gemini-3.8-flash-high", label: "Gemini 3.8 Flash (High)", desc: "gemini-3.8-flash-high" },
+		{ id: "gemini-3.1-pro-high", label: "Gemini 3.1 Pro (High)", desc: "gemini-3.1-pro-high" },
+	];
+	if (params.get("backend")) prefs["extensions.zusia.backend"] = params.get("backend");
+	if (params.get("model")) prefs["extensions.zusia." + (params.get("backend") || "claude") + ".model"] = params.get("model");
+	if (params.get("effort")) prefs["extensions.zusia." + (params.get("backend") || "claude") + ".effort"] = params.get("effort");
+
+	const conversation = [
+		{ role: "user", text: "Explain this with $\\LaTeX$ please" },
+		{ role: "assistant", text: fixture, backend: "claude", model: "opus", activity: {
+			steps: [
+				{ kind: "search", target: "FFT", label: "Searched for “FFT” in paper.txt" },
+				{ kind: "read", target: "paper.txt", label: "Read paper.txt" },
+				{ kind: "read", target: "annotations.md", label: "Read annotations.md" },
+			],
+			thoughtMs: 7800,
+		} },
+	];
+
+	if (scenario === "prefs") {
+		const body = pane("Settings pane");
+		CS.renderPrefsPane(document, body);
+		body.querySelector(".zs-agent").open = true;
+	}
+	else {
+		const view = sidebar(pane("Claude"));
+		if (scenario === "clarifications") {
+			const clar = (id, day, passage, page, answer) => ({ id, ts: Date.parse("2026-09-" + day + "T10:00:00Z"), passage, pageLabel: page,
+				position: null, attachmentID: 1, question: "Explain this passage (p. " + page + "):\n\n> " + passage,
+				prompt: "Explain this passage (p. " + page + "):\n\n> " + passage + "\n\n(Sidebar formatting: maths in LaTeX…)",
+				instructions: "You are embedded in the Zotero reference manager as a sidebar assistant…", answer, backend: "claude", model: "opus", messageIndex: 0 });
+			CS.loadClarifications = async () => [
+				clar("c1", "16", "A metric space is complete if every Cauchy sequence converges in it.", "65",
+					"**Completeness** means limits never escape the space: if $d(x_n, x_m) \\to 0$ then $x_n \\to x$ for some $x \\in X$."),
+				clar("c2", "17", "The contraction mapping theorem guarantees a unique fixed point.", "71", "Because $T$ shrinks distances by $q < 1$…"),
+			];
+			CS.renderMessages(view, []);
+			CS.setBusy(view, false);
+			CS.openClarifications(view.root).then(() => {
+				if (params.get("detail")) document.querySelectorAll(".zs-clar-item")[1].click();
+			});
+		}
+		else if (scenario === "wizard") {
+			view.ctx.paperItem = { getField: () => "", getCreators: () => [] };
+			CS.renderMessages(view, []);
+			CS.setBusy(view, false);
+			for (let i = 0; i < Number(params.get("step") || 0); i++) {
+				document.querySelector(".zs-wizard-next").click();
+			}
+		}
+		else if (scenario === "empty") {
+			view.ctx.paperItem = { getField: f => (f === "title" ? "Loss of plasticity in deep continual learning" : ""), getCreators: () => [] };
+			CS.renderMessages(view, []);
+			CS.setBusy(view, false);
+		}
+		else if (scenario === "pairs") {
+			CS.renderMessages(view, [
+				{ role: "user", text: "What is the secret word?" },
+				{ role: "assistant", text: "PELICAN", backend: "claude", activity: { steps: [{ kind: "read", target: "metadata.md", label: "Read metadata.md" }], thoughtMs: 900 } },
+				{ role: "user", text: "Why does squaring halve the set of roots of unity?" },
+				{ role: "assistant", text: "Because $\\omega^{n/2} = -1$, the roots $\\omega^j$ and $-\\omega^j$ have the same square, so the $n$ squares are the $(n/2)$-th roots, each twice.", backend: "claude" },
+				{ role: "user", text: "Give one example." },
+				{ role: "assistant", text: "For $n = 8$: the eight 8th roots square to the four 4th roots $\\{1, i, -1, -i\\}$.", backend: "claude" },
+			]);
+			CS.setBusy(view, false);
+		}
+		else if (scenario === "error") {
+			CS.renderMessages(view, conversation);
+			CS.appendUser(view, "And the inverse transform?");
+			CS.appendError(view, "Could not find the 'claude' command. Make sure the Claude CLI is installed and on your PATH, or set extensions.zusia.claudePath (Zotero Settings → Advanced → Config Editor) to its full path.",
+				{ title: "Claude could not answer", retry() {} });
+			CS.setBusy(view, false);
+		}
+		else if (scenario === "long") {
+			const longPrompt = "Here is the passage I am confused about:\n\n" + fixture.slice(0, 900) + "\n\nCan you explain it step by step?";
+			CS.renderMessages(view, [
+				{ role: "user", text: longPrompt },
+				{ role: "assistant", text: fixture, backend: "claude", model: "opus" },
+			]);
+			CS.setBusy(view, false);
+			view.logEl.style.maxHeight = "700px";
+			view.logEl.scrollTop = 0;
+			CS.updateJump(view.root);
+		}
+		else if (scenario === "streaming") {
+			CS.renderMessages(view, conversation.slice(0, 1).concat([{ role: "assistant", text: "The **DFT** evaluates $A$ at the roots of unity.", backend: "claude" }]));
+			CS.showPending(view, {
+				question: "And the inverse?", backend: "claude", startedAt: Date.now() - 9000,
+				partial: fixture.slice(0, 700), status: "writing", listeners: new Set(), promise: new Promise(() => {}),
+				steps: [
+					{ kind: "search", target: "inverse", label: "Searched for “inverse” in paper.txt" },
+					{ kind: "read", target: "paper.txt", label: "Read paper.txt" },
+				],
+			});
+			view.logEl.querySelector(".zs-live-steps") && CS._pending;
+		}
+		else {
+			CS.renderMessages(view, conversation);
+			CS.setBusy(view, false);
+			view.input.value = scenario === "chat" ? "" : "What is the convolution theorem?";
+			CS.setBusy(view, false);
+			const openAfterLayout = (selector) => view.root.querySelector(selector).click();
+			if (scenario === "menu-model") openAfterLayout(".zs-model-btn");
+			if (scenario === "menu-effort") openAfterLayout(".zs-effort-btn");
+			if (scenario === "menu-more") openAfterLayout(".zs-turn.zs-last .zs-more");
+			if (scenario === "menu-history") {
+				CS.listArchives = () => ({
+					catch() { return this; },
+					then(fn) { fn([
+						{ path: "a", title: "What does the convolution theorem say about the FFT?", count: 6, ts: Date.now() - 3600e3 },
+						{ path: "b", title: "Summarize this paper", count: 2, ts: Date.parse("2026-09-12T18:40:00") },
+						{ path: "c", title: "Explain the method simply, with an example I can compute by hand", count: 8, ts: Date.parse("2026-09-03T09:15:00") },
+					]); return this; },
+				});
+				openAfterLayout(".zs-history");
+			}
+			if (params.get("debug")) {
+				const menu = view.root.querySelector(".zs-menu");
+				const more = view.root.querySelector(".zs-turn.zs-last .zs-more");
+				const banner = document.createElement("div");
+				banner.className = "overflow-banner";
+				banner.textContent = "DEBUG menu=" + !!menu + " more=" + !!more + " expanded=" + (more && more.getAttribute("aria-expanded")) + " style=" + (menu && menu.getAttribute("style"));
+				document.body.appendChild(banner);
+			}
+		}
+	}
+	requestAnimationFrame(() => document.querySelectorAll(".zs-log").forEach(log => CS.fitWideContent(log)));
+	// Flag horizontal overflow loudly in the screenshot.
+	requestAnimationFrame(() => setTimeout(() => {
+		const problems = [];
+		for (const body of document.querySelectorAll(".pane-body")) {
+			const limit = body.getBoundingClientRect().right + 1;
+			for (const el of body.querySelectorAll(".zs-root, .zs-header, .zs-icon, .zs-msg, .zs-composer, .zs-controls, .zs-card")) {
+				if (el.getBoundingClientRect().right > limit) {
+					problems.push(el.className);
+				}
+			}
+		}
+		if (problems.length) {
+			const banner = document.createElement("div");
+			banner.className = "overflow-banner";
+			banner.textContent = "OVERFLOW: " + [...new Set(problems)].join(", ");
+			document.body.appendChild(banner);
+		}
+		document.title = problems.length ? "overflow" : "ready";
+	}, 400));
+</script>
+</body>
+</html>
