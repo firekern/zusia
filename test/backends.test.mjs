@@ -159,15 +159,14 @@ test("Claude stream events produce steps, thinking time and text", async () => {
 	assert.equal(result.text, "Answer $x$");
 });
 
-test("the paper's full text is never offered: prompts mention only metadata and annotations", () => {
-	assert.doesNotMatch(plugin.systemPrompt(), /paper\.txt/);
-	assert.match(plugin.systemPrompt(), /full text is deliberately not provided/);
+test("antigravity: a new session gets the paper inline, a resumed one only the question", () => {
 	const prompt = plugin.buildAntigravityPrompt(base);
-	assert.doesNotMatch(prompt, /<paper>/);
-	assert.match(prompt, /<metadata>\n# T\n<\/metadata>/);
-	assert.match(prompt, /<annotations>\n- \[highlight\] p\.2 key idea/);
-	assert.ok(prompt.endsWith("Why?" + plugin.formattingReminder()));
-	assert.equal(plugin.buildAntigravityPrompt({ ...base, session: { id: "c1", seen: 0 } }), "Why?" + plugin.formattingReminder());
+	assert.match(prompt, /<paper_metadata>\n# T\n<\/paper_metadata>/);
+	assert.match(prompt, /<user_annotations>\n- \[highlight\] p\.2 key idea\n<\/user_annotations>/);
+	assert.doesNotMatch(prompt, /<paper_fulltext>\n/, "no full text was exported");
+	assert.ok(prompt.endsWith("Why?" + plugin.contextNote(base.files) + plugin.formattingReminder()));
+	assert.equal(plugin.buildAntigravityPrompt({ ...base, session: { id: "c1", seen: 0 } }),
+		"Why?" + plugin.contextNote(base.files, { resumed: true }) + plugin.formattingReminder());
 });
 
 test("images: Claude is told to Read each path, Codex gets --image=, both are stored relative to the paper folder", async () => {
@@ -215,7 +214,7 @@ test("modes: instructions go to the assistant, not into the stored question", as
 	const pending = pendingFor(p);
 	pending.modes = ["latex"];
 	await p.ask(base.ctx, "Prove it", pending);
-	assert.match(seen.question, /^Prove it\n\n\[Write the answer as rigorous mathematics in LaTeX/);
+	assert.match(seen.question, /^Prove it\n\n\[LaTeX mode: write the answer as rigorous mathematics/);
 	assert.equal(store.history[0].text, "Prove it");
 	assert.deepEqual([...store.history[0].modes], ["latex"]);
 });
@@ -240,7 +239,7 @@ test("clarifications: a request about a PDF selection saves passage, exact promp
 	assert.deepEqual(JSON.parse(JSON.stringify(record.position)), { pageIndex: 11, rects: [[1, 2, 3, 4]] });
 	assert.equal(record.question, "Explain this passage (p. 12):\n\n> the limit exists");
 	assert.equal(record.prompt, seen.question, "the exact text sent to the assistant");
-	assert.match(record.instructions, /sidebar assistant/);
+	assert.equal(record.instructions, p.systemPrompt(), "Claude gets the system prompt on every call");
 	assert.equal(record.answer, "It means the limit exists.");
 	assert.equal(record.backend, "claude");
 	assert.equal(record.model, "opus");

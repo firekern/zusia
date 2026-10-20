@@ -176,12 +176,12 @@ test("answer language: saved from Chat settings and used in every prompt", () =>
 	const chat = card(container, "Chat");
 	const select = rowControl(chat, "Answer language").querySelector("select");
 	assert.equal(select.value, "");
-	assert.match(plugin.systemPrompt(), /Reply in the language the user writes in\./);
+	assert.match(plugin.systemPrompt(), /Reply in the language of the user's own words in their latest message, not the language of a quoted passage/);
 	change(window, select, "Italiano");
 	assert.equal(prefs[PREFIX + "language"], "Italiano");
-	assert.match(plugin.systemPrompt(), /Always reply in Italiano, whatever language the user writes in\./);
+	assert.match(plugin.systemPrompt(), /Reply in Italiano, even when the question, a quoted passage or the paper is in another language/);
 	assert.match(plugin.formattingReminder(), /Reply in Italiano\.\)$/);
-	assert.match(plugin.buildAntigravityPrompt({ files: { metadata: "# T\n", annotations: "" }, question: "Why?", history: [], session: null }), /Always reply in Italiano/);
+	assert.match(plugin.buildAntigravityPrompt({ files: { metadata: "# T\n", annotations: "" }, question: "Why?", history: [], session: null }), /Reply in Italiano, even when/);
 	prefs[PREFIX + "language"] = "Klingon";
 	assert.equal(plugin.getLanguage(), "", "unknown values fall back to the question's language");
 });
@@ -232,7 +232,7 @@ test("behaviour: defaults, validation and the instructions sent to the assistant
 	assert.match(text, /Keep answers short/);
 	assert.match(text, /expert/);
 	assert.match(text, /warm, encouraging/);
-	assert.match(text, /User's own instructions: Use SI units\./);
+	assert.match(text, /The user's own instructions, which override the defaults above: Use SI units\./);
 	assert.match(plugin.systemPrompt(), /Keep answers short/);
 	assert.match(plugin.buildAntigravityPrompt({ files: { metadata: "# T\n", annotations: "" }, question: "Q", history: [], session: null }), /Use SI units/);
 	prefs[PREFIX + "behaviour"] = JSON.stringify({ length: "epic", custom: "x".repeat(5000) });

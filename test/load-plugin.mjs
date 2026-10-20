@@ -6,16 +6,25 @@ import { JSDOM } from "jsdom";
 const root = new URL("../", import.meta.url);
 const read = path => readFileSync(new URL(path, root), "utf8");
 
-export function loadPlugin({ prefs = {} } = {}) {
+export function loadPlugin({ prefs = {}, files = new Map() } = {}) {
 	const dom = new JSDOM("<!doctype html><html><body></body></html>", { runScripts: "outside-only" });
 	const { window } = dom;
 	window.TextEncoder = TextEncoder;
-	window.ChromeUtils = { importESModule: () => ({ OS: { Path: { join: (...p) => p.join("/") } }, Subprocess: {} }) };
+	// OS.File and Zotero.File share one in-memory store, returned as `files`.
+	const OS = {
+		Path: { join: (...p) => p.join("/") },
+		File: { exists: async p => files.has(p), remove: async (p) => { files.delete(p); } },
+	};
+	window.ChromeUtils = { importESModule: () => ({ OS, Subprocess: {} }) };
 	window.Zotero = {
 		debug() {},
 		Promise: { delay: () => new Promise(() => {}) },
 		Prefs: { get: key => prefs[key], set: (key, value) => { prefs[key] = value; } },
 		Utilities: { Internal: { copyTextToClipboard() {} } },
+		File: {
+			putContentsAsync: async (p, data) => { files.set(p, data); },
+			createDirectoryIfMissingAsync: async () => {},
+		},
 		getMainWindow: () => window,
 	};
 	window.eval(read("src/content/lib/katex.min.js").replace(/^!function\(e,t\)\{/, "!function(e,t){var exports,module,define;"));
@@ -23,7 +32,7 @@ export function loadPlugin({ prefs = {} } = {}) {
 	window.eval("var Zusia;\n" + read("src/content/zusia.js") + "\nwindow.Zusia = Zusia;");
 	const plugin = window.Zusia;
 	plugin.rootURI = "./";
-	return { window, document: window.document, plugin, prefs };
+	return { window, document: window.document, plugin, prefs, files };
 }
 
 export function fixture(name) {

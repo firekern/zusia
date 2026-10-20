@@ -140,7 +140,7 @@ test("paper chip renders into the composer and hides without a paper", () => {
 	const chip = root.querySelector(".zs-composer .zs-context-chip");
 	assert.equal(chip.querySelector(".zs-context-label").textContent, "Dohare et al., 2024");
 	assert.equal(chip.querySelector(".zs-context-badge"), null);
-	assert.match(chip.title, /not the PDF text/);
+	assert.match(chip.title, /the paper's full text, its metadata and your annotations/);
 	assert.equal(root.querySelector(".zs-context").hidden, false);
 	plugin.renderPaperChip(root, null);
 	assert.equal(root.querySelector(".zs-context").hidden, true);
