@@ -242,6 +242,89 @@
 	color: var(--zs-muted);
 }
 
+/* Shown only in the chat view, where it replaces Zotero's title bar. */
+.zs-header-paper {
+	display: none;
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-weight: 600;
+	color: var(--zs-text);
+}
+.zs-view-details {
+	display: none !important;
+}
+
+/* ---- chat view: Zusia fills the side pane ---- */
+
+/* Zotero's item pane has no full-height section, so while the chat view is on
+   (data-zs-view, set by Zusia's side-nav icon) its title bar and the other
+   sections step aside and Zusia's section takes the whole column. zs-chat-ready
+   marks the item-details whose item has a Zusia section; others stay untouched.
+   The side-nav rail stays: any other icon brings the item details back. */
+:root[data-zs-view="chat"] item-details[zs-chat-ready] item-pane-header,
+:root[data-zs-view="chat"] item-details[zs-chat-ready] .zotero-view-item > [data-pane]:not(.zs-pane),
+:root[data-zs-view="chat"] item-details[zs-chat-ready] .zs-pane > collapsible-section > .head,
+:root[data-zs-view="chat"] item-details[zs-chat-ready] .zs-header-title,
+:root[data-zs-view="chat"] item-details[zs-chat-ready] .zs-view-chat {
+	display: none !important;
+}
+:root[data-zs-view="chat"] item-details[zs-chat-ready] .zotero-view-item-main {
+	min-height: 0;
+	overflow: hidden;
+}
+/* The log scrolls on its own; the section column must not scroll as well. */
+:root[data-zs-view="chat"] item-details[zs-chat-ready] .zotero-view-item {
+	flex: 1 1 0;
+	min-height: 0;
+	overflow: hidden;
+}
+/* The filler Zotero adds so a pinned section can scroll to the top. */
+:root[data-zs-view="chat"] item-details[zs-chat-ready] .zotero-view-item::before,
+:root[data-zs-view="chat"] item-details[zs-chat-ready] .zotero-view-item::after {
+	display: none !important;
+}
+:root[data-zs-view="chat"] item-details[zs-chat-ready] .zs-pane,
+:root[data-zs-view="chat"] item-details[zs-chat-ready] .zs-pane > collapsible-section,
+:root[data-zs-view="chat"] item-details[zs-chat-ready] .zs-pane > collapsible-section > [data-type="body"] {
+	display: flex !important;
+	flex-direction: column;
+	flex: 1 1 0;
+	height: 100%;
+	min-height: 0;
+	max-height: none;
+	margin: 0;
+	padding-block: 0;
+	border: none;
+	overflow: hidden;
+}
+:root[data-zs-view="chat"] item-details[zs-chat-ready] .zs-root {
+	flex: 1 1 0;
+	min-height: 0;
+}
+:root[data-zs-view="chat"] item-details[zs-chat-ready] .zs-root > :not(.zs-log-wrap):not(.zs-backdrop) {
+	flex-shrink: 0;
+}
+:root[data-zs-view="chat"] item-details[zs-chat-ready] .zs-log-wrap {
+	display: flex;
+	flex-direction: column;
+	flex: 1 1 0;
+	min-height: 0;
+}
+:root[data-zs-view="chat"] item-details[zs-chat-ready] .zs-log {
+	flex: 1 1 0;
+	min-height: 0;
+	max-height: none;
+}
+:root[data-zs-view="chat"] item-details[zs-chat-ready] .zs-header-paper {
+	display: block;
+}
+:root[data-zs-view="chat"] item-details[zs-chat-ready] .zs-view-details {
+	display: inline-flex !important;
+}
+
 /* ---- conversation ---- */
 
 .zs-log-wrap {

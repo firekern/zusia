@@ -164,6 +164,8 @@ Zusia = {
 		up: "caret-up.svg",
 		down: "caret-down.svg",
 		jump: "arrow-down.svg",
+		expand: "arrows-out-simple.svg",
+		collapse: "arrows-in-simple.svg",
 		remove: "x.svg",
 		alert: "warning-circle.svg",
 		paper: "file-text.svg",
@@ -261,6 +263,8 @@ Zusia = {
 	ATTACH_KEY: "I",
 	// The live view behind each rendered .zs-root.
 	_views: new WeakMap(),
+	// The capturing side-nav click listener added to each main window.
+	_sidenavListeners: new WeakMap(),
 
 	init({ id, version, rootURI }) {
 		if (this.initialized) {
@@ -745,6 +749,12 @@ Zusia = {
 		link.rel = "stylesheet";
 		link.href = this.stylesheetURL;
 		doc.documentElement.appendChild(link);
+
+		doc.documentElement.setAttribute(this.VIEW_ATTR, this.getPref("paneView") === "chat" ? "chat" : "details");
+		let onClick = event => this.onSidenavClick(event);
+		// Capturing, so the view is set before Zotero's own handler scrolls to the section.
+		doc.addEventListener("click", onClick, true);
+		this._sidenavListeners.set(window, onClick);
 	},
 
 	addToAllWindows() {
@@ -760,6 +770,12 @@ Zusia = {
 		let doc = window.document;
 		doc.getElementById("zusia-stylesheet")?.remove();
 		doc.querySelector('[href="zusia.ftl"]')?.remove();
+		doc.documentElement.removeAttribute(this.VIEW_ATTR);
+		let onClick = this._sidenavListeners.get(window);
+		if (onClick) {
+			doc.removeEventListener("click", onClick, true);
+			this._sidenavListeners.delete(window);
+		}
 	},
 
 	removeFromAllWindows() {
@@ -787,12 +803,15 @@ Zusia = {
 				l10nID: "zusia-item-pane-sidenav",
 				icon: this.rootURI + "icons/icon20.svg",
 			},
-			onInit: () => {
-				this.log("section onInit");
+			onInit: ({ body }) => {
+				// The chat view's CSS finds our section by this class (see "chat view" in zusia.css).
+				body.closest("item-pane-custom-section")?.classList.add("zs-pane");
 			},
-			onItemChange: ({ item, setEnabled }) => {
+			onItemChange: ({ body, item, setEnabled }) => {
 				let usable = !!item && (item.isRegularItem() || item.isFileAttachment());
 				setEnabled(usable);
+				// Without our section the chat view would hide every section and leave the pane empty.
+				body.closest("item-details")?.toggleAttribute("zs-chat-ready", usable);
 			},
 			onRender: ({ doc, body }) => {
 				try {
@@ -818,6 +837,78 @@ Zusia = {
 			},
 		});
 		this.log("registerPaneSection -> paneID=" + this.paneID);
+	},
+
+	// -----------------------------------------------------------------
+	// Chat view: Zusia fills the side pane
+	// -----------------------------------------------------------------
+
+	// The item pane API has no full-height section, so in the chat view zusia.css hides
+	// Zotero's title bar and the other sections around ours (llm-for-zotero does the same).
+	// The view is one attribute per window, as the side nav works the same in the library
+	// and the reader tabs; it only applies where item-details carries zs-chat-ready.
+	VIEW_ATTR: "data-zs-view",
+
+	isChatView(doc) {
+		return doc.documentElement.getAttribute(this.VIEW_ATTR) === "chat";
+	},
+
+	setView(doc, view) {
+		doc.documentElement.setAttribute(this.VIEW_ATTR, view);
+		this.setPref("paneView", view);
+		if (view === "chat") {
+			// A collapsed section would leave the pane empty, its header being hidden.
+			for (let section of doc.querySelectorAll("item-pane-custom-section.zs-pane")) {
+				section.open = true;
+			}
+		}
+	},
+
+	// Our side-nav icon opens the chat view; any other section's icon goes back to the item details.
+	onSidenavClick(event) {
+		if (event.button !== 0 || !this.paneID) {
+			return;
+		}
+		let button = event.target.closest?.("item-pane-sidenav [data-pane]");
+		let pane = button?.dataset.pane;
+		// The reader's notes pane replaces the whole item deck, so the view can stay as it is.
+		if (!pane || pane === "context-notes") {
+			return;
+		}
+		let doc = button.ownerDocument;
+		if (pane !== this.paneID) {
+			this.setView(doc, "details");
+			return;
+		}
+		this.setView(doc, "chat");
+		this.focusVisibleInput(doc);
+	},
+
+	focusVisibleInput(doc) {
+		// After Zotero has shown the pane: a hidden or still disabled box cannot take focus.
+		doc.defaultView.setTimeout(() => {
+			let input = [...doc.querySelectorAll(".zs-root .zs-input")]
+				.find(el => !el.disabled && el.getClientRects().length);
+			input?.focus();
+		}, 200);
+	},
+
+	// Opens the chat view from an entry point (the reader's Ask Zusia, a search result) the way
+	// a click on our side-nav icon does, so Zotero also expands the pane and leaves its notes view.
+	revealChat(win) {
+		let doc = win.document;
+		let button = [...doc.querySelectorAll("item-pane-sidenav [data-pane]")]
+			.find(el => el.dataset.pane === this.paneID && el.getClientRects().length);
+		if (button) {
+			button.dispatchEvent(new win.MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 }));
+			return;
+		}
+		this.setView(doc, "chat");
+		let details = win.Zotero_Tabs?.selectedType === "library"
+			? doc.getElementById("zotero-item-details")
+			: win.ZoteroContextPane?.sidenav?.container;
+		details?.scrollToPane?.(this.paneID, "instant");
+		this.focusVisibleInput(doc);
 	},
 
 	unregisterPaneSection() {
@@ -1089,12 +1180,22 @@ Zusia = {
 		header.append(
 			this.svgIcon(doc, this.MASCOTS[this.getAppearance().mascot].header, "zs-header-icon"),
 			this.el(doc, "span", "zs-header-title", "Paper chat"),
+			// The paper's title stands in for Zotero's title bar, which the chat view hides.
+			this.el(doc, "span", "zs-header-paper"),
 			this.iconButton(doc, "zs-clarifications", "Clarifications of highlighted text", "clarifications",
 				() => this.openClarifications(root).catch(e => this.logError("openClarifications", e))),
 			this.iconButton(doc, "zs-search", "Search all chats", "search", () => this.openSearchMenu(root)),
 			this.iconButton(doc, "zs-history", "Previous chats", "history", () => this.openHistoryMenu(root)),
 			this.iconButton(doc, "zs-new-chat", "New chat", "newChat", () => this.newChat(root)),
 			this.iconButton(doc, "zs-open-settings", "Settings", "settings", () => this.openSettings()),
+			this.iconButton(doc, "zs-view-chat", "Fill the side pane with the chat", "expand", () => {
+				this.setView(doc, "chat");
+				root.querySelector(".zs-input")?.focus();
+			}),
+			this.iconButton(doc, "zs-view-details", "Back to the item details", "collapse", () => {
+				this.setView(doc, "details");
+				root.closest("item-details")?.scrollToPane?.(this.paneID, "instant");
+			}),
 		);
 
 		let log = this.el(doc, "div", "zs-log");
@@ -1661,6 +1762,13 @@ Zusia = {
 		return "\n\n[The user attached " + count + " to this message.]";
 	},
 
+	renderPaperTitle(root, info) {
+		let paper = root.querySelector(".zs-header-paper");
+		let title = info ? info.title || info.label : "";
+		paper.textContent = title;
+		paper.title = title;
+	},
+
 	renderPaperChip(root, info) {
 		let holder = root.querySelector(".zs-context");
 		if (!holder) {
@@ -2006,7 +2114,9 @@ Zusia = {
 			return;
 		}
 		this._views.set(root, view);
-		this.renderPaperChip(root, this.paperInfo(ctx));
+		let info = this.paperInfo(ctx);
+		this.renderPaperChip(root, info);
+		this.renderPaperTitle(root, info);
 		this.renderAttachments(view);
 		this.renderMessages(view, history);
 		this.applyJump(view);
@@ -2290,17 +2400,11 @@ Zusia = {
 			},
 		});
 		let win = reader._window || Zotero.getMainWindow();
-		// Open the side pane and bring the chat section into view.
-		try {
-			let pane = win.ZoteroContextPane;
-			if (pane && pane.collapsed) {
-				pane.togglePane();
-			}
-			pane?.sidenav?.container?.scrollToPane(this.paneID, "smooth");
+		let pane = win.ZoteroContextPane;
+		if (pane && pane.collapsed) {
+			pane.togglePane();
 		}
-		catch (e) {
-			this.log("askAboutSelection: could not reveal the sidebar: " + e);
-		}
+		this.revealChat(win);
 		for (let root of win.document.querySelectorAll(".zs-root")) {
 			let view = this._views.get(root);
 			if (view && view.ctx.dir === dir) {
@@ -3028,15 +3132,8 @@ Zusia = {
 		let win = Zotero.getMainWindow();
 		win.Zotero_Tabs?.select("zotero-pane");
 		await win.ZoteroPane.selectItem(item.id);
-		// Bring the sidebar section into view once the item pane has rendered it.
-		win.setTimeout(() => {
-			try {
-				win.document.getElementById("zotero-item-details")?.scrollToPane(this.paneID);
-			}
-			catch (e) {
-				this.log("scrollToPane failed: " + e);
-			}
-		}, 300);
+		// Once the item pane has rendered the paper's section.
+		win.setTimeout(() => this.revealChat(win), 300);
 	},
 
 	applyJump(view) {

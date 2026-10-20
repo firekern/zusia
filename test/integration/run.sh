@@ -1,7 +1,8 @@
 #!/bin/bash
-# Starts a separate, headless Zotero (Flatpak) with a throwaway profile and
-# library, loads Zusia straight from src/, and runs tester/bootstrap.js.
-# Your normal Zotero profile and library are never touched.
+# Starts a separate, headless Zotero (Flatpak on Linux, /Applications/Zotero.app
+# on macOS) with a throwaway profile and library, loads Zusia straight from src/,
+# and runs tester/bootstrap.js. Your normal Zotero profile and library are never
+# touched, and a Zotero you have open keeps running: -no-remote keeps them apart.
 # Results: test/integration/out/results.json and zotero-*.png
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -28,14 +29,29 @@ user_pref("extensions.zotero.sync.autoSync", false);
 user_pref("extensions.zusia-tester.outDir", "$out");
 user_pref("extensions.zusia-tester.repo", "$repo");
 user_pref("extensions.zusia-tester.live", $([ "${LIVE:-0}" = 1 ] && echo true || echo false));
+// The setup wizard would cover the screenshots; its steps are tested in jsdom.
+user_pref("extensions.zusia.onboarded", true);
+user_pref("ui.systemUsesDarkTheme", $([ "${DARK:-0}" = 1 ] && echo 1 || echo 0));
 PREFS
 
 # KEYRING=1 lets this test instance (only) reach the Secret Service keyring,
 # which Antigravity needs for its login inside the Flatpak sandbox.
-keyring=()
-[ "${KEYRING:-0}" = 1 ] && keyring=(--talk-name=org.freedesktop.secrets)
-timeout "${TIMEOUT:-420}" flatpak run "${keyring[@]}" --env=MOZ_HEADLESS=1 --env=MOZ_HEADLESS_WIDTH=1500 --env=MOZ_HEADLESS_HEIGHT=1400 \
-	org.zotero.Zotero -profile "$base/profile" -no-remote -ZoteroDebugText > "$out/zotero-debug.log" 2>&1 || true
+if [ "$(uname)" = Darwin ]; then
+	# macOS has no timeout(1): a watchdog kills this instance, and only this one, by its pid.
+	MOZ_HEADLESS=1 MOZ_HEADLESS_WIDTH=1500 MOZ_HEADLESS_HEIGHT=1400 \
+		"${ZOTERO_APP:-/Applications/Zotero.app}/Contents/MacOS/zotero" -profile "$base/profile" -no-remote -ZoteroDebugText \
+		> "$out/zotero-debug.log" 2>&1 &
+	pid=$!
+	(sleep "${TIMEOUT:-420}"; kill "$pid" 2>/dev/null) &
+	watchdog=$!
+	wait "$pid" || true
+	kill "$watchdog" 2>/dev/null || true
+else
+	keyring=()
+	[ "${KEYRING:-0}" = 1 ] && keyring=(--talk-name=org.freedesktop.secrets)
+	timeout "${TIMEOUT:-420}" flatpak run "${keyring[@]}" --env=MOZ_HEADLESS=1 --env=MOZ_HEADLESS_WIDTH=1500 --env=MOZ_HEADLESS_HEIGHT=1400 \
+		org.zotero.Zotero -profile "$base/profile" -no-remote -ZoteroDebugText > "$out/zotero-debug.log" 2>&1 || true
+fi
 
 if [ ! -f "$out/results.json" ]; then
 	echo "No results. Last debug lines:"

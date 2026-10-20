@@ -207,6 +207,53 @@ async function testSidebar(win, CS) {
 	CS.saveAppearance({ accent: "", bubble: "neutral", size: "default" });
 }
 
+// The chat view: Zusia's side-nav icon gives it the whole item pane, any other icon gives it back.
+async function testChatView(win, CS) {
+	let doc = win.document;
+	let details = doc.getElementById("zotero-item-details");
+	let button = await waitFor(() => [...doc.querySelectorAll("#zotero-item-pane item-pane-sidenav [data-pane]")]
+		.find(b => b.dataset.pane === CS.paneID), 10000, "Zusia's side-nav icon");
+	button.dispatchEvent(new win.MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 }));
+	await Zotero.Promise.delay(600);
+	let root = details.querySelector(".zs-root");
+	let column = details.querySelector(".zotero-view-item");
+	let colRect = column.getBoundingClientRect();
+	let rootRect = root.getBoundingClientRect();
+	let composer = root.querySelector(".zs-composer").getBoundingClientRect();
+	let log = root.querySelector(".zs-log");
+	let shown = el => !!el && el.getClientRects().length > 0 && win.getComputedStyle(el).display !== "none";
+	check("chat view: set on the window by Zusia's icon", doc.documentElement.getAttribute("data-zs-view") === "chat");
+	check("chat view: Zotero's title bar and the other sections step aside",
+		!shown(details.querySelector("item-pane-header")) && !shown(details.querySelector('[data-pane="info"]')) && !shown(details.querySelector('[data-pane="tags"]')),
+		{ header: shown(details.querySelector("item-pane-header")), info: shown(details.querySelector('[data-pane="info"]')) });
+	check("chat view: Zusia fills the pane's height", rootRect.top - colRect.top < 12 && colRect.bottom - rootRect.bottom < 12 && colRect.height > 600,
+		{ column: [Math.round(colRect.top), Math.round(colRect.bottom)], root: [Math.round(rootRect.top), Math.round(rootRect.bottom)] });
+	check("chat view: the composer sits at the bottom of the pane", colRect.bottom - composer.bottom < 24,
+		{ composerBottom: Math.round(composer.bottom), paneBottom: Math.round(colRect.bottom) });
+	check("chat view: only the conversation scrolls", column.scrollHeight <= column.clientHeight + 1 && log.scrollHeight > log.clientHeight,
+		{ column: [column.scrollHeight, column.clientHeight], log: [log.scrollHeight, log.clientHeight] });
+	let paper = root.querySelector(".zs-header-paper");
+	check("chat view: the header names the paper", shown(paper) && paper.textContent === "Integration test paper", paper.textContent);
+	check("chat view: a visible way back to the item details", shown(root.querySelector(".zs-view-details")) && !shown(root.querySelector(".zs-view-chat")));
+	await snapshot(win, "zotero-chat-view", (() => {
+		let r = doc.getElementById("zotero-item-pane").getBoundingClientRect();
+		return { x: r.x, y: r.y, width: r.width, height: r.height };
+	})());
+	await snapshot(win, "zotero-chat-view-window");
+
+	let info = [...doc.querySelectorAll("#zotero-item-pane item-pane-sidenav [data-pane]")].find(b => b.dataset.pane === "info");
+	info.dispatchEvent(new win.MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 }));
+	await Zotero.Promise.delay(600);
+	check("chat view: another section's icon brings the item details back",
+		doc.documentElement.getAttribute("data-zs-view") === "details" && shown(details.querySelector("item-pane-header"))
+			&& shown(details.querySelector('[data-pane="info"]')) && !shown(paper));
+	root.querySelector(".zs-view-chat").click();
+	await Zotero.Promise.delay(300);
+	check("chat view: the header button opens it too", doc.documentElement.getAttribute("data-zs-view") === "chat");
+	root.querySelector(".zs-view-details").click();
+	await Zotero.Promise.delay(300);
+}
+
 // A paper with a real PDF attachment. Zotero's reader cannot open headless and the
 // pane width cannot be forced here, so reader widths are covered by the harness.
 async function testReaderWidth(win, CS) {
@@ -383,6 +430,7 @@ async function run() {
 			links.length === 1 && /zusia\.css\?v=/.test(links[0].href), links.map(l => l.href));
 		let win = await waitFor(() => Zotero.getMainWindow() && Zotero.getMainWindow().ZoteroPane && Zotero.getMainWindow(), 30000, "main window");
 		await testSidebar(win, CS);
+		await testChatView(win, CS);
 		await testPrefs(CS);
 		await testReaderWidth(win, CS);
 		if (Zotero.Prefs.get("extensions.zusia-tester.live", true)) {
