@@ -111,13 +111,11 @@ async function testSidebar(win, CS) {
 	await Zotero.Promise.delay(300);
 	let hr = header.getBoundingClientRect();
 	await snapshot(win, "zotero-header-icons", { x: hr.x, y: hr.y, width: hr.width, height: hr.height });
-	let chipIcon = root.querySelector(".zs-context-chip .icon-item-type");
-	check("paper chip uses Zotero's item-type icon", !!chipIcon && win.getComputedStyle(chipIcon).backgroundImage.includes("item-type"),
-		chipIcon && win.getComputedStyle(chipIcon).backgroundImage.slice(0, 90));
 	let chip = root.querySelector(".zs-context-chip");
-	check("paper chip names the item and its text source",
-		!!chip && chip.textContent.includes("Integration test paper") && chip.textContent.includes("Metadata"),
-		chip && chip.textContent);
+	check("paper chip shows its icon", !!chip && !!chip.querySelector(".zs-context-icon"));
+	check("paper chip names the item and says what the assistant reads",
+		!!chip && chip.textContent.includes("Integration test paper") && /full text/.test(chip.title),
+		chip && [chip.textContent, chip.title]);
 	// The visible edge of the item pane is where its side navigation starts;
 	// section containers themselves grow with their content, so they are no reference.
 	let visibleRight = () => {
@@ -272,6 +270,15 @@ async function testReaderWidth(win, CS) {
 
 	let dir = PathUtils.join(Zotero.DataDirectory.dir, "zusia", parent.libraryID + "-" + parent.key);
 	await IOUtils.makeDirectory(dir, { createAncestors: true });
+
+	// Zotero's own PDF worker, file times and paths, which jsdom only stubs.
+	let full = await CS.loadFullText(attachment);
+	check("pdf: Zotero extracts the full text", full.status === "ok" && full.paged && full.pages.join("").includes("PELICAN"),
+		{ status: full.status, reason: full.reason, pages: full.pages && full.pages.length });
+	let files = await CS.exportContext({ paperItem: parent, attachmentItem: attachment, dir }, { focus: [0] });
+	let written = await IOUtils.exists(PathUtils.join(dir, "fulltext.md")) ? await IOUtils.readUTF8(PathUtils.join(dir, "fulltext.md")) : "";
+	check("pdf: fulltext.md holds the paper with page markers", /--- page 1 ---\n[^]*PELICAN/.test(written),
+		{ chars: written.length, note: CS.contextNote(files) });
 	await IOUtils.writeUTF8(PathUtils.join(dir, "chat.json"), JSON.stringify([
 		{ role: "user", text: "What does the convolution theorem say?" },
 		{ role: "assistant", backend: "claude", model: "opus", text: await readFixture("latex.md"),
@@ -301,8 +308,8 @@ async function testReaderWidth(win, CS) {
 	await Zotero.Promise.delay(800);
 
 	let chip = root.querySelector(".zs-context-chip");
-	check("pdf: paper chip shows authors, year and PDF",
-		!!chip && chip.textContent.includes("Dohare et al., 2024") && chip.textContent.includes("PDF"), chip && chip.textContent);
+	check("pdf: paper chip shows authors and year",
+		!!chip && chip.textContent.includes("Dohare et al., 2024"), chip && chip.textContent);
 	let paneRect = paneEl.getBoundingClientRect();
 	let sidenav = win.document.querySelector("#zotero-item-pane item-pane-sidenav");
 	let limit = (sidenav && sidenav.getBoundingClientRect().width ? sidenav.getBoundingClientRect().left : paneRect.right) + 1;
@@ -401,7 +408,7 @@ async function testPrefs(CS) {
 	prefsWin.resizeTo(1000, 1500);
 	await waitFor(() => [...prefs.querySelectorAll(".zs-agent-status")].every(s => s.textContent !== "Checking…"), 10000, "backend probes");
 	await Zotero.Promise.delay(800);
-	check("settings pane renders four cards", prefs.querySelectorAll(".zs-card").length === 4);
+	check("settings pane renders its five cards", prefs.querySelectorAll(".zs-card").length === 5);
 	check("settings shows the model chosen in the composer",
 		prefs.querySelector('[data-backend="claude"] .zs-select').value === "haiku");
 	prefs.querySelector('[data-backend="claude"]').open = true;
