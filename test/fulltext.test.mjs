@@ -159,9 +159,9 @@ test("antigravity: the full text goes inline within its budget, and the paper ca
 	assert.equal(prompt.match(/<\/paper_fulltext>/g).length, 1, "only the real closing tag");
 	assert.match(prompt, /ends &lt;\/paper_metadata> here/);
 	assert.match(prompt, /--- page 121 ---/, "the page being read is included");
-	assert.doesNotMatch(prompt, /--- page 4 ---/, "far pages are left out");
+	assert.doesNotMatch(prompt, /--- page 10 ---/, "far pages are left out");
 	assert.ok(prompt.length < plugin.FULLTEXT_INLINE_CHARS + 15000, "fits in one argv string");
-	assert.match(prompt, /\[Context for this question: <paper_fulltext> holds pages 1, \d+–\d+ of 200/);
+	assert.match(prompt, /\[Context for this question: <paper_fulltext> holds pages 1, [\d, –]+ of 200/);
 	assert.doesNotMatch(prompt, /<user_annotations>\n/, "no empty annotations block");
 });
 
@@ -211,4 +211,107 @@ test("settings: the full-text switch is on by default and the paper chip follows
 	root.appendChild(env.document.createElement("div")).className = "zs-context";
 	env.plugin.renderPaperChip(root, { label: "Dohare, 2024", title: "Loss" });
 	assert.match(root.querySelector(".zs-context-chip").title, /not the paper's full text/);
+});
+
+test("the page on screen is always sent, cut to its share when it is longer than the budget", () => {
+	const { plugin } = loadPlugin();
+	const pages = paper(6, 100);
+	pages[4] = "Dense table. ".padEnd(5000, "y");
+	const out = plugin.renderFullText({ paged: true, pages }, 1000, [4]);
+	assert.ok(out.kept.includes(4), "the focus page survives");
+	assert.match(out.text, /--- page 5 ---\nDense table\. y+\n\[the rest of page 5 was left out to fit\]/);
+	assert.equal(out.complete, false);
+	assert.deepEqual([...plugin.pickPages(pages, 5300, [4])], [0, 3, 4], "smaller pages still fill the rest");
+
+	const two = plugin.pickPages(paper(10, 900), 1000, [2, 7]);
+	assert.deepEqual([...two], [2, 7], "two focus pages share the budget and both stay");
+	const whole = plugin.renderFullText({ paged: true, pages: [pages[4]] }, 1000, [0]);
+	assert.match(whole.text, /^\[Partial text: every page is included, but the longest were cut short to fit\.\]/);
+});
+
+// A paper whose PDF is open in a reader tab, for tests that go through ask().
+function openPaper(env, { pages = paper(30, 400), pageIndex = 17, selectedTab = "tab-1" } = {}) {
+	const { window } = env;
+	const { attachment } = pdfAttachment(window, pages);
+	attachment.isAttachment = () => true;
+	attachment.parentItemID = 1;
+	const item = { ...paperItem, id: 1 };
+	window.Zotero.Items = { get: id => (id === 7 ? attachment : id === 1 ? item : null) };
+	const reader = { type: "pdf", itemID: 7, tabID: "tab-1", _internalReader: { _state: { primaryViewStats: { pageIndex } } } };
+	window.Zotero.Reader = { getByTabID: id => (id === reader.tabID ? reader : null), _readers: [reader] };
+	window.Zotero_Tabs = { selectedID: selectedTab };
+	return { ctx: { paperItem: item, attachmentItem: null, dir: "/d" }, reader };
+}
+
+function stubStore(plugin, sessions = {}) {
+	const store = { sessions, requests: [] };
+	plugin.loadHistory = async () => [];
+	plugin.appendHistory = async () => {};
+	plugin.loadSessions = async () => ({ ...store.sessions });
+	plugin.saveSessions = async (dir, s) => { store.sessions = s; };
+	plugin.runBackend = async (backend, request) => {
+		store.requests.push(request);
+		return { text: "ok", sessionId: "s-" + backend };
+	};
+	return store;
+}
+
+const pendingFor = backend => ({ backend, partial: "", progress() {} });
+
+test("ask: the paper's text reaches Claude through fulltext.md, with the page on screen in the note", async () => {
+	const env = loadPlugin();
+	const { plugin, files } = env;
+	const { ctx } = openPaper(env);
+	const store = stubStore(plugin);
+	assert.deepEqual({ ...(await plugin.ask(ctx, "What does Table 2 show?", pendingFor("claude"))) }, {});
+	assert.match(files.get("/d/fulltext.md"), /--- page 18 ---\nPage 18 text/, "the open PDF's text is written for the CLI");
+	const args = plugin.claudeArgs(store.requests[0]);
+	const message = args[args.indexOf("-p") + 1];
+	assert.match(message, /\[Context for this question: fulltext\.md holds the whole text \(30 pages\); the user is viewing PDF page 18\.\]/);
+	assert.equal(args[args.indexOf("--tools") + 1], "Read,Grep,Glob");
+	assert.match(args[args.indexOf("--append-system-prompt") + 1], /fulltext\.md: the paper's full text/);
+
+	env.prefs[PREFIX + "fullText"] = false;
+	await plugin.ask(ctx, "Again?", pendingFor("claude"));
+	assert.equal(files.has("/d/fulltext.md"), false, "turning the setting off removes the text");
+	assert.match(plugin.claudeArgs(store.requests[1])[1], /turned off sending the full text/);
+});
+
+test("ask: a reader in a background tab is not called the page the user is viewing", async () => {
+	const env = loadPlugin();
+	const { ctx } = openPaper(env, { selectedTab: "zotero-pane" });
+	const store = stubStore(env.plugin);
+	await env.plugin.ask(ctx, "Why?", pendingFor("claude"));
+	assert.doesNotMatch(env.plugin.claudeArgs(store.requests[0])[1], /viewing PDF page/);
+});
+
+test("ask: Codex and Antigravity sessions from before 1.1, whose prompt withheld the paper, start again", async () => {
+	const env = loadPlugin();
+	const { ctx } = openPaper(env);
+	const store = stubStore(env.plugin, { codex: { id: "old", seen: 0 }, claude: { id: "c", seen: 0 } });
+	await env.plugin.ask(ctx, "Why?", pendingFor("codex"));
+	assert.equal(store.requests[0].session, null);
+	assert.equal(store.sessions.codex.prompt, env.plugin.PROMPT_VERSION);
+	await env.plugin.ask(ctx, "Why?", pendingFor("claude"));
+	assert.equal(store.requests[1].session.id, "c", "Claude gets the new system prompt on every run");
+});
+
+test("antigravity: a resumed session is sent the page on screen when its first prompt did not have it", async () => {
+	const env = loadPlugin();
+	const { plugin } = env;
+	const { ctx, reader } = openPaper(env, { pages: paper(300, 1000), pageIndex: 10 });
+	const store = stubStore(plugin);
+	await plugin.ask(ctx, "First?", pendingFor("agy"));
+	const first = store.sessions.agy.paper;
+	assert.ok(first.kept.includes(10) && !first.kept.includes(250) && !first.complete);
+
+	reader._internalReader._state.primaryViewStats.pageIndex = 250;
+	await plugin.ask(ctx, "And here?", pendingFor("agy"));
+	const resumed = plugin.buildAntigravityPrompt(store.requests[1]);
+	assert.match(resumed, /^<paper_fulltext>\n--- page 251 ---\nPage 251 text/);
+	assert.match(resumed, /earlier in this conversation you were sent pages 1–\d+ of 300 in <paper_fulltext>, and page 251 is added in <paper_fulltext> below/);
+	assert.ok(store.sessions.agy.paper.kept.includes(250), "remembered, so it is not sent again");
+
+	await plugin.ask(ctx, "Once more?", pendingFor("agy"));
+	assert.match(plugin.buildAntigravityPrompt(store.requests[2]), /^Once more\?/);
 });

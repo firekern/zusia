@@ -180,7 +180,7 @@ test("answer language: saved from Chat settings and used in every prompt", () =>
 	change(window, select, "Italiano");
 	assert.equal(prefs[PREFIX + "language"], "Italiano");
 	assert.match(plugin.systemPrompt(), /Reply in Italiano, even when the question, a quoted passage or the paper is in another language/);
-	assert.match(plugin.formattingReminder(), /Reply in Italiano\.\)$/);
+	assert.match(plugin.formattingReminder(), /Reply in Italiano unless this message asks for another language\.\)$/);
 	assert.match(plugin.buildAntigravityPrompt({ files: { metadata: "# T\n", annotations: "" }, question: "Why?", history: [], session: null }), /Reply in Italiano, even when/);
 	prefs[PREFIX + "language"] = "Klingon";
 	assert.equal(plugin.getLanguage(), "", "unknown values fall back to the question's language");

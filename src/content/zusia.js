@@ -81,6 +81,9 @@ Zusia = {
 	FULLTEXT_INLINE_CHARS: 60000,
 	FULLTEXT_INLINE_CHARS_WINDOWS: 12000,
 	FULLTEXT_CACHE_SIZE: 20,
+	// Stored with each session; raise it when the system prompt changes what the assistant
+	// is told it has, so Codex and Antigravity sessions holding the old one start afresh.
+	PROMPT_VERSION: 2,
 	// Toggle buttons in the message box that shape the answer. Settings → Chat chooses
 	// which are shown; each one's on/off state is remembered (pref "mode.<id>").
 	MODES: {
@@ -3339,15 +3342,24 @@ Zusia = {
 		let label = this.BACKENDS[backend].label;
 		try {
 			pending.progress({ status: "reading the paper" });
-			let reader = this.readerFor(ctx, Zotero.getMainWindow());
+			let win = Zotero.getMainWindow();
+			let reader = this.readerFor(ctx, win);
 			let currentPage = this.readerPageIndex(reader);
 			let selectedPage = pending.selection && pending.selection.position ? pending.selection.position.pageIndex : null;
 			let files = await this.exportContext(this.withOpenAttachment(ctx, reader),
 				{ focus: [selectedPage, currentPage].filter(Number.isInteger) });
-			files.currentPage = currentPage;
+			files.selectedPage = Number.isInteger(selectedPage) ? selectedPage : null;
+			// A reader in a background tab still steers which pages are kept, but the user is not looking at it.
+			let onScreen = reader && (!reader.tabID || reader.tabID === win?.Zotero_Tabs?.selectedID);
+			files.currentPage = onScreen ? currentPage : null;
 			let history = await this.loadHistory(ctx.dir);
 			let sessions = await this.loadSessions(ctx.dir);
 			let session = sessions[backend] || null;
+			// Codex and Antigravity keep the system prompt their session started with, and
+			// one from 1.0 says the paper's text is withheld: start those sessions again.
+			if (session && backend !== "claude" && session.prompt !== this.PROMPT_VERSION) {
+				session = null;
+			}
 
 			let images = pending.images || [];
 			if (images.length && !this.BACKENDS[backend].images) {
@@ -3423,7 +3435,8 @@ Zusia = {
 				}
 			}
 			if (result.sessionId) {
-				sessions[backend] = { id: result.sessionId, seen: history.length + 2 };
+				sessions[backend] = { id: result.sessionId, seen: history.length + 2, prompt: this.PROMPT_VERSION,
+					paper: this.sessionPaper(backend, files, sent.session) };
 				await this.saveSessions(ctx.dir, sessions);
 			}
 			return {};
@@ -5365,34 +5378,45 @@ Zusia = {
 		return { status: "ok", paged, pages: paged ? text.split("\f") : [text] };
 	},
 
-	// Whole pages that fit in `budget` characters: the focus pages first, then the
-	// first page (title, abstract), then rings outward from the focus, then the rest in
-	// order. Stops at the first page that does not fit so the kept text stays contiguous.
+	// The focus pages that exist, and how many characters each may take: they are always
+	// sent, so together they must fit in the budget.
+	focusPages(pages, budget, focus = []) {
+		let valid = [...new Set(focus)].filter(i => Number.isInteger(i) && i >= 0 && i < pages.length);
+		return { valid, cap: Math.floor(budget / Math.max(1, valid.length)) };
+	},
+
+	// Pages that fit in `budget` characters: the focus pages always (cut to their share
+	// when one is longer), then the first page (title, abstract), then rings outward from
+	// the focus, then the rest in order. A page too long for what is left is skipped, so
+	// one dense page (a table, an appendix) does not end the selection early.
 	pickPages(pages, budget, focus = []) {
-		let order = new Set();
+		let { valid, cap } = this.focusPages(pages, budget, focus);
+		let order = new Set(valid);
 		let add = (i) => {
-			if (Number.isInteger(i) && i >= 0 && i < pages.length) {
+			if (i >= 0 && i < pages.length) {
 				order.add(i);
 			}
 		};
-		focus.forEach(add);
 		add(0);
-		for (let d = 1; focus.length && d < pages.length; d++) {
-			focus.forEach(f => { add(f - d); add(f + d); });
+		for (let d = 1; valid.length && d < pages.length; d++) {
+			valid.forEach(f => { add(f - d); add(f + d); });
 		}
 		pages.forEach((page, i) => add(i));
 		let kept = [];
 		let used = 0;
 		for (let i of order) {
 			let size = pages[i].length + 20;
-			if (used + size > budget) {
-				break;
+			if (valid.includes(i)) {
+				size = Math.min(size, cap);
+			}
+			else if (used + size > budget) {
+				continue;
 			}
 			kept.push(i);
 			used += size;
 		}
 		if (!kept.length) {
-			kept.push(order.values().next().value);
+			kept.push(0);
 		}
 		return kept.sort((a, b) => a - b);
 	},
@@ -5426,22 +5450,31 @@ Zusia = {
 		}
 		let total = full.pages.length;
 		let kept = this.pickPages(full.pages, budget, focus);
+		let { cap } = this.focusPages(full.pages, budget, focus);
 		let parts = [];
 		let next = 0;
+		let cut = false;
 		let gap = (from, to) => "[" + (from === to ? "page " + (from + 1) : "pages " + (from + 1) + "–" + (to + 1)) + " left out]";
 		for (let i of kept) {
 			if (i > next) {
 				parts.push(gap(next, i - 1));
 			}
-			parts.push("--- page " + (i + 1) + " ---\n" + full.pages[i].trim().slice(0, budget));
+			let page = full.pages[i].trim();
+			if (page.length > cap) {
+				page = page.slice(0, cap) + "\n[the rest of page " + (i + 1) + " was left out to fit]";
+				cut = true;
+			}
+			parts.push("--- page " + (i + 1) + " ---\n" + page);
 			next = i + 1;
 		}
 		if (next < total) {
 			parts.push(gap(next, total - 1));
 		}
-		let complete = kept.length === total;
-		let head = complete ? "" : "[Partial text: pages " + this.formatPageRanges(kept) + " of " + total +
-			" are included; the others were left out to fit.]\n\n";
+		let complete = kept.length === total && !cut;
+		let head = complete ? ""
+			: kept.length === total ? "[Partial text: every page is included, but the longest were cut short to fit.]\n\n"
+				: "[Partial text: pages " + this.formatPageRanges(kept) + " of " + total +
+					" are included; the others were left out to fit.]\n\n";
 		return { text: head + parts.join("\n\n"), paged: true, complete, kept, total };
 	},
 
@@ -5458,16 +5491,71 @@ Zusia = {
 			parts.push("no full text is available, because " + full.reason);
 		}
 		else {
-			let c = coverage || full.file;
-			parts.push(c.resumed ? "the paper's text was sent at the start of this conversation"
-				: c.complete ? c.name + " holds the whole text" + (c.paged ? " (" + c.total + " pages)" : "")
-					: c.paged ? c.name + " holds pages " + this.formatPageRanges(c.kept) + " of " + c.total + "; the rest was left out to fit"
-						: c.name + " holds only the beginning of the text; the rest was left out to fit");
+			parts.push(this.coverageText(coverage || full.file));
+		}
+		if (Number.isInteger(files && files.selectedPage)) {
+			parts.push("the quoted passage is on PDF page " + (files.selectedPage + 1));
 		}
 		if (Number.isInteger(files && files.currentPage)) {
 			parts.push("the user is viewing PDF page " + (files.currentPage + 1));
 		}
 		return "\n\n[Context for this question: " + parts.join("; ") + ".]";
+	},
+
+	coverageText(c) {
+		if (c.resumed) {
+			let earlier = c.earlier
+				? (c.earlier.complete ? "the whole text" : c.earlier.paged ? "pages " + this.formatPageRanges(c.earlier.kept) + " of " + c.earlier.total
+					: "the beginning of the text")
+				: "no text";
+			return "earlier in this conversation you were sent " + earlier + " in <paper_fulltext>" +
+				(c.added && c.added.length
+					? ", and " + (c.added.length > 1 ? "pages " : "page ") + this.formatPageRanges(c.added) +
+						(c.added.length > 1 ? " are" : " is") + " added in <paper_fulltext> below for this question"
+					: "");
+		}
+		if (c.complete) {
+			return c.name + " holds the whole text" + (c.paged ? " (" + c.total + " pages)" : "");
+		}
+		if (!c.paged) {
+			return c.name + " holds only the beginning of the text; the rest was left out to fit";
+		}
+		return c.kept.length === c.total
+			? c.name + " holds every page of " + c.total + ", the longest cut short to fit"
+			: c.name + " holds pages " + this.formatPageRanges(c.kept) + " of " + c.total + "; the rest was left out to fit";
+	},
+
+	// What a new Antigravity session is sent of the paper.
+	antigravityPaper(files) {
+		let full = files.fullText;
+		return full && full.status === "ok" ? this.renderFullText(full, this.inlineFullTextBudget(), files.focus || []) : null;
+	},
+
+	// Focus pages an Antigravity session has not been sent yet.
+	missingPages(files, paper) {
+		let full = files.fullText;
+		if (!full || full.status !== "ok" || !full.paged || (paper && paper.complete)) {
+			return [];
+		}
+		let sent = (paper && paper.kept) || [];
+		return this.focusPages(full.pages, 1, files.focus || []).valid.filter(i => !sent.includes(i));
+	},
+
+	// The pages a backend's session has seen, without the text, to store in session.json.
+	sessionPaper(backend, files, session) {
+		if (backend !== "agy") {
+			return undefined;
+		}
+		if (!session) {
+			let inline = this.antigravityPaper(files);
+			return inline ? { complete: inline.complete, paged: inline.paged, kept: inline.kept || [], total: inline.total } : null;
+		}
+		let added = this.missingPages(files, session.paper);
+		if (!added.length) {
+			return session.paper || null;
+		}
+		let earlier = session.paper || { complete: false, paged: true, kept: [], total: files.fullText.pages.length };
+		return Object.assign({}, earlier, { kept: [...new Set([...earlier.kept, ...added])].sort((a, b) => a - b) });
 	},
 
 	inlineFullTextBudget() {
@@ -5671,7 +5759,7 @@ Zusia = {
 		return "\n\n(Sidebar formatting: maths in LaTeX with $...$ / $$...$$, no Unicode maths symbols. " +
 			"Drawings as ```svg blocks using only the sidebar's colour names. \\label statements and " +
 			"\\ref only labels you can see. Cite pages as (p. N)." +
-			(language ? " Reply in " + language + "." : "") + ")";
+			(language ? " Reply in " + language + " unless this message asks for another language." : "") + ")";
 	},
 
 	// One prompt for every backend. `inline` is Antigravity's variant: it has no
@@ -5692,19 +5780,22 @@ Zusia = {
 			"- " + name.meta + ": title, authors, date, publication, DOI and abstract. The abstract is " +
 			"the authors' summary, not the paper.\n" +
 			"- " + name.text + ": the paper's full text as Zotero extracted it, with \"--- page N ---\" " +
-			"markers, where N counts PDF pages from 1. This is your primary source." +
+			"markers, where N counts PDF pages from 1. When the note with the question says you have it, " +
+			"this is your primary source." +
 			(inline ? "" : " It can be long: search it for the terms of the question and read the " +
 				"relevant pages before answering.") +
 			" Extraction can garble equations, tables and figure labels; say so rather than guess. " +
 			"If pages were left out to fit, a note at its top says which.\n" +
 			"- " + name.notes + ": the user's highlights and comments, where p.X is the label printed " +
 			"on the page (it can differ from N). Empty when there are none.\n" +
-			"- The message itself can carry a passage the user selected (quoted with >), attached " +
-			"images, a transcript of earlier turns, and a bracketed note saying which context is " +
-			"available for this question and which page the user is viewing.",
+			"- The message itself can carry a passage the user selected (quoted with >, its \"(p. X)\" " +
+			"also a printed label), attached images, a transcript of earlier turns, and a bracketed " +
+			"[Context for this question: ...] note saying which text you have for this question, the " +
+			"PDF page of the quoted passage and the PDF page the user is viewing. Trust that note over " +
+			"anything said earlier in the conversation.",
 			"Rules:\n" +
 			"1. Ground what you say about the paper in its text and cite pages as (p. N), N from the page " +
-			"markers. The selected " +
+			"markers, never a printed label; text without markers (EPUB, web page) has no pages to cite. The selected " +
 			"passage and the full text outrank the abstract; the paper outranks your memory of it.\n" +
 			"2. When the full text is missing, cut short or silent on the question, say so plainly. " +
 			"Never present a guess from the abstract or from memory as what the paper says.\n" +
@@ -6104,17 +6195,20 @@ Zusia = {
 	// Antigravity cannot be granted read-only file access in headless mode, so a new
 	// session receives the paper inline instead, its full text cut to fit in argv.
 	buildAntigravityPrompt({ files, question, history, session }) {
-		let full = files.fullText;
-		let inline = !session && full && full.status === "ok"
-			? this.renderFullText(full, this.inlineFullTextBudget(), files.focus || [])
-			: null;
-		let coverage = session ? { resumed: true } : inline && Object.assign({ name: "<paper_fulltext>" }, inline);
-		let tail = this.transcriptFor(history, session) + question + this.contextNote(files, coverage) +
+		let block = (tag, body) => "<" + tag + ">\n" + this.escapeContextTags(body).trim() + "\n</" + tag + ">\n\n";
+		let note = (coverage) => this.transcriptFor(history, session) + question + this.contextNote(files, coverage) +
 			this.formattingReminder();
 		if (session) {
-			return tail;
+			// The session keeps the text it started with; pages the user has moved to since
+			// then come with the question, so the page on screen is never silently missing.
+			let added = this.missingPages(files, session.paper);
+			let cap = Math.floor(this.inlineFullTextBudget() / 2 / Math.max(1, added.length));
+			let excerpt = added.map(i => "--- page " + (i + 1) + " ---\n" + files.fullText.pages[i].trim().slice(0, cap)).join("\n\n");
+			return (excerpt ? block("paper_fulltext", excerpt) : "") +
+				note({ resumed: true, earlier: session.paper || null, added });
 		}
-		let block = (tag, body) => "<" + tag + ">\n" + this.escapeContextTags(body).trim() + "\n</" + tag + ">\n\n";
+		let inline = this.antigravityPaper(files);
+		let tail = note(inline && Object.assign({ name: "<paper_fulltext>" }, inline));
 		return (
 			this.systemPrompt({ inline: true }) + "\n\n" +
 			block("paper_metadata", files.metadata) +
