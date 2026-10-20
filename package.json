@@ -1,7 +1,7 @@
 {
 	"name": "zusia",
 	"private": true,
-	"version": "1.0.0",
+	"version": "1.1.0",
 	"description": "Zusia, a study buddy for Zotero: chat with Claude Code, Codex or Antigravity about the paper you are reading.",
 	"type": "module",
 	"scripts": {
