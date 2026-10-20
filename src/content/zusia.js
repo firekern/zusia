@@ -5367,7 +5367,10 @@ Zusia = {
 			text = await attachment.attachmentText;
 		}
 		text = text || "";
-		if (text.replace(/\s+/g, "").length < 200) {
+		let pages = paged ? text.split("\f") : [text];
+		// A scan yields almost nothing per page (a download stamp at most), while a short
+		// real paper, one page of abstract, still has a few hundred characters.
+		if (text.replace(/\s+/g, "").length < 50 * pages.length) {
 			return {
 				status: "none",
 				reason: paged
@@ -5375,7 +5378,7 @@ Zusia = {
 					: "Zotero extracted no text from the attachment",
 			};
 		}
-		return { status: "ok", paged, pages: paged ? text.split("\f") : [text] };
+		return { status: "ok", paged, pages };
 	},
 
 	// The focus pages that exist, and how many characters each may take: they are always

@@ -90,6 +90,9 @@ test("the PDF is extracted once per file version, and scans or failures say why 
 	const scan = pdfAttachment(window, ["", " ", "\n"], { id: 8 });
 	assert.match((await plugin.loadFullText(scan.attachment)).reason, /no text layer/);
 
+	const short = pdfAttachment(window, ["Title of a one-page abstract. The secret word of this paper is PELICAN."], { id: 11 });
+	assert.equal((await plugin.loadFullText(short.attachment)).status, "ok", "a short real page is not a scan");
+
 	const broken = pdfAttachment(window, [], { id: 9 });
 	window.Zotero.PDFWorker.getFullText = async () => { throw new Error("password required"); };
 	const failed = await plugin.loadFullText(broken.attachment);
