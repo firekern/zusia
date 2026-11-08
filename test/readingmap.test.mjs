@@ -150,6 +150,7 @@ function bigBook() {
 	return pages;
 }
 const BIG = bigBook();
+const BIG_LABELS = M.inferPageLabels(BIG);
 
 // ---------------------------------------------------------------- page labels
 
@@ -197,6 +198,22 @@ test("labels: anchors override, agree, or stand alone", () => {
 	assert.ok(anchored.confidence >= 0.8);
 });
 
+test("labels: an anchor that contradicts the folios on its page is dropped and reported", () => {
+	// Zotero reports the PDF number as the label when the PDF has none.
+	const pdfNumber = M.inferPageLabels(BOOK, [{ pageIndex: idx(20), label: String(idx(20) + 1) }]);
+	assert.equal(pdfNumber.labels[idx(20)], "20");
+	assert.equal(M.labelToIndex(pdfNumber, "20"), idx(20), "the printed page stays reachable");
+	assert.equal(M.labelToIndex(pdfNumber, String(idx(20) + 1)), idx(idx(20) + 1), "no duplicate label in the run");
+	assert.deepEqual(plain(pdfNumber.conflicts), [{ pageIndex: idx(20), label: String(idx(20) + 1) }]);
+	assert.ok(pdfNumber.confidence >= 0.95);
+
+	const neighbour = M.inferPageLabels(BOOK, [{ pageIndex: idx(20), label: "21" }]);
+	assert.equal(M.labelToIndex(neighbour, "21"), idx(21));
+	assert.equal(M.labelToIndex(neighbour, "20"), idx(20));
+	assert.equal(neighbour.conflicts.length, 1);
+	assert.equal(M.inferPageLabels(BOOK, [{ pageIndex: idx(20), label: "20" }]).conflicts.length, 0);
+});
+
 test("labels: a handful of folios in a long text stays below the marker threshold", () => {
 	const pages = Array.from({ length: 200 }, (_, i) => "Body of this page\n" + filler("noise", 300));
 	for (let i = 10; i < 15; i++) {
@@ -237,6 +254,11 @@ test("page text that would forge a marker gets a zero-width space", () => {
 	assert.ok(!/^\s*---\s*page/im.test(safe));
 });
 
+test("a marker behind a no-break space or after blank lines is neutralised too", () => {
+	const safe = M.escapeMarkers("\u00a0--- page 5 ---\n\n\u2003---page 6---\n\n--- page 7 ---");
+	assert.deepEqual(safe.split("\n"), ["\u200b\u00a0--- page 5 ---", "", "\u200b\u2003---page 6---", "", "\u200b--- page 7 ---"]);
+});
+
 // ---------------------------------------------------------------- outline
 
 test("the printed table of contents is parsed, dot leaders and joined lines alike", () => {
@@ -261,6 +283,17 @@ test("toc parsing skips stray numbers between entries and needs a contents page"
 	const entries = plain(M.parsePrintedToc([toc]));
 	assert.deepEqual(entries.map(e => e.id), ["2.10", "2.11", "3", "3.0", "A", "index"]);
 	assert.deepEqual(plain(M.parsePrintedToc(["1 Introduction 1\n2 Methods 3\n3 Results 5"])), [], "no contents page, no leaders");
+});
+
+test("toc titles keep short words that look roman; a roman page needs leaders or the line end", () => {
+	const italian = "Indice\n1 Introduzione . . . . . 1\n2 Segnali e i sistemi lineari . . . . 12\n2.1 I segnali . . . . 12\n2.2 Proprietà dei sistemi . . . . 15";
+	assert.deepEqual(plain(M.parsePrintedToc([italian])).map(e => [e.id, e.title, e.label]), [
+		["1", "Introduzione", "1"], ["2", "Segnali e i sistemi lineari", "12"], ["2.1", "I segnali", "12"], ["2.2", "Proprietà dei sistemi", "15"],
+	]);
+	const civil = "Contents\n1 Intro . . . 1\n2 Signals in civil engineering . . . 5\n3 More . . . 9";
+	assert.deepEqual(plain(M.parsePrintedToc([civil])).map(e => e.title), ["Intro", "Signals in civil engineering", "More"]);
+	const roman = "Contents\n1 Notation xi\n2 Symbols . . . xiv\n3 Start 1\n4 Next 9";
+	assert.deepEqual(plain(M.parsePrintedToc([roman])).map(e => e.label), ["xi", "xiv", "1", "9"]);
 });
 
 test("toc entries whose title is not on the target page are rejected; ranges cover all pages", () => {
@@ -298,6 +331,22 @@ test("outlineRanges resolves labels, drops entries out of order and falls back t
 
 	const chunks = plain(M.outlineRanges([], structure, 45, { chunk: 20 }));
 	assert.deepEqual(chunks.map(e => [e.title, e.start, e.end]), [["Pages 1–20", 0, 19], ["Pages 21–40", 20, 39], ["Pages 41–45", 40, 44]]);
+});
+
+test("outlineRanges keeps top-level ranges disjoint when two start on one page", () => {
+	const outline = plain(M.outlineRanges([
+		{ id: "1", title: "A", level: 1, start: 0 },
+		{ id: "2", title: "B", level: 1, start: 3 },
+		{ id: "3", title: "C", level: 1, start: 3 },
+		{ id: "3.1", title: "C1", level: 2, start: 5 },
+		{ id: "3.2", title: "C2", level: 2, start: 5 },
+		{ id: "3.3", title: "C3", level: 2, start: 7 },
+	], null, 10));
+	const top = outline.filter(e => e.level === 1);
+	assert.deepEqual(top.map(e => [e.id, e.start, e.end]), [["1", 0, 2], ["3", 3, 9]]);
+	// Two subsections that both begin on page 5 both hold it; the later one is where it ends.
+	assert.deepEqual(outline.filter(e => e.level === 2).map(e => [e.id, e.start, e.end]), [["3.1", 5, 5], ["3.2", 5, 6], ["3.3", 7, 9]]);
+	assert.equal(M.sectionOf(outline, 5).id, "3.2");
 });
 
 test("numbered headings are found when there is no table of contents", () => {
@@ -417,6 +466,29 @@ test("a 1132-page book splits into files no Read call truncates", () => {
 	}
 });
 
+test("a page longer than a file splits by characters, and long titles still fit", () => {
+	const lines = Array.from({ length: 2500 }, (_, k) => "line " + k + " " + "a".repeat(14)).join("\n");
+	const pages = [lines, "b".repeat(100)];
+	const files = plain(M.splitSections(pages, M.outlineRanges([], null, 2), M.SECTION_CHARS));
+	assert.ok(files.length >= 2);
+	for (const file of files) {
+		assert.ok(M.renderSectionFile(pages, file, null).length <= M.SECTION_CHARS.max, file.name);
+	}
+	const parts = files.filter(f => f.start === 0 && f.end === 0);
+	assert.ok(parts.length >= 2);
+	assert.equal(parts.map(f => pages[0].slice(f.from, f.to)).join(""), pages[0], "the parts are the page");
+	assert.ok(parts.slice(0, -1).every(f => pages[0][f.to - 1] === "\n"), "cut at a line end");
+	assert.ok(M.renderSectionFile(pages, parts[1], null).includes("characters " + (parts[1].from + 1) + "–" + parts[1].to));
+	assert.deepEqual(files.map(f => f.end).slice(-1), [1]);
+
+	const title = "A".repeat(150);
+	const wide = Array.from({ length: 40 }, () => "w".repeat(2200));
+	const outline = M.outlineRanges([{ id: "12.10.3", title, level: 1, start: 0 }], null, 40);
+	for (const file of M.splitSections(wide, outline, M.SECTION_CHARS)) {
+		assert.ok(M.renderSectionFile(wide, file, BIG_LABELS).length <= M.SECTION_CHARS.max, file.title);
+	}
+});
+
 // ---------------------------------------------------------------- objects and refs
 
 test("indexObjects records where things are defined, not where they are cited", () => {
@@ -440,6 +512,15 @@ test("findObjectRefs reads English and Italian forms", () => {
 	assert.deepEqual(refs("Section 2.3, §4.1, sezione 5.2, chapter 3"), ["section:2.3", "section:4.1", "section:5.2", "section:3"]);
 	assert.deepEqual(refs("talk about p. 18, then pagina 20 and pp. 30–32, page xv"), ["page:18", "page:20", "page:30", "page:31", "page:32", "page:xv"]);
 	assert.deepEqual(refs("nothing here, happy 2024"), []);
+});
+
+test("findObjectRefs does not read maths words as pages", () => {
+	const refs = text => plain(M.findObjectRefs(text)).map(r => r.kind + ":" + (r.id || r.label));
+	assert.deepEqual(refs("why is the DTFT periodic with period 2 pi? and the poles p1 and p2, also PC"), []);
+	assert.deepEqual(refs("spiegami il pi greco"), []);
+	assert.deepEqual(refs("what is the pole p1"), []);
+	assert.deepEqual(refs("nella pagina i grafici, Page 12, P. 13, p 14, p. xv, pagina xii"), ["page:12", "page:13", "page:14", "page:xv", "page:xii"]);
+	assert.deepEqual(refs("page I mean"), []);
 });
 
 // ---------------------------------------------------------------- search
@@ -584,8 +665,36 @@ test("selectPages: the opener is the first section start the context pages miss;
 	assert.equal(reason(9), undefined, "a blank page says nothing");
 });
 
-test("a printed page that is not in a trusted book resolves to nothing", () => {
-	assert.equal(M.pageIndexFor(OUTLINE, "55", BOOK.length), null, "PDF page 55 exists, printed 55 does not");
+test("selectPages: a cited figure whose page is only a short caption is still sent", () => {
+	const pages = Array.from({ length: 20 }, (_, i) => "Body of page " + i + " " + "words ".repeat(60));
+	pages[12] = "Figure 2.7 Graph of x[n].";
+	const structure = { labels: [], confidence: 0, outline: [], objects: M.indexObjects(pages) };
+	const list = plain(M.selectPages({ pages, structure, query: "explain Figure 2.7", focus: [3], budget: 20000 }));
+	assert.equal(list.find(p => p.page === 12)?.reason, "ref");
+});
+
+test("selectPages: a query with no content words searches with the focus page's rare terms", () => {
+	const pages = Array.from({ length: 40 }, (_, i) => ("common words on page " + i + " ").repeat(20));
+	pages[10] += " the hilbert transformer quadrature";
+	pages[30] += " a hilbert transformer again with quadrature";
+	const structure = { labels: [], confidence: 0, outline: [] };
+	for (const query of ["explain this", "spiegami"]) {
+		const list = plain(M.selectPages({ pages, structure, query, focus: [10], budget: 4000 }));
+		assert.equal(list.find(p => p.page === 30)?.reason, "search", query);
+	}
+	const selected = plain(M.selectPages({ pages, structure, query: "explain this", selection: "quadrature", focus: [2], budget: 6000 }));
+	assert.ok(selected.some(p => p.page === 30 && p.reason === "search"), "the selection is searched too");
+});
+
+test("a page number no printed page carries falls back to the PDF page", () => {
+	assert.equal(M.pageIndexFor(OUTLINE, "55", BOOK.length), 54, "printed 55 does not exist, PDF page 55 does");
+	assert.equal(M.pageIndexFor(OUTLINE, "99", BOOK.length), null);
+	assert.equal(M.pageIndexFor(OUTLINE, "xx", BOOK.length), null);
+	// A journal paper printed 1123–1130: "page 3" is the third page of the PDF.
+	const paper = M.inferPageLabels(Array.from({ length: 8 }, (_, i) => "IEEE TRANS\n" + "text ".repeat(50) + "\n" + (1123 + i)));
+	assert.ok(paper.confidence >= M.LABEL_MIN_CONFIDENCE);
+	assert.equal(M.pageIndexFor(paper, "3", 8), 2);
+	assert.equal(M.pageIndexFor(paper, "1125", 8), 2);
 	assert.equal(M.pageIndexFor(OUTLINE, "5", BOOK.length), idx(5));
 	assert.equal(M.pageIndexFor({ ...plain(OUTLINE), confidence: 0.1 }, "5", BOOK.length), 4);
 });
@@ -684,6 +793,12 @@ test("memory patches: kinds, ids, provenance, pages and cleaning", () => {
 		"page out of range", "duplicate", "not an object",
 	]);
 	assert.deepEqual(plain(empty.items), [], "the input is not changed");
+	const maths = M.applyMemoryPatch(M.emptyMemory(), {
+		add: [{ kind: "understood", text: "causal means h[n]=0 for n<N and h[n]>0 elsewhere; a<b and c>d" }],
+		summary: "<b>bold</b> <span class=\"x\">s</span></reading_map> x<y",
+	}).memory;
+	assert.equal(maths.items[0].text, "causal means h[n]=0 for n<N and h[n]>0 elsewhere; a<b and c>d");
+	assert.equal(maths.summary, "bold s x<y");
 });
 
 test("memory patches: resolve and remove by id, caps drop the oldest", () => {

@@ -21,8 +21,9 @@ var ZusiaMap = {
 	MEMORY_PROMPT_CHARS: 4000,
 	// What a page marker and the blank lines around it add to a page.
 	PAGE_OVERHEAD: 40,
-	// Room kept in a section file for its heading line.
-	FILE_HEADER_CHARS: 200,
+	// Room kept in a section file for the range line under its heading, the newlines and
+	// the zero-width spaces of neutralised markers; the heading is measured.
+	FILE_RANGE_CHARS: 160,
 	// An anchor is Zotero's own label for that page, so it outweighs any folio vote.
 	ANCHOR_WEIGHT: 1000,
 	// Supports one offset needs, and how far apart they may be, to count as a run.
@@ -96,7 +97,10 @@ var ZusiaMap = {
 	// One label per page from runs of folios that agree on an offset (page index minus
 	// printed value). Runs claim pages heaviest first; a page between runs inherits the
 	// run before it, pages before the first run the first run. Anchors {pageIndex, label,
-	// parsed} from Zotero vote with a large weight and always win their own page.
+	// parsed} from Zotero vote with a large weight and win their own page, unless a folio
+	// run holds that page and prints another number there: Zotero reports the PDF number
+	// when a PDF has no labels, and pinning it would leave the printed page unreachable
+	// and its number twice in the run. Those anchors come back as `conflicts`.
 	labelRuns(candidates, anchors) {
 		let votes = new Map();
 		let vote = (style, offset, page, weight) => {
@@ -149,6 +153,7 @@ var ZusiaMap = {
 				owner[i] = owner[i] || cluster;
 			}
 		}
+		let held = owner.slice();
 		let first = owner.findIndex(Boolean);
 		if (first > 0) {
 			owner.fill(owner[first], 0, first);
@@ -157,7 +162,12 @@ var ZusiaMap = {
 			owner[i] = owner[i] || owner[i - 1];
 		}
 		let labels = owner.map((cluster, i) => (cluster && i - cluster.offset >= 1 ? this.formatLabel(cluster.style, i - cluster.offset) : null));
-		for (let { pageIndex, label } of anchors) {
+		let conflicts = [];
+		for (let { pageIndex, label, parsed } of anchors) {
+			if (parsed && held[pageIndex] && held[pageIndex].folio && labels[pageIndex] !== label) {
+				conflicts.push({ pageIndex, label });
+				continue;
+			}
 			labels[pageIndex] = label;
 		}
 		let runs = [];
@@ -173,17 +183,17 @@ var ZusiaMap = {
 		runs = runs.filter(run => run.cluster).map(({ cluster, start, end }) =>
 			// Reported as PDF page number minus printed number, the way people say it.
 			({ start, end, style: cluster.style, offset: cluster.offset + 1 }));
-		return { labels, runs };
+		return { labels, runs, conflicts };
 	},
 
-	// {labels, confidence 0..1, method, runs}. Confidence is the share of folio-bearing
+	// {labels, confidence 0..1, method, runs, conflicts}. Confidence is the share of folio-bearing
 	// pages that agree with their label, scaled down when few pages carry one at all.
 	inferPageLabels(pages, anchors = []) {
 		let candidates = pages.map(text => this.folioCandidates(text));
 		let pinned = anchors
 			.filter(a => Number.isInteger(a.pageIndex) && a.pageIndex >= 0 && a.pageIndex < pages.length && a.label != null && String(a.label).trim())
 			.map(a => ({ pageIndex: a.pageIndex, label: String(a.label).trim(), parsed: this.parseLabel(a.label) }));
-		let { labels, runs } = this.labelRuns(candidates, pinned);
+		let { labels, runs, conflicts } = this.labelRuns(candidates, pinned);
 		let anchorPages = new Set(pinned.map(a => a.pageIndex));
 		let agree = 0;
 		let conflict = 0;
@@ -211,7 +221,7 @@ var ZusiaMap = {
 				confidence = Math.max(folios, 0.95);
 			}
 		}
-		return { labels, confidence, method, runs };
+		return { labels, confidence, method, runs, conflicts };
 	},
 
 	trusted(structure) {
@@ -245,12 +255,13 @@ var ZusiaMap = {
 		return matches[0];
 	},
 
-	// What the user means by "page 18": the printed page when the labels are trusted
-	// (none if the book has no such page: the PDF page of that number is unrelated),
-	// else the PDF page, the only number they can then check.
+	// What the user means by "page 18": the printed page when the labels are trusted, else
+	// the PDF page, the only number they can then check. A number no page carries is the
+	// PDF page too: "page 3" of a paper printed 1123–1130 is its third page.
 	pageIndexFor(structure, label, pageCount) {
-		if (this.trusted(structure)) {
-			return this.labelToIndex(structure, label);
+		let printed = this.trusted(structure) ? this.labelToIndex(structure, label) : null;
+		if (printed !== null) {
+			return printed;
 		}
 		let n = +label;
 		return Number.isInteger(n) && n >= 1 && n <= pageCount ? n - 1 : null;
@@ -283,7 +294,9 @@ var ZusiaMap = {
 	// A line of page text that looks like a marker would let a PDF move the model's idea
 	// of where it is; a zero-width space in front keeps it readable but not a marker.
 	escapeMarkers(text) {
-		return text.replace(/^(?=[ \t]*-{3}[ \t]*page\b)/gim, "\u200b");
+		// Any space but a line break: `\s` would reach back over a blank line and put the
+		// zero-width space there instead.
+		return text.replace(/^(?=[^\S\r\n]*-{3}[^\S\r\n]*page\b)/gimu, "\u200b");
 	},
 
 	renderPage(i, text, structure) {
@@ -305,8 +318,10 @@ var ZusiaMap = {
 
 	TOC_NAMED: /^(Preface|Foreword|Acknowledge?ments|Bibliography|References|Index|Glossary|Prefazione|Ringraziamenti|Bibliografia|Indice analitico)\s*(?:(?:\.\s*){2,}|\s)\s*(\d{1,4}|[ivxlc]{1,7})\s*$/gim,
 	// A numbered entry anywhere in a line, since Zotero joins TOC lines; the title cannot
-	// start with a digit, which stops "… 70 3 The z-Transform 99" reading as entry 70.
-	TOC_NUMBERED: /(?:^|\s)(\d{1,2}(?:\.\d{1,2}){0,3})\s+([^\s.\d][^\n]{0,150}?)\s*(?:(?:\.\s*){2,}|\s)(\d{1,4}|[ivxlc]{1,7})(?=\s|$)/g,
+	// start with a digit, which stops "… 70 3 The z-Transform 99" reading as entry 70. A
+	// roman page needs dot leaders or the line end, or "Segnali e i sistemi" would stop at
+	// the article "i" and point at page i.
+	TOC_NUMBERED: /(?:^|\s)(\d{1,2}(?:\.\d{1,2}){0,3})\s+([^\s.\d][^\n]{0,150}?)\s*(?:(?:\.\s*){2,}(\d{1,4}|[ivxlc]{1,7})|\s(\d{1,4}|[ivxlc]{1,7}(?=[ \t]*$)))(?=\s|$)/gm,
 	TOC_LETTER: /^([A-Z])\s+([^\s.\d][^\n]{1,120}?)\s*(?:(?:\.\s*){2,}|\s)(\d{1,4})\s*$/gm,
 
 	tocEntries(text) {
@@ -315,7 +330,7 @@ var ZusiaMap = {
 			found.push({ at: m.index, id: m[1].toLowerCase().replace(/\s+/g, "-"), title: m[1], level: 1, label: m[2] });
 		}
 		for (let m of text.matchAll(this.TOC_NUMBERED)) {
-			found.push({ at: m.index, id: m[1], title: m[2], level: m[1].split(".").length, label: m[3] });
+			found.push({ at: m.index, id: m[1], title: m[2], level: m[1].split(".").length, label: m[3] ?? m[4] });
 		}
 		for (let m of text.matchAll(this.TOC_LETTER)) {
 			found.push({ at: m.index, id: m[1], title: m[2], level: 1, label: m[3] });
@@ -447,7 +462,8 @@ var ZusiaMap = {
 	// give `start` or a printed `label`; one starting before the previous is dropped. A
 	// "Front matter" entry covers the pages before the first one; with no entries the
 	// text is cut into fixed chunks. An entry ends where the next one at its level or
-	// above starts.
+	// above starts. Top-level ranges partition the pages, so of two top-level entries on
+	// one page only the later stays; two subsections that begin on one page both hold it.
 	outlineRanges(entries, structure, pageCount, { chunk = 20 } = {}) {
 		let list = [];
 		for (let e of entries) {
@@ -465,6 +481,7 @@ var ZusiaMap = {
 		}
 		let top = Math.min(...list.map(e => e.level));
 		list = list.map(e => ({ ...e, level: e.level - top + 1 }));
+		list = list.filter((e, k) => e.level > 1 || list.slice(k + 1).find(other => other.level === 1)?.start !== e.start);
 		if (list[0].start > 0) {
 			list.unshift({ id: "front", title: "Front matter", level: 1, start: 0 });
 		}
@@ -525,7 +542,8 @@ var ZusiaMap = {
 	// top-level entry longer than `max` splits at its children, recursively, and by pages
 	// when it has none; a file under `min` takes in the next one while both fit, so a
 	// chapter's one-page opener lands with its first section, and a short last file
-	// joins the one before.
+	// joins the one before. A page longer than a file becomes files of one part each,
+	// with `from` and `to` character offsets into it.
 	splitSections(pages, outline, { min, max } = this.SECTION_CHARS) {
 		let size = (s, e) => {
 			let total = 0;
@@ -534,7 +552,9 @@ var ZusiaMap = {
 			}
 			return total;
 		};
-		let limit = max - this.FILE_HEADER_CHARS;
+		// "# " + the longest title + a part number such as " (12)".
+		let heading = 2 + Math.max("Full text".length, ...outline.map(e => this.entryTitle(e).length)) + 8;
+		let limit = max - this.FILE_RANGE_CHARS - heading;
 		let units = [];
 		// `top` marks the unit that starts a top-level entry: a merged file is named after
 		// its biggest such unit, so "Acknowledgments" does not name chapter 1's file.
@@ -548,16 +568,34 @@ var ZusiaMap = {
 				let part = 1;
 				let from = s;
 				let used = 0;
+				let first = top;
+				let emit = (start, end, slice) => {
+					units.push({ title: title + " (" + part++ + ")", start, end, top: first, ...slice });
+					first = false;
+				};
 				for (let i = s; i <= e; i++) {
 					let page = pages[i].length + this.PAGE_OVERHEAD;
 					if (i > from && used + page > limit) {
-						units.push({ title: title + " (" + part++ + ")", start: from, end: i - 1, top: top && from === s });
+						emit(from, i - 1);
 						from = i;
 						used = 0;
 					}
+					// A web page or an EPUB can come as one page of the whole text.
+					if (page > limit) {
+						for (let [a, b] of this.cutText(pages[i], limit - this.PAGE_OVERHEAD)) {
+							emit(i, i, { from: a, to: b });
+						}
+						from = i + 1;
+						continue;
+					}
 					used += page;
 				}
-				units.push({ title: part > 1 ? title + " (" + part + ")" : title, start: from, end: e, top: top && from === s });
+				if (from <= e) {
+					emit(from, e);
+				}
+				if (part === 2) {
+					units[units.length - 1].title = title;
+				}
 				return;
 			}
 			let starts = [s, ...cuts];
@@ -580,19 +618,21 @@ var ZusiaMap = {
 			file.chars += unit.chars;
 			file.units.push(unit);
 		};
+		// A part of a page stays alone: a file is a page range or one part.
+		let joins = (file, unit) => file.from === undefined && unit.from === undefined && file.chars < min && file.chars + unit.chars <= limit;
 		for (let unit of units) {
-			unit.chars = size(unit.start, unit.end);
+			unit.chars = unit.from === undefined ? size(unit.start, unit.end) : unit.to - unit.from + this.PAGE_OVERHEAD;
 			let last = files[files.length - 1];
-			if (last && last.chars < min && last.chars + unit.chars <= limit) {
+			if (last && joins(last, unit)) {
 				join(last, unit);
 			}
 			else {
-				files.push({ start: unit.start, end: unit.end, chars: unit.chars, units: [unit] });
+				files.push({ start: unit.start, end: unit.end, from: unit.from, to: unit.to, chars: unit.chars, units: [unit] });
 			}
 		}
 		let tail = files[files.length - 1];
 		let before = files[files.length - 2];
-		if (before && tail.chars < min && before.chars + tail.chars <= limit) {
+		if (before && tail.from === undefined && before.from === undefined && tail.chars < min && before.chars + tail.chars <= limit) {
 			tail.units.forEach(unit => join(before, unit));
 			files.pop();
 		}
@@ -600,22 +640,52 @@ var ZusiaMap = {
 			file.title = file.units.reduce((best, u) => (u.top > best.top || (u.top === best.top && u.chars > best.chars) ? u : best)).title;
 		}
 		let width = Math.max(2, String(files.length).length);
-		return files.map((file, k) => ({
-			name: String(k + 1).padStart(width, "0") + "-" + this.slug(file.title) + ".md",
-			title: file.title,
-			start: file.start,
-			end: file.end,
-			chars: file.chars,
-			hash: this.fnv1a(pages.slice(file.start, file.end + 1).join("\f")),
-		}));
+		return files.map((file, k) => {
+			let part = file.from !== undefined;
+			let out = {
+				name: String(k + 1).padStart(width, "0") + "-" + this.slug(file.title) + ".md",
+				title: file.title,
+				start: file.start,
+				end: file.end,
+				chars: file.chars,
+				hash: this.fnv1a(part ? pages[file.start].slice(file.from, file.to) : pages.slice(file.start, file.end + 1).join("\f")),
+			};
+			return part ? { ...out, from: file.from, to: file.to } : out;
+		});
+	},
+
+	// [from, to] offsets cutting `text` into pieces of at most `room` characters, at a
+	// line end when one falls in the second half of the piece, else at a space.
+	cutText(text, room) {
+		let parts = [];
+		let at = 0;
+		while (text.length - at > room) {
+			let piece = text.slice(at, at + room);
+			let end = piece.lastIndexOf("\n");
+			if (end < room / 2) {
+				end = piece.lastIndexOf(" ");
+			}
+			end = end < room / 2 ? room : end + 1;
+			parts.push([at, at + end]);
+			at += end;
+		}
+		parts.push([at, text.length]);
+		return parts;
 	},
 
 	renderSectionFile(pages, file, structure) {
+		let range = this.rangeName(file.start, file.end, structure) + " of " + pages.length;
 		let body = [];
-		for (let i = file.start; i <= file.end; i++) {
-			body.push(this.renderPage(i, pages[i], structure));
+		if (file.from !== undefined) {
+			range += ", characters " + (file.from + 1) + "–" + file.to + " of " + pages[file.start].length;
+			body.push(this.renderPage(file.start, pages[file.start].slice(file.from, file.to), structure));
 		}
-		return "# " + file.title + "\n\n" + this.rangeName(file.start, file.end, structure) + " of " + pages.length + ".\n\n" + body.join("\n\n") + "\n";
+		else {
+			for (let i = file.start; i <= file.end; i++) {
+				body.push(this.renderPage(i, pages[i], structure));
+			}
+		}
+		return "# " + file.title + "\n\n" + range + ".\n\n" + body.join("\n\n") + "\n";
 	},
 
 	// ------------------------------------------------------------ objects and refs
@@ -684,12 +754,17 @@ var ZusiaMap = {
 			found.push({ at: m.index, kind: "section", id: m[1] });
 		}
 		found.sort((a, b) => a.at - b.at).forEach(({ kind, id }) => push(kind, id, { kind, id }));
-		for (let m of text.matchAll(/\b(?:pages?|pagin[ae]|pagg?|pp|p)\.?\s*(\d{1,4}|[ivxlc]{1,7})\b(?:\s*[-–]\s*(\d{1,4})\b)?/gi)) {
-			let first = /^\d/.test(m[1]) ? m[1] : m[1].toLowerCase();
-			if (!this.parseLabel(first)) {
+		// A bare "p" needs a dot or a space, so "p1" (a pole), "2 pi" and "PC" are not pages.
+		// A roman page is lowercase and follows "page" or "p.", or an Italian word when it
+		// is not one letter: in "pagina i grafici" the "i" is an article.
+		let pageRef = /\b(?:([Pp]ages?\s+|[Pp]p?\.\s*)|([Pp]agin[ae]\s+|[Pp]agg?\.\s*|[Pp]agg?\s+)|[Pp]p?\s+)(\d{1,4}|[ivxlc]{1,7})\b(?:\s*[-–]\s*(\d{1,4})\b)?/g;
+		for (let m of text.matchAll(pageRef)) {
+			let first = m[3];
+			let roman = !/^\d/.test(first);
+			if (!this.parseLabel(first) || (roman && !m[1] && !(m[2] && first.length > 1))) {
 				continue;
 			}
-			let last = m[2] && /^\d/.test(first) ? Math.min(+m[2], +first + 4) : null;
+			let last = m[4] && !roman ? Math.min(+m[4], +first + 4) : null;
 			if (last !== null && last > +first) {
 				for (let n = +first; n <= last; n++) {
 					push("page", String(n), { kind: "page", label: String(n) });
@@ -769,8 +844,16 @@ var ZusiaMap = {
 	},
 
 	// The `k` best pages [{page, score}] for `query`, Okapi BM25 with k1 1.2 and b 0.75.
-	searchBM25(index, query, k = 10) {
-		let terms = [...new Set(this.tokenize(query))].filter(t => index.df[t]);
+	// `extra` terms count half: they come from a page, not from what the user asked.
+	searchBM25(index, query, k = 10, extra = []) {
+		let weights = new Map();
+		for (let t of extra) {
+			weights.set(t, 0.5);
+		}
+		for (let t of this.tokenize(query)) {
+			weights.set(t, 1);
+		}
+		let terms = [...weights.keys()].filter(t => index.df[t]);
 		if (!terms.length) {
 			return [];
 		}
@@ -781,7 +864,7 @@ var ZusiaMap = {
 				let f = counts[t];
 				if (f) {
 					let idf = Math.log(1 + (index.N - index.df[t] + 0.5) / (index.df[t] + 0.5));
-					score += idf * (f * 2.2) / (f + 1.2 * (0.25 + 0.75 * index.dl[page] / index.avgdl));
+					score += weights.get(t) * idf * (f * 2.2) / (f + 1.2 * (0.25 + 0.75 * index.dl[page] / index.avgdl));
 				}
 			}
 			if (score > 0) {
@@ -789,6 +872,18 @@ var ZusiaMap = {
 			}
 		});
 		return hits.sort((a, b) => b.score - a.score || a.page - b.page).slice(0, k);
+	},
+
+	// The `count` words most particular to `page` that a few other pages share: a word
+	// on this page alone finds nothing else, a common one finds everything.
+	pageTerms(index, page, count = 5) {
+		let cap = Math.max(2, Math.ceil(0.05 * index.N));
+		let counts = index.tf[page];
+		let weight = t => counts[t] * Math.log(index.N / index.df[t]);
+		return Object.keys(counts)
+			.filter(t => index.df[t] >= 2 && index.df[t] <= cap)
+			.sort((a, b) => weight(b) - weight(a) || (a < b ? -1 : 1))
+			.slice(0, count);
 	},
 
 	// ------------------------------------------------------------ progress
@@ -859,8 +954,10 @@ var ZusiaMap = {
 	// claim: focus pages (always, each cut to its share of the budget), pages defining
 	// what the query cites, the two pages before each focus page and its section opener,
 	// BM25 hits up to 60% of the budget with the reading position as a soft prior, then
-	// pages nearest the focus. `ahead` marks pages past both the frontier and the focus.
-	selectPages({ pages, structure = null, progress = null, query = "", focus = [], budget, index = null }) {
+	// pages nearest the focus. The search runs on the query, the selected text and the
+	// focus pages' most particular words, so "explain this" still finds related pages.
+	// `ahead` marks pages past both the frontier and the focus.
+	selectPages({ pages, structure = null, progress = null, query = "", selection = "", focus = [], budget, index = null }) {
 		let n = pages.length;
 		let focusList = [...new Set(focus)].filter(i => Number.isInteger(i) && i >= 0 && i < n);
 		let cap = Math.floor(budget / Math.max(1, focusList.length));
@@ -868,10 +965,11 @@ var ZusiaMap = {
 		let picked = new Map();
 		let used = 0;
 		// A blank page costs a marker and says nothing; "near" would otherwise fill the
-		// last few characters with them.
+		// last few characters with them. A cited page goes however short: a figure page's
+		// text may be its caption alone.
 		let blank = i => pages[i].replace(/\s+/g, "").length < 50;
 		let add = (i, reason, limit = budget) => {
-			if (i < 0 || i >= n || picked.has(i) || blank(i) || used + size(i) > limit) {
+			if (i < 0 || i >= n || picked.has(i) || (reason !== "ref" && blank(i)) || used + size(i) > limit) {
 				return;
 			}
 			picked.set(i, reason);
@@ -900,10 +998,13 @@ var ZusiaMap = {
 				add(opener.start, "opener");
 			}
 		}
-		if (this.tokenize(query).length) {
+		index = index || this.buildBM25(pages);
+		let asked = query + "\n" + selection;
+		let particular = focusList.flatMap(f => this.pageTerms(index, f));
+		if (this.tokenize(asked).length || particular.length) {
 			let here = focusList.map(f => this.sectionOf(outline, f)).filter(Boolean);
 			let read = new Set((progress && progress.read) || []);
-			let hits = this.searchBM25(index || this.buildBM25(pages), query, 50)
+			let hits = this.searchBM25(index, asked, 50, particular)
 				.map(({ page, score }) => ({
 					page,
 					score: score * (here.some(s => s.start <= page && page <= s.end) ? 1.5 : 1) * (read.has(page) ? 1.2 : 1),
@@ -991,10 +1092,11 @@ var ZusiaMap = {
 	},
 
 	// Model text that goes into every later prompt: no tags (they could close a context
-	// block) and no URLs; everything else, maths included, stays.
+	// block) and no URLs; everything else, maths included, stays. A tag is a closing tag
+	// or a name with only name="value" attributes, so "n<N and h[n]>0" is not one.
 	cleanMemoryText(text, cap) {
 		let clean = String(text ?? "")
-			.replace(/<\/?[A-Za-z][^<>]*>/g, "")
+			.replace(/<\/?[A-Za-z][\w:-]*(?:\s+[\w:-]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'<>]+))*\s*\/?>/g, "")
 			.replace(/\b(?:https?|ftp|file):\/\/\S+|\bwww\.\S+/gi, "")
 			.replace(/\s+/g, " ")
 			.trim();
@@ -1126,8 +1228,8 @@ var ZusiaMap = {
 	// structure.json for one file version: labels, outline, object index and section
 	// files, from the page texts and any label anchors.
 	buildStructure(pages, { anchors = [], sections = this.SECTION_CHARS } = {}) {
-		let { labels, confidence, method, runs } = this.inferPageLabels(pages, anchors);
-		let structure = { version: 1, pageCount: pages.length, labels, confidence, labelMethod: method, runs };
+		let { labels, confidence, method, runs, conflicts } = this.inferPageLabels(pages, anchors);
+		let structure = { version: 1, pageCount: pages.length, labels, confidence, labelMethod: method, runs, labelConflicts: conflicts };
 		let { outline, method: outlineMethod } = this.buildOutline(pages, structure);
 		structure.outline = outline;
 		structure.outlineMethod = outlineMethod;
