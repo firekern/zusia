@@ -715,13 +715,13 @@
 }
 /* A numbered equation keeps its number at the right margin, as in LaTeX. The empty
    first column mirrors the number's, so the equation stays centred on the line. */
-.zs-math-block[data-labels]:not([data-tag]) {
+.zs-math-numbered {
 	display: grid;
 	grid-template-columns: 1fr minmax(0, auto) 1fr;
 	align-items: center;
 	column-gap: 6px;
 }
-.zs-math-block[data-labels]:not([data-tag]) > .zs-math-scroll {
+.zs-math-numbered > .zs-math-scroll {
 	grid-column: 2;
 }
 .zs-eq-num {

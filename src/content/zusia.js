@@ -2536,19 +2536,22 @@ Zusia = {
 			}
 		}
 		let equation = 0;
-		for (let block of logEl.querySelectorAll(".zs-math-block[data-labels]")) {
-			// Each label of a multi-line align gets its own number; KaTeX's MathML cannot
-			// put them on their rows, so the block shows the range.
-			let names = block.dataset.labels.split(" ").map(label => {
-				let name = block.dataset.tag || "(" + ++equation + ")";
-				if (!targets.has(label)) {
-					targets.set(label, { el: block, name });
+		for (let block of logEl.querySelectorAll(".zs-math-block[data-eqs]")) {
+			// Each labelled row of an align gets its own number; KaTeX's MathML cannot put
+			// them on their rows, so the block lists them.
+			let eqs = JSON.parse(block.dataset.eqs);
+			let names = eqs.map(eq => {
+				let name = eq.tag || "(" + ++equation + ")";
+				for (let label of eq.labels) {
+					if (!targets.has(label)) {
+						targets.set(label, { el: block, name });
+					}
 				}
 				return name;
 			});
 			let num = block.querySelector(":scope > .zs-eq-num");
 			if (num) {
-				num.textContent = names.length > 1 ? names[0] + "–" + names[names.length - 1] : names[0];
+				num.textContent = names.length > 1 && !eqs.some(eq => eq.tag) ? names[0] + "–" + names[names.length - 1] : names.join(", ");
 			}
 		}
 		for (let ref of logEl.querySelectorAll(".zs-ref")) {
@@ -2584,8 +2587,10 @@ Zusia = {
 
 	followRef(root, ref) {
 		let view = this._views.get(root);
-		let box = ref.closest(".zs-log") && [...ref.closest(".zs-log").querySelectorAll(".zs-env[data-label], .zs-math-block[data-labels]")]
-			.find(b => b.dataset.label === ref.dataset.ref || b.dataset.labels?.split(" ").includes(ref.dataset.ref));
+		let log = ref.closest(".zs-log");
+		// Same precedence as linkTheorems(): a box wins over an equation with its label.
+		let box = log && ([...log.querySelectorAll(".zs-env[data-label]")].find(b => b.dataset.label === ref.dataset.ref) ||
+			[...log.querySelectorAll(".zs-math-block[data-eqs]")].find(b => JSON.parse(b.dataset.eqs).some(eq => eq.labels.includes(ref.dataset.ref))));
 		if (!view || !box) {
 			return;
 		}
@@ -4923,7 +4928,8 @@ Zusia = {
 		let label = null;
 		// A \label inside maths names that equation, not the box, so maths is skipped over.
 		let envs = [...this.MATH_ENVS].filter(e => !e.endsWith("*")).join("|");
-		let mathOrLabel = new RegExp("```[\\s\\S]*?```|\\$\\$[\\s\\S]*?\\$\\$|\\\\\\[[\\s\\S]*?\\\\\\]|\\\\\\([\\s\\S]*?\\\\\\)|\\$(?:[^$\\\\]|\\\\.)*\\$" +
+		// An escaped \$ or \\ is consumed first, so it never opens inline maths.
+		let mathOrLabel = new RegExp("\\\\[$\\\\]|```[\\s\\S]*?```|\\$\\$[\\s\\S]*?\\$\\$|\\\\\\[[\\s\\S]*?\\\\\\]|\\\\\\([\\s\\S]*?\\\\\\)|\\$(?:[^$\\\\]|\\\\.)*\\$" +
 			"|\\\\begin\\{(" + envs + ")(\\*?)\\}[\\s\\S]*?\\\\end\\{\\1\\2\\}|\\\\label\\{([^{}]+)\\}", "g");
 		let body = inner.replace(/^\s*\[([^\]]*)\]/, (m, t) => {
 			title = t;
@@ -5196,16 +5202,40 @@ Zusia = {
 		// KaTeX (here and in Zotero's note editor) rejects \label, \ref and \eqref. Labels
 		// move onto the block, where linkTheorems() numbers them; a reference becomes
 		// text that linkTheorems() later fills with the number.
-		let labels = [];
-		let refs = new Map();
-		tex = source.replace(/\\label\{([^{}]*)\}/g, (m, label) => {
-			labels.push(label.trim());
-			return "";
-		}).replace(/\\(?:eq)?ref\{([^{}]*)\}/g, (m, label) => {
-			let shown = "(" + label.trim().replace(/[\\{}^~]/g, "") + ")";
-			refs.set(shown, label.trim());
+		// Each row of an align or gather is an equation with its own \label and \tag; a row
+		// break inside a nested cases or matrix is not one.
+		let rows = [source];
+		let multiRow = source.match(/^\\begin\{(align|gather|alignat)\*\}([\s\S]*)\\end\{\1\*\}$/);
+		if (multiRow) {
+			rows = [""];
+			let depth = 0;
+			for (let token of multiRow[2].match(/\\begin\{[^{}]*\}|\\end\{[^{}]*\}|\\\\|\\[\s\S]|[^\\{}]+|[{}]/g) || []) {
+				depth += /^(\\begin\{|\{)/.test(token) ? 1 : /^(\\end\{|\})/.test(token) ? -1 : 0;
+				if (token === "\\\\" && depth === 0) {
+					rows.push("");
+				}
+				else {
+					rows[rows.length - 1] += token;
+				}
+			}
+		}
+		let eqs = rows.map(row => {
+			let tag = row.match(/\\tag(\*?)\{([^{}]*)\}/);
+			return {
+				labels: [...row.matchAll(/\\label\{([^{}]*)\}/g)].map(m => m[1].trim()),
+				tag: tag ? (tag[1] ? tag[2].trim() : "(" + tag[2].trim() + ")") : null,
+			};
+		}).filter(eq => eq.labels.length || eq.tag);
+		let refs = [];
+		tex = source.replace(/\\label\{([^{}]*)\}/g, "").replace(/\\(?:eq)?ref\{([^{}]*)\}/g, (m, label) => {
 			// \hbox, unlike \text, is never merged with a neighbouring \text into one <mtext>.
-			return "\\hbox{" + shown.replace(/[_&#%$]/g, "\\$&") + "}";
+			if (this._noteMode) {
+				return "\\hbox{(" + label.trim().replace(/[\\{}^~]/g, "").replace(/[_&#%$]/g, "\\$&") + ")}";
+			}
+			// KaTeX rewrites some characters of text (' becomes ’), so the <mtext> is found
+			// again by a numbered token, not by the label.
+			refs.push({ command: m, label: label.trim() });
+			return "\\hbox{zsref" + (refs.length - 1) + "}";
 		}).trim();
 		if (this._noteMode) {
 			// Zotero's note editor stores maths as TeX in these elements and renders it itself.
@@ -5216,11 +5246,18 @@ Zusia = {
 		}
 
 		let math = this.texToMathML(doc, tex, displayMode);
-		if (math && refs.size) {
+		if (math && refs.length) {
 			for (let mtext of math.querySelectorAll("mtext")) {
-				if (refs.has(mtext.textContent)) {
-					mtext.setAttribute("data-ref", refs.get(mtext.textContent));
+				let token = mtext.textContent.match(/^zsref(\d+)$/);
+				if (token) {
+					let ref = refs[token[1]];
+					mtext.setAttribute("data-ref", ref.label);
+					mtext.textContent = "(" + ref.label + ")";
 				}
+			}
+			let annotation = math.querySelector("annotation");
+			if (annotation) {
+				annotation.textContent = annotation.textContent.replace(/\\hbox\{zsref(\d+)\}/g, (m, k) => refs[k].command);
 			}
 		}
 		let fallback = () => {
@@ -5239,13 +5276,9 @@ Zusia = {
 		let box = this.el(doc, "div", "zs-math-block");
 		let scroller = this.el(doc, "div", "zs-math-scroll");
 		scroller.appendChild(math || fallback());
-		let tag = tex.match(/\\tag(\*?)\{([^{}]*)\}/);
-		if (tag) {
-			// KaTeX draws the tag itself; references to this equation show the same text.
-			box.dataset.tag = tag[1] ? tag[2].trim() : "(" + tag[2].trim() + ")";
-		}
-		if (labels.length) {
-			box.dataset.labels = labels.join(" ");
+		if (eqs.length) {
+			// JSON, because a LaTeX label may contain any separator, spaces included.
+			box.dataset.eqs = JSON.stringify(eqs);
 		}
 		let copy = this.el(doc, "button", "zs-copy-tex", "Copy TeX");
 		copy.title = "Copy LaTeX source";
@@ -5257,8 +5290,11 @@ Zusia = {
 			}, 1200);
 		});
 		box.append(scroller, copy);
-		if (labels.length && !tag) {
+		// KaTeX draws the \tag of a single equation itself, but its MathML drops the tags
+		// of align and gather rows, so those are shown beside the block with the numbers.
+		if (multiRow ? eqs.length : eqs.length && !eqs[0].tag) {
 			// Filled in by linkTheorems(), which numbers equations across the whole chat.
+			box.classList.add("zs-math-numbered");
 			box.appendChild(this.el(doc, "span", "zs-eq-num"));
 		}
 		return box;
