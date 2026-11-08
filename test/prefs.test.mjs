@@ -267,6 +267,12 @@ test("behaviour card: tiles, switches and the system prompt are saved", () => {
 	custom.value = plugin.PERSONAS.colleague.text;
 	custom.dispatchEvent(new window.Event("input"));
 	assert.equal(JSON.parse(prefs[PREFIX + "behaviour"]).custom, "", "the default voice is stored as empty, so it can improve later");
+	custom.value = "";
+	custom.dispatchEvent(new window.Event("input"));
+	assert.equal(JSON.parse(prefs[PREFIX + "behaviour"]).custom, "");
+	custom.dispatchEvent(new window.Event("blur"));
+	assert.equal(custom.value, plugin.PERSONAS.colleague.text, "an emptied box shows the default voice it sends");
+	assert.match(rowControl(behaviour, "System prompt").closest(".zs-row").textContent, /replaces the default voice/);
 });
 
 test("settings can start the setup wizard again", () => {

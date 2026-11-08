@@ -296,7 +296,7 @@ test("ask: sessions from before 1.1, whose prompt withheld the paper, start agai
 	assert.equal(store.requests[0].session, null);
 	assert.equal(store.sessions.codex.prompt, env.plugin.PROMPT_VERSION);
 	await env.plugin.ask(ctx, "Why?", pendingFor("claude"));
-	assert.equal(store.requests[1].session, null, "Claude records its first system prompt, so it starts again too");
+	assert.equal(store.requests[1].session, null, "Claude starts again too, so answers in the old voice do not set the tone");
 });
 
 test("antigravity: a resumed session is sent the page on screen when its first prompt did not have it", async () => {

@@ -700,6 +700,12 @@ test("wizard: every step's choices are saved, finishing closes it for good", () 
 	assert.equal(voice.value, plugin.PERSONAS.colleague.text);
 	assert.equal(plugin.getBehaviour().custom, "");
 	assert.equal(tile("Colleague").getAttribute("aria-checked"), "true");
+	voice.value = "  ";
+	voice.dispatchEvent(new root.ownerDocument.defaultView.Event("input"));
+	assert.equal(plugin.getBehaviour().custom, "", "a blank box means the default voice");
+	voice.dispatchEvent(new root.ownerDocument.defaultView.Event("blur"));
+	assert.equal(voice.value, plugin.PERSONAS.colleague.text, "and shows it again, so the box matches what is sent");
+	assert.equal(counter.textContent, voice.value.length + " / " + plugin.CUSTOM_PROMPT_CHARS);
 	assert.equal(plugin.getBehaviour().level, "expert", "the earlier picks are kept");
 	next();
 	assert.equal(wizard.dataset.step, "done");
