@@ -235,6 +235,9 @@ test("structure.json: printed labels from folios without Zotero's, the outline f
 			})) }) };
 		},
 	};
+	// The structured text is read in the background; the next question uses it.
+	await env.plugin.exportContext({ ...ctx, attachmentItem: attachment }, { reader });
+	await Promise.all([...env.plugin._sdt.values()].map(entry => entry.promise));
 	const { structure } = await env.plugin.exportContext({ ...ctx, attachmentItem: attachment }, { reader });
 	assert.equal(structure.outlineMethod, "zotero");
 	assert.equal(structure.labelMethod, "folios");
@@ -609,4 +612,210 @@ test("settings: reading progress can be turned off, and the reading maps rebuilt
 	assert.equal(files.has("/data/zusia/1-PAPERKEY/cache/pages.json"), true, "the extracted text stays");
 	assert.equal(plugin._structures.size, 0);
 	assert.match(button.closest(".zs-row").querySelector(".zs-row-hint").textContent, /1 reading map will be rebuilt/);
+});
+
+test("structure.json: Zotero's labels never outvote the printed folios", async () => {
+	const pages = bookPages();
+	// A last line that ends in its own PDF number, as real pages have.
+	pages[9] += "\nExercise 10";
+	const cases = {
+		// An unlabelled PDF: Zotero reports the PDF numbers, as SDT did in a real Zotero.
+		"PDF numbers": pages.map((_, i) => String(i + 1)),
+		// Oppenheim's /PageLabels: 1–23 on the front matter, then 1–1109.
+		"front matter restarting": pages.map((_, i) => String(i < OFFSET ? i + 1 : i - OFFSET + 1)),
+	};
+	for (const [name, labels] of Object.entries(cases)) {
+		const env = loadPlugin();
+		const { ctx, reader, attachment } = openBook(env, { pages, labels });
+		const files = await env.plugin.exportContext({ ...ctx, attachmentItem: attachment }, { focus: [40], reader });
+		const s = files.structure;
+		assert.equal(s.labels[40], "18", name);
+		assert.equal(env.map.pageIndexFor(s, "18", 200), 40, name);
+		assert.equal(env.map.pageMarker(40, s), "--- page 41 (printed 18) ---", name);
+		files.currentPage = 40;
+		files.query = "What does page 18 say?";
+		assert.ok(env.plugin.contextNote(files).includes("\"page 18\" in the question means PDF page 41 (printed 18)"), name);
+	}
+});
+
+test("structure.json: Zotero 10's structured text never holds a question up, and its answer is used next time", async () => {
+	const env = loadPlugin();
+	const { ctx, reader, attachment } = openBook(env, { outline: null });
+	const open = { ...ctx, attachmentItem: attachment };
+	let calls = 0;
+	let finish;
+	env.window.Zotero.SDT = {
+		getReader: () => {
+			calls++;
+			return new Promise((resolve) => { finish = resolve; });
+		},
+	};
+	const first = await env.plugin.exportContext(open, { reader });
+	assert.notEqual(first.structure.outlineMethod, "zotero", "built without waiting for the pack");
+	await env.plugin.exportContext(open, { reader });
+	assert.equal(calls, 1, "the build in flight is joined, not started again");
+	finish({ getCatalog: async () => ({ pages: [], outline: readerOutline().map(e => ({ title: e.title, target: e.location, children: [] })) }) });
+	await Promise.all([...env.plugin._sdt.values()].map(entry => entry.promise));
+	const later = await env.plugin.exportContext(open, { reader });
+	assert.equal(later.structure.outlineMethod, "zotero");
+	assert.deepEqual(JSON.parse(env.files.get("/d/cache/native.json")).tried, ["sdt"]);
+	assert.equal(calls, 1);
+});
+
+test("structure.json: a Zotero internal that throws is logged as an error and asked again", async () => {
+	const env = loadPlugin();
+	const { ctx, reader, attachment } = openBook(env, { outline: null });
+	let calls = 0;
+	reader._internalReader._state = {
+		primaryViewStats: { pageIndex: 40 },
+		get pageLabels() {
+			calls++;
+			throw new Error("can't access dead object");
+		},
+	};
+	const logged = [];
+	env.plugin.logError = (where, e) => logged.push(where + ": " + e.message);
+	const open = { ...ctx, attachmentItem: attachment };
+	await env.plugin.exportContext(open, { reader });
+	await env.plugin.exportContext(open, { reader });
+	assert.equal(calls, 2, "not cached as having nothing");
+	assert.match(logged[0], /dead object/);
+	assert.ok(!JSON.parse(env.files.get("/d/cache/native.json")).tried.includes("reader"));
+});
+
+test("structure.json: an anchor recorded again or in another order does not rebuild the map", async () => {
+	const env = loadPlugin();
+	const { ctx, reader, attachment } = openBook(env);
+	const open = { ...ctx, attachmentItem: attachment };
+	let builds = 0;
+	const build = env.plugin.mapStructure.bind(env.plugin);
+	env.plugin.mapStructure = (...args) => { builds++; return build(...args); };
+	await env.plugin.exportContext(open, { focus: [40], reader });
+	await env.plugin.recordAnchor("/d", 40, "18");
+	await env.plugin.recordAnchor("/d", 41, "19");
+	await env.plugin.exportContext(open, { focus: [40], reader });
+	assert.equal(builds, 2, "new anchors are new information");
+	await env.plugin.recordAnchor("/d", 40, "18");
+	await env.plugin.exportContext(open, { focus: [40], reader });
+	const progress = await env.plugin.loadProgress("/d");
+	assert.deepEqual(plain(progress.anchors.map(a => a.pageIndex)), [40, 41], "the list is left as it was");
+	progress.anchors.reverse();
+	await env.plugin.exportContext(open, { focus: [40], reader });
+	assert.equal(builds, 2);
+});
+
+test("progress: with tracking off nothing is written and no stored position reaches the prompt", async () => {
+	const env = loadPlugin();
+	env.prefs[PREFIX + "trackReading"] = false;
+	const saved = JSON.stringify({ current: 85, section: "3.2", read: [85], anchors: [] });
+	env.files.set("/d/progress.json", saved);
+	const { ctx } = openBook(env, { pageIndex: 40 });
+	const requests = fakeBackend(env.plugin);
+	const pending = pendingFor("claude", { selection: { text: "the sum", position: { pageIndex: 40 }, pageLabel: "18" } });
+	await env.plugin.ask(ctx, "Why?", pending);
+	await env.plugin.flushAllProgress();
+	assert.equal(env.files.get("/d/progress.json"), saved, "neither the page nor the selection's anchor");
+	const prompt = promptOf(env.plugin, requests[0]);
+	assert.doesNotMatch(prompt, /Where we are|read up to/);
+	assert.equal(JSON.parse(env.files.get("/d/session.json")).sessions.claude.map.section, "2.3", "the map is drawn around the page on screen");
+});
+
+test("text files: a new map version rewrites them, and an older pages.json is extracted again", async () => {
+	const env = loadPlugin();
+	const { ctx, reader, attachment } = openBook(env);
+	const open = { ...ctx, attachmentItem: attachment };
+	const files = await env.plugin.exportContext(open, { focus: [40], reader });
+	const writes = [];
+	const put = env.window.Zotero.File.putContentsAsync;
+	env.window.Zotero.File.putContentsAsync = async (p, data) => { writes.push(p); return put(p, data); };
+	env.plugin.MAP_VERSION += 1;
+	await env.plugin.exportContext(open, { focus: [40], reader });
+	assert.equal(writes.filter(p => p.startsWith("/d/text/")).length, files.structure.files.length, "every section file");
+
+	const pages = JSON.parse(env.files.get("/d/cache/pages.json"));
+	env.files.set("/d/cache/pages.json", JSON.stringify(Object.assign(pages, { version: 0 })));
+	const restarted = loadPlugin({ files: env.files });
+	const again = openBook(restarted);
+	await restarted.plugin.loadFullText(again.attachment, "/d");
+	assert.equal(again.state.calls, 1);
+});
+
+test("persistence: a damaged chat.json is moved aside, never written over; a failed progress write is kept", async () => {
+	const env = loadPlugin();
+	const { plugin, window, files } = env;
+	files.set("/d/chat.json", "[{\"role\": \"user\", \"te");
+	await plugin.appendHistory("/d", [{ role: "user", text: "new" }]);
+	assert.equal(files.get("/d/chat.json.damaged"), "[{\"role\": \"user\", \"te");
+	assert.deepEqual(JSON.parse(files.get("/d/chat.json")).map(m => m.text), ["new"]);
+	const get = window.Zotero.File.getContentsAsync;
+	window.Zotero.File.getContentsAsync = async () => { throw new Error("NS_ERROR_FILE_ACCESS_DENIED"); };
+	await assert.rejects(plugin.appendHistory("/d", [{ role: "user", text: "lost?" }]), /ACCESS_DENIED/);
+	window.Zotero.File.getContentsAsync = get;
+	assert.deepEqual(JSON.parse(files.get("/d/chat.json")).map(m => m.text), ["new"], "an unreadable file is not a damaged one");
+
+	await plugin.recordPage("/d", 40, null);
+	const move = window.OS.File.move;
+	window.OS.File.move = async () => { throw new Error("the file is in use"); };
+	await assert.rejects(plugin.flushProgress("/d"), /in use/);
+	window.OS.File.move = move;
+	await plugin.flushProgress("/d");
+	assert.equal(JSON.parse(files.get("/d/progress.json")).current, 40, "saved on the next try");
+});
+
+test("NEED_PAGES: the forms a model writes it in are recognised, held back and stripped", async () => {
+	const env = loadPlugin();
+	const { plugin } = env;
+	const { ctx, reader, attachment } = openBook(env);
+	const files = await plugin.exportContext({ ...ctx, attachmentItem: attachment }, { reader });
+	for (const line of ["NEED_PAGES: 41, 52", "**NEED_PAGES:** 41, 52", "NEED_PAGES 41, 52", "`NEED_PAGES: 41, 52`",
+		"```\nNEED_PAGES: 41, 52\n```", "need_pages: 41,52", "*NEED_PAGES*: 41 52", "NEED PAGES: 41, 52"]) {
+		assert.deepEqual(plain(plugin.parseNeedPages(line + "\nThe answer.", files)), [40, 51], line);
+		assert.equal(plugin.stripNeedPages(line + "\nThe answer."), "The answer.", line);
+		for (let n = 1; n <= line.length; n++) {
+			assert.equal(plugin.mayBeNeedPages(line.slice(0, n)), true, JSON.stringify(line.slice(0, n)));
+		}
+	}
+	assert.equal(plugin.parseNeedPages("The pages you need: 41", files), null);
+	assert.equal(plugin.stripNeedPages("**Nyquist** says NEED_PAGES: 3"), "**Nyquist** says NEED_PAGES: 3");
+	for (const text of ["```python\nimport numpy", "**Nyquist**", "Needless to say", "`x[n]`"]) {
+		assert.equal(plugin.mayBeNeedPages(text), false, text);
+	}
+});
+
+test("progress: page turns after a restart read structure.json once, and only for this file version", async () => {
+	const env = withFolders(loadPlugin());
+	const { plugin, window, files } = env;
+	const book = openBook(env);
+	window.Zotero.Libraries = { userLibraryID: 1 };
+	const dir = "/data/zusia/1-PAPERKEY";
+	files.set(dir + "/chat.json", "[]");
+	const structure = plugin.mapStructure(book.pages, { native: { outline: plugin.flattenOutline(readerOutline()) } });
+	const save = key => files.set(dir + "/cache/structure.json", JSON.stringify(Object.assign({}, structure, { key })));
+	let reads = 0;
+	const get = window.Zotero.File.getContentsAsync;
+	window.Zotero.File.getContentsAsync = async (p) => { reads += p.endsWith("structure.json") ? 1 : 0; return get(p); };
+	const turn = async (page) => {
+		book.state.lastPage = page;
+		await plugin.onReadingNotify("modify", ["1/lastPageIndex_u_ATTACHKY"]);
+	};
+	save([plugin.MAP_VERSION, 7, "1:4000", "abcd"].join(":"));
+	await turn(40);
+	await turn(41);
+	assert.equal(reads, 1);
+	assert.equal(plugin._progress.get(dir).progress.section, "2.3");
+
+	plugin._structures.clear();
+	plugin._progress.clear();
+	files.delete(dir + "/progress.json");
+	save([plugin.MAP_VERSION, 7, "0:999", "abcd"].join(":"));
+	await turn(40);
+	assert.equal(plugin._progress.get(dir).progress.section ?? null, null, "a map of another file version is not used");
+});
+
+test("paper folder: an .ignore keeps cache/ out of Claude's and Codex's searches", async () => {
+	const env = loadPlugin();
+	const { ctx, reader, attachment } = openBook(env);
+	await env.plugin.exportContext({ ...ctx, attachmentItem: attachment }, { focus: [40], reader });
+	assert.match(env.files.get("/d/.ignore"), /^cache\/$/m);
+	assert.match(env.plugin.systemPrompt(), /cache\//);
 });

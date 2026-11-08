@@ -81,8 +81,11 @@ Zusia = {
 	FULLTEXT_INLINE_CHARS_WINDOWS: 12000,
 	// Extracted page text kept in memory across papers: a 1132-page book is about 2M.
 	TEXT_CACHE_CHARS: 20e6,
-	// Raise when structure.json, the text files or their markers change shape.
+	// Raise when structure.json, the text files or their markers change shape: every
+	// text file's stamp carries it, so all of them are written again.
 	MAP_VERSION: 1,
+	// Raise when cache/pages.json changes shape; an older one is extracted again.
+	PAGES_VERSION: 1,
 	// From this many PDF pages on, the text goes into section files under text/, so no
 	// Read call truncates it, and Antigravity gets chosen pages instead of the start.
 	BOOK_MIN_PAGES: 150,
@@ -336,6 +339,9 @@ Zusia = {
 	_structures: new Map(),
 	_natives: new Map(),
 	_mapBuilds: new Map(),
+	// "attachmentID@stamp" → { promise, done, result }: Zotero 10's structured text, read
+	// in the background.
+	_sdt: new Map(),
 	_bm25: new WeakMap(),
 	// Per paper directory: { progress, dirty, scheduled }, saved by flushProgress.
 	_progress: new Map(),
@@ -3562,7 +3568,8 @@ Zusia = {
 			if (files.structure && Number.isInteger(files.currentPage)) {
 				await this.recordPage(ctx.dir, files.currentPage, files.structure);
 			}
-			files.progress = await this.loadProgress(ctx.dir);
+			// With tracking off, a position stored earlier is not sent either.
+			files.progress = this.trackingReading() ? await this.loadProgress(ctx.dir) : null;
 			files.memory = await this.loadMemory(ctx.dir);
 			let history = await this.loadHistory(ctx.dir);
 			let sessions = await this.loadSessions(ctx.dir);
@@ -4642,7 +4649,6 @@ Zusia = {
 				this.logError("memory command", e);
 				this.appendError(view, String((e && e.message) || e), { title: "Could not update the notes for this paper" });
 			});
-			return;
 		}
 		let draft = view.draftSelection;
 		view.draftSelection = null;
@@ -5716,7 +5722,7 @@ Zusia = {
 		let cachePath = dir && OS.Path.join(dir, "cache", "pages.json");
 		let saved = cachePath ? await this.readJSON(cachePath, null) : null;
 		let result;
-		if (saved && saved.attachmentID === attachment.id && saved.stamp === stamp && Array.isArray(saved.pages)) {
+		if (saved && saved.version === this.PAGES_VERSION && saved.attachmentID === attachment.id && saved.stamp === stamp && Array.isArray(saved.pages)) {
 			result = { status: "ok", paged: saved.paged, pages: saved.pages, stamp };
 		}
 		else {
@@ -5731,8 +5737,8 @@ Zusia = {
 			if (result.status === "ok") {
 				result.stamp = stamp;
 				if (cachePath) {
-					await Zotero.File.createDirectoryIfMissingAsync(OS.Path.join(dir, "cache"));
-					await this.writeAtomic(cachePath, JSON.stringify({ version: 1, attachmentID: attachment.id, stamp, paged: result.paged, pages: result.pages }));
+					await this.ensureCacheDir(dir);
+					await this.writeAtomic(cachePath, JSON.stringify({ version: this.PAGES_VERSION, attachmentID: attachment.id, stamp, paged: result.paged, pages: result.pages }));
 				}
 			}
 		}
@@ -6044,22 +6050,22 @@ Zusia = {
 		if (book) {
 			for (let file of structure.files) {
 				want.set("text/" + file.name, {
-					stamp: file.hash + ":" + this.labelsDigest(structure, file.start, file.end),
+					stamp: this.MAP_VERSION + ":" + file.hash + ":" + this.labelsDigest(structure, file.start, file.end),
 					render: () => ZusiaMap.renderSectionFile(full.pages, file, structure),
 				});
 			}
 			let index = this.textIndex(full, structure);
-			want.set("fulltext.md", { stamp: this.hashText(index), render: () => index });
+			want.set("fulltext.md", { stamp: this.MAP_VERSION + ":" + this.hashText(index), render: () => index });
 		}
 		else {
 			let text = "# Full text\n\n" + (full.paged
 				? full.pages.map((page, i) => ZusiaMap.renderPage(i, page.trim(), structure)).join("\n\n")
 				: full.pages[0].trim()) + "\n";
-			want.set("fulltext.md", { stamp: this.hashText(text), render: () => text });
+			want.set("fulltext.md", { stamp: this.MAP_VERSION + ":" + this.hashText(text), render: () => text });
 		}
 		let manifestPath = OS.Path.join(dir, "cache", "text.json");
 		let manifest = await this.readJSON(manifestPath, { files: {} });
-		await Zotero.File.createDirectoryIfMissingAsync(OS.Path.join(dir, "cache"));
+		await this.ensureCacheDir(dir);
 		if (book) {
 			await Zotero.File.createDirectoryIfMissingAsync(OS.Path.join(dir, "text"));
 		}
@@ -6100,6 +6106,17 @@ Zusia = {
 			structure.files.length + " section files in text/, in reading order, each with page markers:\n\n" + lines.join("\n") + "\n";
 	},
 
+	// Claude and Codex search the paper folder with ripgrep, which honours .ignore even
+	// outside git: a hit in cache/pages.json, the whole book on one line with no page
+	// markers, would have them read that instead of text/.
+	async ensureCacheDir(dir) {
+		await Zotero.File.createDirectoryIfMissingAsync(OS.Path.join(dir, "cache"));
+		let ignore = OS.Path.join(dir, ".ignore");
+		if (!(await OS.File.exists(ignore))) {
+			await Zotero.File.putContentsAsync(ignore, "# Zusia's own bookkeeping; the text is in fulltext.md and text/.\ncache/\n");
+		}
+	},
+
 	// The full text is off or gone: no stale copy stays for the assistant to read.
 	async removeTextFiles(dir) {
 		let manifestPath = OS.Path.join(dir, "cache", "text.json");
@@ -6135,7 +6152,11 @@ Zusia = {
 		let { dir, attachmentItem } = ctx;
 		let count = full.pages.length;
 		let native = await this.nativeStructure(dir, attachmentItem, reader, full.stamp, count);
-		let anchors = this.annotationAnchors(attachmentItem, count).concat((await this.loadProgress(dir)).anchors || []);
+		// Sorted (stably, so a selection's label still comes after an annotation's on its
+		// page): the order the anchors were recorded in carries no information, and must
+		// not change the key.
+		let anchors = this.annotationAnchors(attachmentItem, count).concat((await this.loadProgress(dir)).anchors || [])
+			.sort((a, b) => a.pageIndex - b.pageIndex);
 		// The key covers everything the map is built from, so a new annotation label or an
 		// outline Zotero only now reports rebuilds it, and nothing else does.
 		let key = [this.MAP_VERSION, attachmentItem.id, full.stamp,
@@ -6152,7 +6173,7 @@ Zusia = {
 		}
 		let started = Date.now();
 		let structure = Object.assign(this.mapStructure(full.pages, { anchors, native }), { key });
-		await Zotero.File.createDirectoryIfMissingAsync(OS.Path.join(dir, "cache"));
+		await this.ensureCacheDir(dir);
 		await this.writeAtomic(path, JSON.stringify(structure));
 		this._structures.set(dir, { key, structure });
 		this.log("Reading map for " + dir + ": " + count + " pages, labels " + structure.labelMethod + " (" +
@@ -6162,14 +6183,17 @@ Zusia = {
 	},
 
 	// ZusiaMap.buildStructure, but with the labels and outline Zotero reports: its labels
-	// vote as anchors (a PDF without labels reports PDF numbers, which then lose to the
-	// printed folios), its outline replaces the guessed one. Titles come from the PDF, so
-	// they are cleaned like model text before they reach a prompt.
+	// vote as anchors, which lose to a folio run on the pages it holds, and its outline
+	// replaces the guessed one. A label that is just the PDF number is dropped: a PDF
+	// without labels reports nothing else, which says no more than the fallback does
+	// and would make "18" mean PDF page 18 next to the printed 18. Titles come from the
+	// PDF, so they are cleaned like model text before they reach a prompt.
 	mapStructure(pages, { anchors = [], native = {} } = {}) {
 		let votes = anchors.slice();
 		(native.labels || []).forEach((label, i) => {
-			if (label !== null && String(label).trim()) {
-				votes.push({ pageIndex: i, label: String(label).trim() });
+			let text = label === null ? "" : String(label).trim();
+			if (text && text !== String(i + 1)) {
+				votes.push({ pageIndex: i, label: text });
 			}
 		});
 		let { labels, confidence, method, runs, conflicts } = ZusiaMap.inferPageLabels(pages, votes);
@@ -6243,7 +6267,7 @@ Zusia = {
 			if ((native.labels && native.outline) || native.tried.includes(source)) {
 				continue;
 			}
-			let found = await this.nativeFrom(source, open, attachment);
+			let found = await this.nativeFrom(source, open, attachment, stamp);
 			if (!found) {
 				continue;
 			}
@@ -6256,7 +6280,7 @@ Zusia = {
 			native.tried.push(source);
 		}
 		if (JSON.stringify(native) !== before) {
-			await Zotero.File.createDirectoryIfMissingAsync(OS.Path.join(dir, "cache"));
+			await this.ensureCacheDir(dir);
 			await this.writeAtomic(OS.Path.join(dir, "cache", "native.json"), JSON.stringify(native));
 		}
 		this._natives.set(dir, native);
@@ -6266,8 +6290,9 @@ Zusia = {
 	// {labels, outline} from one source, or null when it is not ready yet (the reader has
 	// not processed the PDF, the structured text is still being built), so it is asked
 	// again next time. These are Zotero internals, unverified across versions: a source
-	// that fails is logged and counts as having nothing.
-	async nativeFrom(source, reader, attachment) {
+	// that throws is logged and asked again next time, since the failure may pass (a
+	// reader torn down mid-call) and caching it would disable the source until a rebuild.
+	async nativeFrom(source, reader, attachment, stamp) {
 		try {
 			if (source === "reader") {
 				let state = reader._internalReader?._state;
@@ -6298,29 +6323,47 @@ Zusia = {
 			if (!Zotero.SDT) {
 				return { labels: null, outline: null };
 			}
-			// getReader() builds the structured text when it is missing. The reader starts that
-			// build when it opens, so this usually joins it; a question does not wait for it.
-			let packReader = await Promise.race([
-				Zotero.SDT.getReader(attachment.id),
-				Zotero.Promise.delay(5000).then(() => undefined),
-			]);
-			if (packReader === undefined) {
-				return null;
-			}
-			if (!packReader) {
-				return { labels: null, outline: null };
-			}
-			let catalog = await packReader.getCatalog();
-			let pages = (catalog && catalog.pages) || [];
-			return {
-				labels: pages.length ? pages.map(p => (p && p.label != null ? String(p.label) : null)) : null,
-				outline: this.flattenOutline((catalog && catalog.outline) || []),
-			};
+			return this.sdtStructure(attachment, stamp);
 		}
 		catch (e) {
-			this.log("Reading map: " + source + " labels and outline unavailable: " + e);
+			this.logError("reading map: " + source + " labels and outline", e);
+			return null;
+		}
+	},
+
+	// Zotero.SDT.getReader() builds the structured-text pack when it is missing, which for
+	// a thousand-page book takes far longer than a question should wait. It runs in the
+	// background, once per file version; null until it is done, and the next build of
+	// the map picks the result up.
+	sdtStructure(attachment, stamp) {
+		let key = attachment.id + "@" + stamp;
+		let entry = this._sdt.get(key);
+		if (!entry) {
+			entry = { done: false, result: null };
+			entry.promise = this.readSDT(attachment.id).then((result) => {
+				entry.result = result;
+				entry.done = true;
+			}, (e) => {
+				// Started again by the next build.
+				this._sdt.delete(key);
+				this.logError("reading map: Zotero.SDT", e);
+			});
+			this._sdt.set(key, entry);
+		}
+		return entry.done ? entry.result : null;
+	},
+
+	async readSDT(id) {
+		let packReader = await Zotero.SDT.getReader(id);
+		if (!packReader) {
 			return { labels: null, outline: null };
 		}
+		let catalog = await packReader.getCatalog();
+		let pages = (catalog && catalog.pages) || [];
+		return {
+			labels: pages.length ? pages.map(p => (p && p.label != null ? String(p.label) : null)) : null,
+			outline: this.flattenOutline((catalog && catalog.outline) || []),
+		};
 	},
 
 	// The user's own annotations pin their page's printed label: Zotero stores it with the
@@ -6496,14 +6539,19 @@ Zusia = {
 
 	// "NEED_PAGES: 41, 52-53" as the answer's first line: Antigravity, which has only the
 	// pages it was sent, asks for PDF pages; at most NEED_PAGES_MAX that exist.
+	// Flash models dress the line up: "**NEED_PAGES:** 41", "NEED_PAGES 41", backticks, a
+	// code fence, lower case. Group 1 is what follows the keyword on its line.
+	NEED_PAGES_LINE: /^\s*(?:```[^\n]*\n\s*)?[*_`]*need[_ ]pages[*_`]*[ \t]*:?([^\n]*?)[*_` \t]*(?:\n[ \t]*```[ \t]*)?(?=\n|$)/i,
+	NEED_PAGES_START: /^\s*(?:```[^\n]*\n\s*)?[*_`]*need[_ ]pages/i,
+
 	parseNeedPages(text, files) {
-		let m = /^\s*NEED_PAGES:([^\n]*)/.exec(text || "");
+		let m = this.NEED_PAGES_LINE.exec(text || "");
 		if (!m) {
 			return null;
 		}
 		let count = this.isPaged(files) ? files.fullText.pages.length : 0;
 		let pages = [];
-		for (let part of m[1].split(/[,;\s]+/)) {
+		for (let part of m[1].replace(/^[*_`:\s]+/, "").split(/[,;\s]+/)) {
 			let r = /^(\d{1,4})(?:[-–](\d{1,4}))?$/.exec(part);
 			if (!r) {
 				continue;
@@ -6519,13 +6567,22 @@ Zusia = {
 	},
 
 	stripNeedPages(text) {
-		return String(text || "").replace(/^\s*NEED_PAGES:[^\n]*(\n|$)/, "").trim();
+		return String(text || "").replace(this.NEED_PAGES_LINE, "").trim();
 	},
 
 	// Streamed text that is, or may still become, a NEED_PAGES line stays off screen.
 	mayBeNeedPages(text) {
 		let head = String(text).trimStart();
-		return /^NEED_PAGES:/.test(head) || (head.length < this.NEED_PAGES_HOLD && "NEED_PAGES:".startsWith(head.slice(0, 11)));
+		if (this.NEED_PAGES_START.test(head)) {
+			return true;
+		}
+		if (head.length >= this.NEED_PAGES_HOLD) {
+			return false;
+		}
+		// What is left once an opening fence and emphasis are peeled off must still be able
+		// to grow into the keyword.
+		let rest = head.replace(/^```[^\n`]*\n?/, "").replace(/^[\s*_`]+/, "").toUpperCase().replace(" ", "_");
+		return "NEED_PAGES".startsWith(rest.slice(0, 10));
 	},
 
 	holdNeedPages(progress) {
@@ -6609,10 +6666,19 @@ Zusia = {
 	},
 
 	// A selection carries Zotero's label for its page, which pins that page's printed number.
+	// It says which page the user was on too, so it is kept only while reading is tracked.
+	// One already known is left where it is: rewriting it would only change the file.
 	async recordAnchor(dir, pageIndex, label) {
+		if (!this.trackingReading()) {
+			return;
+		}
 		let state = await this.progressState(dir);
+		label = String(label);
+		if ((state.progress.anchors || []).some(a => a.pageIndex === pageIndex && a.label === label)) {
+			return;
+		}
 		let anchors = (state.progress.anchors || []).filter(a => a.pageIndex !== pageIndex);
-		anchors.push({ pageIndex, label: String(label) });
+		anchors.push({ pageIndex, label });
 		state.progress = Object.assign({}, state.progress, { anchors: anchors.slice(-50) });
 		state.dirty = true;
 		this.scheduleProgressSave(dir);
@@ -6637,7 +6703,14 @@ Zusia = {
 		}
 		state.dirty = false;
 		let text = JSON.stringify(state.progress);
-		await this.withDirLock(dir, () => this.writeAtomic(this.progressPath(dir), text));
+		try {
+			await this.withDirLock(dir, () => this.writeAtomic(this.progressPath(dir), text));
+		}
+		catch (e) {
+			// The page events it held are still only in memory: the next save writes them.
+			state.dirty = true;
+			throw e;
+		}
 	},
 
 	flushAllProgress() {
@@ -6691,14 +6764,27 @@ Zusia = {
 			if (!(await OS.File.exists(dir))) {
 				continue;
 			}
-			await this.recordPage(dir, attachment.getAttachmentLastPageIndex(), await this.cachedStructure(dir));
+			await this.recordPage(dir, attachment.getAttachmentLastPageIndex(), await this.cachedStructure(dir, attachment));
 		}
 	},
 
 	// The map last built for the paper, without building one: page events only need sections.
-	async cachedStructure(dir) {
+	// One read from cache/ is kept, so page turns after a restart parse it once; with the
+	// attachment given, a map of another file version is not used.
+	async cachedStructure(dir, attachment = null) {
 		let cached = this._structures.get(dir);
-		return cached ? cached.structure : this.readJSON(OS.Path.join(dir, "cache", "structure.json"), null);
+		if (cached) {
+			return cached.structure;
+		}
+		let saved = await this.readJSON(OS.Path.join(dir, "cache", "structure.json"), null);
+		if (!saved) {
+			return null;
+		}
+		if (attachment && !String(saved.key).startsWith([this.MAP_VERSION, attachment.id, await this.fileStamp(attachment)].join(":") + ":")) {
+			return null;
+		}
+		this._structures.set(dir, { key: saved.key, structure: saved });
+		return saved;
 	},
 
 	// "§2.3 · p. 18 · 9/15 read" for the paper chip, or "" before any page was recorded.
@@ -6722,7 +6808,7 @@ Zusia = {
 
 	refreshReadingChips(dir) {
 		let cached = this._structures.get(dir);
-		let state = this._progress.get(dir);
+		let state = this.trackingReading() ? this._progress.get(dir) : null;
 		let reading = this.readingLine(cached && cached.structure, state && state.progress);
 		for (let win of Zotero.getMainWindows()) {
 			for (let root of win.document.querySelectorAll(".zs-root")) {
@@ -6758,6 +6844,7 @@ Zusia = {
 	async rebuildReadingMaps() {
 		this._structures.clear();
 		this._natives.clear();
+		this._sdt.clear();
 		let root = this.getDataDir();
 		if (!(await OS.File.exists(root))) {
 			return 0;
@@ -6877,19 +6964,11 @@ Zusia = {
 	// Conversation persistence
 	// ---------------------------------------------------------------------
 
+	// A damaged chat.json is moved aside by readJSON, so appendHistory starts a new one
+	// next to it instead of writing over the only copy; a file that cannot be read at all
+	// throws, and nothing is written.
 	async loadHistory(dir) {
-		let path = OS.Path.join(dir, "chat.json");
-		try {
-			if (!(await OS.File.exists(path))) {
-				return [];
-			}
-			let text = await Zotero.File.getContentsAsync(path);
-			return JSON.parse(text);
-		}
-		catch (e) {
-			this.log("loadHistory failed: " + e);
-			return [];
-		}
+		return this.readJSON(OS.Path.join(dir, "chat.json"), []);
 	},
 
 	// Read and rewritten under the folder's lock, so two answers finishing together
@@ -7155,7 +7234,8 @@ Zusia = {
 				"right before the question." : " Long documents are long, so search for the terms of the question and read the " +
 				"pages around the hits before you answer; the page the user is on is usually the best place " +
 				"to start, and a term can appear in several places, so look past the first match. For a book, " +
-				"fulltext.md is only an index: the pages are in section files under text/, which the reading map lists.") +
+				"fulltext.md is only an index: the pages are in section files under text/, which the reading map lists. " +
+				"Only fulltext.md and text/ hold the text; cache/ is Zusia's own bookkeeping, so leave it out of your searches.") +
 			" Extraction sometimes garbles equations, tables and figure labels; when it has, say so instead " +
 			"of guessing what was there. If pages were left out to fit, a note at the top says which.\n" +
 			"- " + name.notes + ": the user's own highlights and comments, labelled with the page number " +

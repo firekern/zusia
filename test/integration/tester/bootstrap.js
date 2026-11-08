@@ -344,6 +344,9 @@ async function testReadingMap(CS, attachment, dir, full) {
 			outline: structure.outlineMethod, entries: structure.outline.length, files: structure.files.length });
 	let cached = await IOUtils.exists(PathUtils.join(dir, "cache", "pages.json"))
 		? JSON.parse(await IOUtils.readUTF8(PathUtils.join(dir, "cache", "pages.json"))) : null;
+	let ignore = PathUtils.join(dir, ".ignore");
+	check("reading map: an .ignore keeps cache/ out of the backends' searches",
+		await IOUtils.exists(ignore) && /^cache\/$/m.test(await IOUtils.readUTF8(ignore)));
 	check("reading map: the page text is kept for the next start, keyed by file time and size",
 		!!cached && cached.pages.length === pages && /^\d+:\d+$/.test(cached.stamp), cached && cached.stamp);
 
@@ -373,7 +376,8 @@ async function testReadingMap(CS, attachment, dir, full) {
 	if (Zotero.SDT) {
 		// Informational: what Zotero 10's structured text gives for this PDF. The map works
 		// without it, so only the reported shape is recorded.
-		let sdt = await CS.nativeFrom("sdt", null, attachment);
+		// Zusia itself never waits for it; the tester may.
+		let sdt = await Promise.race([CS.readSDT(attachment.id), Zotero.Promise.delay(5000).then(() => null)]);
 		check("reading map (info): Zotero.SDT answered for the test PDF", true,
 			sdt ? { labels: sdt.labels && sdt.labels.slice(0, 5), outline: sdt.outline && sdt.outline.length } : "still building after 5 s");
 	}

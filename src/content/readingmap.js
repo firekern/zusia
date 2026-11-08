@@ -100,7 +100,9 @@ var ZusiaMap = {
 	// parsed} from Zotero vote with a large weight and win their own page, unless a folio
 	// run holds that page and prints another number there: Zotero reports the PDF number
 	// when a PDF has no labels, and pinning it would leave the printed page unreachable
-	// and its number twice in the run. Those anchors come back as `conflicts`.
+	// and its number twice in the run. Those anchors come back as `conflicts`. A run is a
+	// folio run by its folios alone: anchors on every page of an unlabelled PDF plus one
+	// stray number that matches them must not outrank the printed folios.
 	labelRuns(candidates, anchors) {
 		let votes = new Map();
 		let vote = (style, offset, page, weight) => {
@@ -123,8 +125,8 @@ var ZusiaMap = {
 			let flush = () => {
 				let weight = group.reduce((sum, s) => sum + s.weight, 0);
 				if (weight >= this.RUN_MIN[style]) {
-					let folio = group.some(s => s.weight === 1);
-					clusters.push({ style, offset, start: group[0].page, end: group[group.length - 1].page, weight, folio });
+					let folios = group.filter(s => s.weight === 1).length;
+					clusters.push({ style, offset, start: group[0].page, end: group[group.length - 1].page, weight, folios, folio: folios >= this.RUN_MIN[style] });
 				}
 				group = [];
 			};
@@ -138,7 +140,7 @@ var ZusiaMap = {
 		}
 		// Anchors that no folio agrees with claim only pages no folio run holds: one odd
 		// annotation label must not relabel the pages around it.
-		clusters.sort((a, b) => b.folio - a.folio || b.weight - a.weight || a.start - b.start);
+		clusters.sort((a, b) => b.folio - a.folio || (a.folio ? b.folios - a.folios : 0) || b.weight - a.weight || a.start - b.start);
 		let owner = new Array(candidates.length).fill(null);
 		for (let cluster of clusters) {
 			let taken = 0;
@@ -233,7 +235,8 @@ var ZusiaMap = {
 	},
 
 	// The PDF index printed with `label`, or null. A label can repeat (an appendix that
-	// restarts at 1, a pinned anchor); "18" then means the page in an arabic run.
+	// restarts at 1, a pinned anchor, Zotero's arabic labels on the front matter); "18"
+	// then means the page in the longest arabic run, the main matter.
 	labelToIndex(structure, label) {
 		let want = String(label).trim().toLowerCase();
 		let labels = (structure && structure.labels) || [];
@@ -247,9 +250,17 @@ var ZusiaMap = {
 			return null;
 		}
 		if (/^\d+$/.test(want)) {
-			let arabic = matches.find(i => this.runAt(structure, i)?.style === "arabic");
-			if (arabic !== undefined) {
-				return arabic;
+			let best = null;
+			let length = -1;
+			for (let i of matches) {
+				let run = this.runAt(structure, i);
+				if (run && run.style === "arabic" && run.end - run.start > length) {
+					best = i;
+					length = run.end - run.start;
+				}
+			}
+			if (best !== null) {
+				return best;
 			}
 		}
 		return matches[0];
