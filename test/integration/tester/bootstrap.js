@@ -195,6 +195,8 @@ async function testSidebar(win, CS) {
 		backgroundCalls.length === 1 && backgroundCalls[0].prompt.includes("#0 User: Explain the FFT") &&
 		(await CS.loadMemory(dir)).epoch === 1,
 		backgroundCalls.map(c => c.prompt.length));
+	check("memory: the put-away chat is read back from its file on disk and no longer owed once folded in",
+		(await CS.loadMemory(dir)).pendingArchives.length === 0, (await CS.loadMemory(dir)).pendingArchives);
 	let archives = await CS.listArchives(dir);
 	check("the previous chat is listed in history", archives.length === 1 && archives[0].count === 4 && archives[0].title.startsWith("Explain the FFT"),
 		archives.map(a => ({ title: a.title, count: a.count })));
