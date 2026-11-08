@@ -75,8 +75,8 @@ Zusia = {
 	],
 	ZOTERO_ACCENT: "#4072e5",
 	// fulltext.md is read on demand by Claude and Codex, so it can hold a whole book.
-	// Antigravity gets the text inside its argv, where Linux caps one argument at
-	// 128 KiB and Windows the whole command line at 32k characters.
+	// Antigravity gets the text inside its prompt. Prompts go on stdin now, so the
+	// smaller Windows budget only waits for agy's stdin to be checked on Windows.
 	FULLTEXT_FILE_CHARS: 1000000,
 	FULLTEXT_INLINE_CHARS: 60000,
 	FULLTEXT_INLINE_CHARS_WINDOWS: 12000,
@@ -179,8 +179,8 @@ Zusia = {
 				"and follow-up suggestions unless I ask for them.",
 		},
 	},
-	// Room for a real system prompt. Codex and Antigravity carry it in argv next to the
-	// paper, so it stays a fraction of the 12,000-character Windows inline budget.
+	// Room for a real system prompt. Antigravity carries it next to the paper inside the
+	// inline budget, so it stays a fraction of the smallest one (12,000 on Windows).
 	CUSTOM_PROMPT_CHARS: 4000,
 	WIZARD_STEPS: ["welcome", "assistant", "look", "buddy", "answers", "voice", "done"],
 	BACKEND_ICONS: { claude: "sparkle", codex: "terminal", agy: "rocket" },
@@ -3522,13 +3522,8 @@ Zusia = {
 			// An edited prompt, style or language starts a new session and the chat so far is
 			// replayed into it: Codex and Antigravity never see the edit otherwise, and a resumed
 			// Claude chat keeps answering in the old voice although it gets the new prompt.
-			// On Windows Claude's replay and system prompt share one command line, capped by
-			// CreateProcess at 32,767 characters, so a Claude chat too long to replay keeps
-			// resuming until the prompt leaves argv.
 			let promptHash = this.promptHash(backend);
-			if (session && (session.prompt !== this.PROMPT_VERSION || session.promptHash !== promptHash) &&
-				!(backend === "claude" && Zotero.isWin && this.transcriptFor(history, null).length +
-					this.systemPrompt().length + question.length > 28000)) {
+			if (session && (session.prompt !== this.PROMPT_VERSION || session.promptHash !== promptHash)) {
 				session = null;
 			}
 
@@ -3945,7 +3940,7 @@ Zusia = {
 				}),
 				(id === "drawing"
 					? "Shows a Drawing button in the message box. When it is on, answers include a drawing."
-					: "Shows a LaTeX button in the message box. When it is on, answers are rigorous maths with theorem and proof boxes.") +
+					: "Shows a LaTeX button in the message box. When it is on, answers write the maths out in displayed LaTeX equations.") +
 				" Shortcut: " + this.shortcutLabel(mode.key) + "."));
 		}
 		return card;
@@ -6550,7 +6545,7 @@ Zusia = {
 	},
 
 	// Antigravity cannot be granted read-only file access in headless mode, so a new
-	// session receives the paper inline instead, its full text cut to fit in argv.
+	// session receives the paper inline instead, its full text cut to the inline budget.
 	buildAntigravityPrompt({ files, question, history, session }) {
 		let block = (tag, body) => "<" + tag + ">\n" + this.escapeContextTags(body).trim() + "\n</" + tag + ">\n\n";
 		let note = (coverage) => this.transcriptFor(history, session) + question + this.contextNote(files, coverage) +

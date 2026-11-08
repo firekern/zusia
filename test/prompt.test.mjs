@@ -178,21 +178,18 @@ test("sessions: a session saved before prompt hashes existed starts again, Claud
 	assert.equal(store.requests[0].session, null);
 });
 
-test("sessions: on Windows a Claude chat too long to replay keeps resuming instead of overflowing argv", async () => {
+// The prompt travels on stdin, so a long replay no longer risks the Windows
+// command-line cap and a stale session restarts there like everywhere else.
+test("sessions: a stale session restarts on Windows too, however long the chat", async () => {
 	const fresh = loadPlugin().plugin;
 	const old = { id: "c", seen: 0, prompt: fresh.PROMPT_VERSION, promptHash: "stale" };
 	const long = Array.from({ length: 20 }, (_, i) => ({ role: i % 2 ? "assistant" : "user", text: "x".repeat(2000) }));
-	for (const [isWin, history, resumes] of [[true, long, true], [true, [], false], [false, long, false]]) {
-		const { plugin, window, store } = askEnv({ claude: { ...old } });
-		window.Zotero.isWin = isWin;
-		plugin.loadHistory = async () => history;
-		await plugin.ask({ dir: "/d" }, "Why?", pendingFor("claude"));
-		assert.equal(store.requests[0].session?.id ?? null, resumes ? "c" : null, JSON.stringify({ isWin, turns: history.length }));
-		assert.equal(store.sessions.claude.promptHash, plugin.promptHash("claude"), "Claude was just sent the current prompt");
+	for (const backend of ["claude", "codex"]) {
+		const { plugin, window, store } = askEnv({ [backend]: { ...old } });
+		window.Zotero.isWin = true;
+		plugin.loadHistory = async () => long;
+		await plugin.ask({ dir: "/d" }, "Why?", pendingFor(backend));
+		assert.equal(store.requests[0].session, null, backend);
+		assert.equal(store.sessions[backend].promptHash, plugin.promptHash(backend));
 	}
-	const { plugin, window, store } = askEnv({ codex: { ...old, id: "x" } });
-	window.Zotero.isWin = true;
-	plugin.loadHistory = async () => long;
-	await plugin.ask({ dir: "/d" }, "Why?", pendingFor("codex"));
-	assert.equal(store.requests[0].session, null, "Codex never sees an edited prompt on resume, so it always resets");
 });
