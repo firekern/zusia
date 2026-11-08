@@ -5711,8 +5711,9 @@ Zusia = {
 	// the command and a quote followed by & runs whatever comes next, and the prompt holds
 	// the paper's text. So an npm shim is swapped for what it launches, and nothing else
 	// batch-like runs at all (Node and Rust refuse them too: CVE-2024-27980, CVE-2024-24576).
+	// Windows drops trailing dots and spaces from a file name, so "claude.bat." is a batch file.
 	async avoidBatchFile(backend, path) {
-		if (!/\.(cmd|bat)$/i.test(path)) {
+		if (!/\.(cmd|bat)[. ]*$/i.test(path)) {
 			return path;
 		}
 		// What npm's cmd-shim runs: claude.exe since Claude Code 2.1.113, node codex.js for Codex.
@@ -5720,7 +5721,7 @@ Zusia = {
 			claude: ["node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe"],
 			codex: ["node_modules", "@openai", "codex", "bin", "codex.js"],
 		}[backend];
-		if (/\.cmd$/i.test(path) && target) {
+		if (/\.cmd[. ]*$/i.test(path) && target) {
 			let resolved = OS.Path.join(OS.Path.dirname(path), ...target);
 			if (await OS.File.exists(resolved)) {
 				return resolved;

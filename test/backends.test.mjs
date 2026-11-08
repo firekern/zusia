@@ -451,6 +451,9 @@ test("windows: any other batch file is refused, found or set as the path", async
 	for (const [backend, paths, prefs] of [
 		["claude", [], { "extensions.zusia.claudePath": "C:/tools/claude.bat" }],
 		["codex", [], { "extensions.zusia.codexPath": "C:/tools/codex.CMD" }],
+		// Windows drops a trailing dot or space, so these still run through cmd.exe.
+		["claude", [], { "extensions.zusia.claudePath": "C:/tools/claude.bat." }],
+		["codex", [], { "extensions.zusia.codexPath": "C:/tools/codex.cmd " }],
 		["agy", [NPM + "/agy.cmd"], {}],
 		// Claude Code before 2.1.113 ran cli.js behind its shim, not claude.exe.
 		["claude", [NPM + "/claude.cmd"], {}],
