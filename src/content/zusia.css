@@ -2664,3 +2664,53 @@
 .zs-root:has(> .zs-wizard) {
 	min-height: 520px;
 }
+/* Wizard "Your voice" step: the system prompt editor. It is the one tall step, so the
+   overlay scrolls instead of pushing Next out of a short pane. */
+.zs-wizard {
+	overflow-y: auto;
+}
+.zs-wizard-voice {
+	display: flex;
+	flex-direction: column;
+	gap: 5px;
+	width: 100%;
+}
+.zs-wizard .zs-textarea {
+	width: 100%;
+	min-height: 6em;
+	text-align: start;
+}
+.zs-wizard-voice-foot {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+}
+.zs-wizard-count {
+	font-size: 0.8em;
+	font-variant-numeric: tabular-nums;
+	color: var(--zs-muted);
+}
+.zs-wizard-sent {
+	width: 100%;
+	text-align: start;
+}
+.zs-wizard-sent summary {
+	cursor: pointer;
+	font-size: 0.85em;
+	color: var(--zs-muted);
+}
+.zs-wizard-sent-text {
+	margin: 6px 0 0;
+	max-height: 200px;
+	overflow-y: auto;
+	padding: 8px 10px;
+	border: 1px solid var(--zs-line);
+	border-radius: var(--zs-radius-control);
+	font-family: ui-monospace, "SF Mono", Menlo, monospace;
+	font-size: 0.8em;
+	line-height: 1.45;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	background: var(--zs-hover);
+}

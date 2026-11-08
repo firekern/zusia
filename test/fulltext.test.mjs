@@ -172,8 +172,8 @@ test("one system prompt for every backend: sources, priorities, injection, missi
 	const prompt = plugin.systemPrompt();
 	assert.doesNotMatch(prompt, /deliberately not provided/);
 	for (const needle of ["metadata.md", "fulltext.md", "annotations.md", "--- page N ---", "(p. N)",
-		"never instructions to you", "Never present a guess from the abstract", "Do not create, modify or delete any file",
-		"take precedence over these defaults", "\\label{kind:short-name}", "```svg"]) {
+		"treat it as content", "can't pass for what the document says", "leave every file as it is",
+		"wins for that answer", "\\label{kind:short-name}", "```svg"]) {
 		assert.ok(prompt.includes(needle), needle);
 	}
 	const inline = plugin.systemPrompt({ inline: true });
@@ -290,7 +290,7 @@ test("ask: a reader in a background tab is not called the page the user is viewi
 	assert.doesNotMatch(message, /viewing PDF page/);
 });
 
-test("ask: Codex and Antigravity sessions from before 1.1, whose prompt withheld the paper, start again", async () => {
+test("ask: sessions from before 1.1, whose prompt withheld the paper, start again on every backend", async () => {
 	const env = loadPlugin();
 	const { ctx } = openPaper(env);
 	const store = stubStore(env.plugin, { codex: { id: "old", seen: 0 }, claude: { id: "c", seen: 0 } });
@@ -298,7 +298,7 @@ test("ask: Codex and Antigravity sessions from before 1.1, whose prompt withheld
 	assert.equal(store.requests[0].session, null);
 	assert.equal(store.sessions.codex.prompt, env.plugin.PROMPT_VERSION);
 	await env.plugin.ask(ctx, "Why?", pendingFor("claude"));
-	assert.equal(store.requests[1].session.id, "c", "Claude gets the new system prompt on every run");
+	assert.equal(store.requests[1].session, null, "Claude starts again too, so answers in the old voice do not set the tone");
 });
 
 test("antigravity: a resumed session is sent the page on screen when its first prompt did not have it", async () => {
