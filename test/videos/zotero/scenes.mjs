@@ -358,6 +358,12 @@ const SCENES = {
 			await s.click(tile("student"), { after: 900 });
 			await s.click(`${ACTIVE} .zs-wizard .zs-tile[title="LaTeX"]`, { after: 1100 });
 			await s.click(next, { after: 1100 });
+			s.mark("voice");
+			// A second preset shows the box refilling; ending on the default shows the
+			// presets are only starting points.
+			await s.click(tile("tutor"), { after: 2200 });
+			await s.click(tile("colleague"), { after: 1400 });
+			await s.click(next, { after: 1100 });
 			s.mark("done");
 			await s.click(next, { after: 2600 });
 		},
