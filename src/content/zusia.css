@@ -1071,6 +1071,28 @@
 	content: "·";
 	margin-inline-end: 5px;
 }
+/* The chip opens the Memory sheet. */
+.zs-context-chip[role="button"] {
+	cursor: pointer;
+}
+.zs-context-chip[role="button"]:hover,
+.zs-context-chip[role="button"]:focus-visible {
+	border-color: var(--zs-stroke);
+	color: var(--zs-text);
+}
+/* "Memory: updating" while a background job runs for this paper. */
+.zs-memory-status {
+	align-self: center;
+	font-size: 0.82em;
+	color: var(--zs-muted);
+	animation: zs-pulse 1.6s ease-in-out infinite;
+}
+@keyframes zs-pulse {
+	50% { opacity: 0.45; }
+}
+@media (prefers-reduced-motion: reduce) {
+	.zs-memory-status { animation: none; }
+}
 /* Images attached to the message being written, and to sent messages. */
 .zs-attachments,
 .zs-user-images {
@@ -2677,6 +2699,134 @@
 	border: 1px solid var(--zs-border);
 	border-radius: var(--zs-radius-card);
 	background: var(--zs-raised);
+}
+/* Memory sheet: where we are, the reading map, the memory items, the settings. */
+.zs-memory-section {
+	display: flex;
+	flex-direction: column;
+	gap: 5px;
+}
+.zs-memory-heading {
+	font-size: 0.78em;
+	font-weight: 650;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--zs-muted);
+}
+.zs-memory-line {
+	line-height: 1.45;
+}
+.zs-memory-outline {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+	max-height: 240px;
+	overflow-y: auto;
+	scrollbar-width: thin;
+}
+.zs-memory-entry {
+	display: grid;
+	grid-template-columns: 1.2em minmax(0, 1fr) auto;
+	gap: 6px;
+	padding: 2px 4px;
+	border-radius: var(--zs-radius-control);
+	line-height: 1.4;
+}
+.zs-memory-entry[data-level="2"] {
+	padding-inline-start: 18px;
+	font-size: 0.94em;
+}
+.zs-memory-entry[data-state="unread"] .zs-memory-entry-title {
+	color: var(--zs-muted);
+}
+.zs-memory-entry.zs-here {
+	background: var(--zs-accent-soft);
+}
+.zs-memory-mark {
+	color: var(--zs-accent-ink);
+	text-align: center;
+}
+.zs-memory-entry-title {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.zs-memory-entry-pages {
+	font-size: 0.88em;
+	color: var(--zs-muted);
+	font-variant-numeric: tabular-nums;
+}
+.zs-memory-list {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+.zs-memory-item,
+.zs-memory-summary {
+	display: flex;
+	flex-direction: column;
+	gap: 3px;
+	padding: 6px 9px;
+	border: 1px solid var(--zs-border);
+	border-radius: var(--zs-radius-control);
+	background: var(--zs-raised);
+}
+.zs-memory-meta {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	min-height: 22px;
+}
+.zs-memory-kind {
+	font-size: 0.8em;
+	font-weight: 600;
+	color: var(--zs-accent-ink);
+}
+.zs-memory-page {
+	font-size: 0.8em;
+	color: var(--zs-muted);
+}
+.zs-memory-actions {
+	display: inline-flex;
+	gap: 2px;
+	margin-inline-start: auto;
+}
+.zs-memory-delete:hover:not(:disabled) {
+	color: var(--accent-red, #db2c3a) !important;
+}
+.zs-memory-text {
+	line-height: 1.45;
+	overflow-wrap: anywhere;
+}
+.zs-memory-edit {
+	width: 100%;
+	box-sizing: border-box;
+	padding: 4px 6px;
+	border: 1px solid var(--zs-stroke);
+	border-radius: var(--zs-radius-control);
+	font: inherit;
+	color: var(--zs-text);
+	background: var(--zs-field);
+	resize: vertical;
+}
+.zs-memory-empty {
+	font-size: 0.9em;
+	line-height: 1.45;
+	color: var(--zs-muted);
+}
+.zs-memory-reset-row {
+	display: flex;
+	justify-content: flex-end;
+}
+.zs-memory-reset.zs-confirm {
+	border-color: var(--accent-red, #db2c3a);
+	color: var(--accent-red, #db2c3a);
+}
+/* The sheet is narrow: label and switch on one line, the hint under them. */
+.zs-memory-settings .zs-row {
+	grid-template-columns: minmax(0, 1fr) auto;
+	padding: 6px 0;
 }
 @media (prefers-reduced-motion: reduce) {
 	.zs-panel { animation: none; }

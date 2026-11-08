@@ -3,3 +3,5 @@ pref("extensions.zusia.useClaudeUserSettings", false);
 pref("extensions.zusia.fullText", true);
 pref("extensions.zusia.paneView", "details");
 pref("extensions.zusia.trackReading", true);
+pref("extensions.zusia.memory.consolidate", true);
+pref("extensions.zusia.memory.gists", false);

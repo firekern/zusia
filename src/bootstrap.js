@@ -42,6 +42,8 @@ function shutdown() {
 	if (!Zusia) {
 		return;
 	}
+	// Before the pane goes: closing it would queue memory jobs for the papers it showed.
+	Zusia.stopJobs();
 	Zusia.unwatchPrefs();
 	Zusia.unwatchReading();
 	Zusia.unregisterPaneSection();

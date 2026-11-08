@@ -100,6 +100,24 @@ Zusia = {
 	PROGRESS_SAVE_MS: 20000,
 	// Turns kept in memory.json's log; the chat itself stays in chat.json.
 	MEMORY_TURNS: 200,
+	// Background memory: a consolidation after this many questions, or once the turns not
+	// yet folded into the memory pass this many characters. One call reads at most
+	// CONSOLIDATE_INPUT_CHARS of turns, each cut to CONSOLIDATE_MESSAGE_CHARS; the rest
+	// goes in the next call.
+	CONSOLIDATE_TURNS: 5,
+	CONSOLIDATE_CHARS: 12000,
+	CONSOLIDATE_INPUT_CHARS: 16000,
+	CONSOLIDATE_MESSAGE_CHARS: 3000,
+	// A new session always gets at least this many recent messages verbatim, even when the
+	// memory already covers them: the last exchange is what a follow-up refers to.
+	RECENT_MESSAGES: 6,
+	// A gist reads at most this much of its section; agy's inline budget is 60k.
+	GIST_INPUT_CHARS: 40000,
+	// A background call runs alone and in an empty folder; one that hangs is stopped so
+	// the queue moves on. A rate limit pauses every job, 15 minutes doubling up to 2 hours.
+	JOB_TIMEOUT_MS: 300000,
+	JOB_BACKOFF_MS: 900000,
+	JOB_BACKOFF_MAX_MS: 7200000,
 	// Stored with each session next to a hash of the system prompt it started with. The hash
 	// catches edits to the prompt itself; raise this when what a session stores changes.
 	PROMPT_VERSION: 4,
@@ -278,6 +296,7 @@ Zusia = {
 		previous: "arrow-left.svg",
 		done: "check-circle.svg",
 		clarifications: "highlighter.svg",
+		memory: "brain.svg",
 		quote: "quotes.svg",
 		prompt: "chat-centered-text.svg",
 		answer: "book-open-text.svg",
@@ -348,11 +367,21 @@ Zusia = {
 	// Per paper directory: the tail of the queue that serialises its file writes.
 	_dirQueue: new Map(),
 	_readingObserver: null,
+	// Background memory jobs: the queue, the one running ({key, dir, proc, cancelled,
+	// promise}), the rate-limit pause, and whether shutdown stopped them.
+	_jobs: [],
+	_job: null,
+	_jobBackoff: { delay: 0, until: 0, wake: false },
+	_jobsStopped: false,
+	// Per paper directory: the chat index after the turns of a consolidation that failed.
+	_memoryFailed: new Map(),
 	IMAGE_TYPES: { "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp" },
 	MAX_IMAGES: 6,
 	ATTACH_KEY: "I",
 	// The live view behind each rendered .zs-root.
 	_views: new WeakMap(),
+	// The paper folder each item pane section body showed last.
+	_shownDirs: new WeakMap(),
 	// The capturing side-nav click listener added to each main window.
 	_sidenavListeners: new WeakMap(),
 
@@ -924,6 +953,14 @@ Zusia = {
 			onInit: ({ body }) => {
 				// The chat view's CSS finds our section by this class (see "chat view" in zusia.css).
 				body.closest("item-pane-custom-section")?.classList.add("zs-pane");
+			},
+			// The section goes with its window: what was said about the paper is folded into
+			// its memory. At shutdown the jobs are stopped first, so nothing new starts.
+			onDestroy: ({ body }) => {
+				let dir = this._shownDirs.get(body);
+				if (dir) {
+					this.leavePaper(dir);
+				}
 			},
 			onItemChange: ({ body, item, setEnabled }) => {
 				let usable = !!item && (item.isRegularItem() || item.isFileAttachment());
@@ -1908,7 +1945,40 @@ Zusia = {
 			chip.append(this.el(doc, "span", "zs-context-reading", info.reading));
 			chip.title += "\nWhere you are and what you have read in this section, from the page shown in the reader";
 		}
+		// The chip opens the Memory sheet: what Zusia keeps about this paper.
+		chip.title += "\nClick to see the reading map and what Zusia remembers";
+		chip.setAttribute("role", "button");
+		chip.tabIndex = 0;
+		let open = () => this.openMemory(root).catch(e => this.logError("openMemory", e));
+		chip.addEventListener("click", open);
+		chip.addEventListener("keydown", (event) => {
+			if (event.key === "Enter" || event.key === " ") {
+				event.preventDefault();
+				open();
+			}
+		});
 		holder.appendChild(chip);
+		let status = this.memoryStatus(this._views.get(root)?.ctx.dir);
+		if (status) {
+			let line = this.el(doc, "span", "zs-memory-status", status);
+			line.setAttribute("role", "status");
+			holder.appendChild(line);
+		}
+	},
+
+	// "Memory: updating" while a job for this paper runs, "Memory: paused" while a rate
+	// limit holds one back; nothing otherwise.
+	memoryStatus(dir) {
+		if (!dir) {
+			return "";
+		}
+		if (this._job && this._job.dir === dir) {
+			return "Memory: updating";
+		}
+		if (this._jobBackoff.until > Date.now() && this._jobs.some(job => job.dir === dir)) {
+			return "Memory: paused (rate limit)";
+		}
+		return "";
 	},
 
 	// "Read fulltext.md · searched twice · thought for 8s", from the recorded steps.
@@ -2235,6 +2305,12 @@ Zusia = {
 		if (!logEl.isConnected) {
 			return;
 		}
+		// Each render builds a new .zs-root, so the paper shown last is kept per section body.
+		let previous = this._shownDirs.get(body);
+		if (previous && previous !== ctx.dir) {
+			this.leavePaper(previous);
+		}
+		this._shownDirs.set(body, ctx.dir);
 		this._views.set(root, view);
 		let info = this.paperInfo(ctx);
 		view.info = info;
@@ -2415,9 +2491,11 @@ Zusia = {
 		if (!view || this._pending.has(view.ctx.dir)) {
 			return;
 		}
-		await this.archiveHistory(view.ctx.dir, await this.loadHistory(view.ctx.dir));
+		let history = await this.loadHistory(view.ctx.dir);
+		await this.archiveHistory(view.ctx.dir, history);
 		await this.saveHistory(view.ctx.dir, []);
 		await this.saveSessions(view.ctx.dir, {});
+		await this.startMemoryEpoch(view.ctx.dir, history);
 		this.renderMessages(view, []);
 		view.input.focus();
 	},
@@ -2428,11 +2506,15 @@ Zusia = {
 			return;
 		}
 		let restored = JSON.parse(await Zotero.File.getContentsAsync(archive.path));
-		await this.archiveHistory(view.ctx.dir, await this.loadHistory(view.ctx.dir));
+		let replaced = await this.loadHistory(view.ctx.dir);
+		await this.archiveHistory(view.ctx.dir, replaced);
 		await this.saveHistory(view.ctx.dir, restored);
 		// The agents' own sessions belong to the chat being replaced; the restored
 		// chat is replayed to them as a transcript on its next question.
 		await this.saveSessions(view.ctx.dir, {});
+		// Whether the memory took in the restored chat before is not known, so it counts
+		// as not covered: replayed whole, and folded in again.
+		await this.startMemoryEpoch(view.ctx.dir, replaced);
 		await OS.File.remove(archive.path);
 		this.renderMessages(view, restored);
 		this.setBusy(view, false);
@@ -2911,6 +2993,187 @@ Zusia = {
 
 		showList();
 		doc.defaultView.setTimeout(() => (body.querySelector(".zs-clar-item") || close).focus(), 0);
+		return panel;
+	},
+
+	MEMORY_KIND_LABELS: { preference: "Preference", open: "Open question", shaky: "Still shaky", understood: "Understood", note: "Your note" },
+
+	// A panel over the chat with what Zusia keeps about the paper: where the reader is, the
+	// reading map with what was read, the memory items (each editable and deletable),
+	// Reset, and the two background memory settings.
+	async openMemory(root) {
+		let view = this._views.get(root);
+		if (!view) {
+			return null;
+		}
+		let doc = root.ownerDocument;
+		let dir = view.ctx.dir;
+		root.querySelector(".zs-panel")?.remove();
+		let panel = this.el(doc, "div", "zs-panel zs-memory-panel");
+		panel.setAttribute("role", "dialog");
+		panel.setAttribute("aria-label", "Reading memory");
+		let head = this.el(doc, "div", "zs-panel-head");
+		let title = this.el(doc, "div", "zs-panel-title");
+		title.append(this.svgIcon(doc, "memory"), this.el(doc, "span", null, "Reading memory"));
+		let close = this.iconButton(doc, "zs-small zs-panel-close", "Close", "remove", () => panel.remove());
+		head.append(title, close);
+		let body = this.el(doc, "div", "zs-panel-body");
+		panel.append(head, body);
+		panel.addEventListener("keydown", (event) => {
+			if (event.key === "Escape") {
+				event.preventDefault();
+				event.stopPropagation();
+				panel.remove();
+			}
+		});
+		root.appendChild(panel);
+
+		let structure = await this.cachedStructure(dir);
+		let progress = this.trackingReading() ? await this.loadProgress(dir) : null;
+		let section = (label, className) => {
+			let box = this.el(doc, "section", "zs-memory-section " + className);
+			box.appendChild(this.el(doc, "div", "zs-memory-heading", label));
+			body.appendChild(box);
+			return box;
+		};
+		let printed = i => ZusiaMap.printedLabel(i, structure) || String(i + 1);
+
+		section("Where we are", "zs-memory-where").appendChild(
+			this.el(doc, "div", "zs-memory-line", ZusiaMap.whereWeAre(progress, structure).replace(/^Where we are: /, "")));
+
+		if (structure && structure.outline.length && structure.outlineMethod !== "chunks") {
+			let states = (progress && progress.sections) || {};
+			let here = progress && Number.isInteger(progress.current) ? progress.current : null;
+			let list = this.el(doc, "ul", "zs-memory-outline");
+			for (let e of structure.outline.filter(entry => entry.level <= 2)) {
+				let state = states[e.id] || "unread";
+				let li = this.el(doc, "li", "zs-memory-entry");
+				li.dataset.level = String(e.level);
+				li.dataset.state = state;
+				li.classList.toggle("zs-here", here !== null && ZusiaMap.sectionOf(structure.outline, here)?.id === e.id);
+				let mark = this.el(doc, "span", "zs-memory-mark", state === "read" ? "✓" : state === "reading" ? "▶" : "");
+				mark.title = state === "read" ? "Read" : state === "reading" ? "Reading" : "Not read yet";
+				li.append(mark, this.el(doc, "span", "zs-memory-entry-title", ZusiaMap.entryTitle(e)),
+					this.el(doc, "span", "zs-memory-entry-pages", "p. " + printed(e.start) + (e.end > e.start ? "–" + printed(e.end) : "")));
+				list.appendChild(li);
+			}
+			section("Reading map", "zs-memory-map").appendChild(list);
+		}
+
+		let itemsBox = section("What Zusia remembers", "zs-memory-items");
+		let list = this.el(doc, "div", "zs-memory-list");
+		itemsBox.appendChild(list);
+		let change = async (fn) => {
+			let rejected = [];
+			await this.updateMemory(dir, (memory) => {
+				let result = fn(memory);
+				rejected = result.rejected;
+				return result.memory;
+			});
+			await draw();
+			return rejected;
+		};
+		let edit = (row, item) => {
+			let input = this.el(doc, "textarea", "zs-memory-edit");
+			input.value = item.text;
+			input.rows = 2;
+			input.setAttribute("aria-label", "Edit this memory");
+			let save = this.iconButton(doc, "zs-small zs-memory-save", "Save", "check", async () => {
+				let rejected = await change(memory => ZusiaMap.editMemoryItem(memory, item.id, input.value));
+				if (rejected.length) {
+					this.log("Memory edit not kept: " + rejected[0].reason);
+				}
+			});
+			let cancel = this.iconButton(doc, "zs-small zs-memory-cancel", "Cancel", "remove", () => draw());
+			input.addEventListener("keydown", (event) => {
+				if (event.key === "Enter" && !event.shiftKey) {
+					event.preventDefault();
+					save.click();
+				}
+				else if (event.key === "Escape") {
+					event.preventDefault();
+					event.stopPropagation();
+					draw();
+				}
+			});
+			row.querySelector(".zs-memory-text").replaceWith(input);
+			row.querySelector(".zs-memory-actions").replaceChildren(save, cancel);
+			input.focus();
+		};
+		let draw = async () => {
+			let memory = await this.loadMemory(dir);
+			list.textContent = "";
+			if (memory.summary) {
+				let summary = this.el(doc, "div", "zs-memory-summary");
+				summary.append(this.el(doc, "span", "zs-memory-kind", "So far"), this.el(doc, "span", "zs-memory-text", memory.summary));
+				list.appendChild(summary);
+			}
+			for (let kind of ["preference", "open", "shaky", "understood", "note"]) {
+				for (let item of memory.items.filter(it => it.kind === kind)) {
+					let row = this.el(doc, "div", "zs-memory-item");
+					row.dataset.id = item.id;
+					row.dataset.kind = kind;
+					let text = this.el(doc, "span", "zs-memory-text", item.text);
+					let meta = this.el(doc, "div", "zs-memory-meta");
+					meta.appendChild(this.el(doc, "span", "zs-memory-kind", this.MEMORY_KIND_LABELS[kind]));
+					if (item.page) {
+						meta.appendChild(this.el(doc, "span", "zs-memory-page", "p. " + printed(item.page - 1)));
+					}
+					let actions = this.el(doc, "span", "zs-memory-actions");
+					actions.append(
+						this.iconButton(doc, "zs-small zs-memory-edit-btn", "Edit", "edit", () => edit(row, item)),
+						this.iconButton(doc, "zs-small zs-memory-delete", "Forget this", "trash",
+							() => change(current => ZusiaMap.applyMemoryPatch(current, { remove: [item.id] }))),
+					);
+					meta.appendChild(actions);
+					row.append(meta, text);
+					list.appendChild(row);
+				}
+			}
+			if (!list.childElementCount) {
+				list.appendChild(this.el(doc, "div", "zs-memory-empty",
+					"Nothing yet. As you talk, Zusia notes what you understood, what is still unclear and how you like " +
+					"answers; /remember in the chat adds a note of your own."));
+			}
+		};
+		await draw();
+
+		let reset = this.el(doc, "button", "zs-button zs-memory-reset", "Reset memory");
+		reset.type = "button";
+		reset.addEventListener("click", async () => {
+			if (!reset.classList.contains("zs-confirm")) {
+				reset.classList.add("zs-confirm");
+				reset.textContent = "Click again to forget everything";
+				return;
+			}
+			reset.classList.remove("zs-confirm");
+			reset.textContent = "Reset memory";
+			// The chat so far counts as covered, or the next update would learn it all again.
+			let history = await this.loadHistory(dir);
+			await change(memory => ({
+				memory: Object.assign({}, memory, { summary: "", items: [], coveredThrough: history.length - 1 }),
+				rejected: [],
+			}));
+		});
+		itemsBox.appendChild(this.el(doc, "div", "zs-memory-reset-row")).appendChild(reset);
+
+		let settings = section("In the background", "zs-memory-settings");
+		let runner = this.jobBackend() ? "" : " Needs Claude or Antigravity as the assistant: Codex is never used for it.";
+		// A switch is a button, which the row's <label> does not name.
+		let toggle = (label, checked, pref, hint) => {
+			let control = this.switchControl(doc, checked, v => this.setPref(pref, v));
+			control.setAttribute("aria-label", label);
+			return this.row(doc, label, control, hint);
+		};
+		settings.append(
+			toggle("Update the memory as we talk", this.consolidating(), "memory.consolidate",
+				"Every few questions, and when you move on to another chapter or close the chat, a short call to your " +
+				"assistant's cheapest model folds the conversation into this memory." + runner),
+			toggle("Summarise sections I finish", this.gisting(), "memory.gists",
+				"When a section is read, one call writes a short summary of it, which later questions get for " +
+				"orientation. Costs about one call per section." + runner),
+		);
+		doc.defaultView.setTimeout(() => close.focus(), 0);
 		return panel;
 	},
 
@@ -3571,6 +3834,7 @@ Zusia = {
 			// With tracking off, a position stored earlier is not sent either.
 			files.progress = this.trackingReading() ? await this.loadProgress(ctx.dir) : null;
 			files.memory = await this.loadMemory(ctx.dir);
+			files.gists = this.gisting() ? await this.loadGists(ctx.dir) : null;
 			let history = await this.loadHistory(ctx.dir);
 			let sessions = await this.loadSessions(ctx.dir);
 			let session = sessions[backend] || null;
@@ -3640,8 +3904,12 @@ Zusia = {
 			else if (!result.text) {
 				return { error: result.error || label + " returned no text." };
 			}
+			let turnPage = Number.isInteger(files.currentPage) ? files.currentPage : files.selectedPage;
+			// The PDF page the question was asked on, 1-based like the markers, which the
+			// memory's items cite.
 			await this.appendHistory(ctx.dir, [
 				Object.assign({ role: "user", text: question, ts: Date.now() },
+					Number.isInteger(turnPage) ? { page: turnPage + 1 } : {},
 					images.length ? { images: images.map(p => p.startsWith(ctx.dir) ? p.slice(ctx.dir.length).replace(/^[\/\\]+/, "") : p) } : {},
 					pending.modes && pending.modes.length ? { modes: pending.modes } : {}),
 				Object.assign({ role: "assistant", text: result.text, ts: Date.now() }, meta, result.stopped ? { stopped: true } : {}),
@@ -3670,14 +3938,20 @@ Zusia = {
 					this.logError("appendClarification", e);
 				}
 			}
-			let turnPage = Number.isInteger(files.currentPage) ? files.currentPage : files.selectedPage;
-			await this.recordTurn(ctx.dir, {
+			let outline = files.structure && Number.isInteger(turnPage) ? files.structure.outline : null;
+			let memory = await this.recordTurn(ctx.dir, {
 				ts: Date.now(),
 				page: Number.isInteger(turnPage) ? turnPage + 1 : null,
-				section: files.structure && Number.isInteger(turnPage) ? ZusiaMap.sectionOf(files.structure.outline, turnPage)?.id ?? null : null,
+				section: outline ? ZusiaMap.sectionOf(outline, turnPage)?.id ?? null : null,
+				chapter: outline ? ZusiaMap.chapterOf(outline, turnPage)?.id ?? null : null,
 				refs: ZusiaMap.findObjectRefs(question || "").map(ref => ref.kind + ":" + (ref.id ?? ref.label)),
 				backend,
 			});
+			let [before, now] = memory.turns.slice(-2);
+			let crossed = !!(before && now && before.chapter && now.chapter && before.chapter !== now.chapter);
+			// The answer is saved by now; a memory that cannot be scheduled must not fail it.
+			await this.scheduleConsolidation(ctx.dir, crossed ? "chapter" : "turn")
+				.catch(e => this.logError("scheduling memory consolidation", e));
 			if (result.sessionId) {
 				// `map` is the section the session last got the whole map for.
 				let map = this.mapDue(files, sent.session, backend !== "agy") ? { section: this.mapSection(files) } : (sent.session && sent.session.map) || null;
@@ -3694,6 +3968,8 @@ Zusia = {
 		}
 		finally {
 			this._pending.delete(ctx.dir);
+			// Memory jobs wait while a question runs.
+			this.pumpJobs();
 		}
 	},
 
@@ -6009,7 +6285,7 @@ Zusia = {
 	// The paper and the reading context travel inside these tags; a closing tag in the
 	// paper's own text, an outline title or a note must not end its block early.
 	escapeContextTags(text) {
-		return String(text).replace(/<(\/?)(paper_metadata|paper_fulltext|user_annotations|reading_map|reading_memory|focus_page)\b/gi, "&lt;$1$2");
+		return String(text).replace(/<(\/?)(paper_metadata|paper_fulltext|user_annotations|reading_map|reading_memory|focus_page|section_gists|conversation_turns|document_sections|section_text|previous_summary)\b/gi, "&lt;$1$2");
 	},
 
 	// The PDF attachment open in the reader when it belongs to this paper, otherwise the
@@ -6486,6 +6762,11 @@ Zusia = {
 		if (memory && (memory.items.length || memory.summary || (progress && Number.isInteger(progress.current)))) {
 			out += this.contextBlock("reading_memory", ZusiaMap.renderMemory(memory, progress, s || null));
 		}
+		let fresh = files.gists && s && this.isPaged(files) ? ZusiaMap.freshGists(files.gists, s, files.fullText.pages) : [];
+		if (fresh.length) {
+			let current = progress && Number.isInteger(progress.current) ? progress.current : (files.focus || [])[0];
+			out += this.contextBlock("section_gists", ZusiaMap.renderGists(fresh, s, current));
+		}
 		return out;
 	},
 
@@ -6653,16 +6934,17 @@ Zusia = {
 			return;
 		}
 		let state = await this.progressState(dir);
-		let section = state.progress.section;
+		let before = state.progress;
 		state.progress = ZusiaMap.applyPageEvent(state.progress, pageIndex, t, structure || null);
 		state.dirty = true;
-		if (state.progress.section !== section) {
+		if (state.progress.section !== before.section) {
 			await this.flushProgress(dir);
 		}
 		else {
 			this.scheduleProgressSave(dir);
 		}
 		this.refreshReadingChips(dir);
+		await this.afterPageEvent(dir, structure, before, state.progress);
 	},
 
 	// A selection carries Zotero's label for its page, which pins that page's printed number.
@@ -6871,8 +7153,11 @@ Zusia = {
 		return OS.Path.join(dir, "memory.json");
 	},
 
+	// `coveredThrough` is the index in chat.json of the last message folded into the memory,
+	// and `epoch` counts the chats (New chat, a restored chat), so a consolidation of the
+	// chat before never moves the new one's `coveredThrough`.
 	async loadMemory(dir) {
-		return Object.assign(ZusiaMap.emptyMemory(), { turns: [] }, await this.readJSON(this.memoryPath(dir), null));
+		return Object.assign(ZusiaMap.emptyMemory(), { turns: [], coveredThrough: -1, epoch: 0 }, await this.readJSON(this.memoryPath(dir), null));
 	},
 
 	// `change` gets the stored memory and returns the next one; read and write happen under
@@ -6958,6 +7243,488 @@ Zusia = {
 		memo.setAttribute("role", "status");
 		view.logEl.appendChild(memo);
 		this.scrollToEnd(view.logEl);
+	},
+
+	// --------------------------------------------------------------- background memory
+
+	consolidating() {
+		return this.getPref("memory.consolidate") !== false;
+	},
+
+	gisting() {
+		return this.getPref("memory.gists") === true;
+	},
+
+	// The CLI that runs memory jobs: the assistant in use, when it can run with nothing to
+	// read. Codex cannot: its read-only sandbox still reads the whole home folder.
+	jobBackend() {
+		let backend = this.getBackend();
+		return backend === "claude" || backend === "agy" ? backend : null;
+	},
+
+	memoryJobsAvailable() {
+		return this.consolidating() && this.jobBackend() !== null;
+	},
+
+	// Queued unless the same job is already waiting; one running is not enough, as turns
+	// may have come in after it read them. `run(job)` resolves to {called, rateLimited}
+	// or nothing.
+	queueJob(job) {
+		if (this._jobsStopped || this._jobs.some(j => j.key === job.key)) {
+			return false;
+		}
+		this._jobs.push(Object.assign({ proc: null, cancelled: false }, job));
+		this.pumpJobs();
+		return true;
+	},
+
+	// Starts the next job: one at a time, never while a question runs (the CLI and the
+	// subscription are the user's first), and not while a rate limit pauses them. Returns
+	// the job's promise, which never rejects.
+	pumpJobs() {
+		if (this._job || this._jobsStopped || !this._jobs.length || this._pending.size) {
+			return null;
+		}
+		let wait = this._jobBackoff.until - Date.now();
+		if (wait > 0) {
+			if (!this._jobBackoff.wake) {
+				this._jobBackoff.wake = true;
+				Zotero.Promise.delay(wait).then(() => {
+					this._jobBackoff.wake = false;
+					this.pumpJobs();
+				});
+			}
+			return null;
+		}
+		let job = this._jobs.shift();
+		this._job = job;
+		this.refreshReadingChips(job.dir);
+		job.promise = Promise.resolve()
+			.then(() => job.run(job))
+			.then((outcome) => {
+				if (outcome && outcome.rateLimited) {
+					let delay = Math.min(this._jobBackoff.delay ? this._jobBackoff.delay * 2 : this.JOB_BACKOFF_MS, this.JOB_BACKOFF_MAX_MS);
+					this._jobBackoff = { delay, until: Date.now() + delay, wake: false };
+					this.log("Memory jobs paused for " + Math.round(delay / 60000) + " minutes: the assistant reported a rate limit");
+					if (!job.cancelled && !this._jobs.some(j => j.key === job.key)) {
+						this._jobs.unshift(job);
+					}
+				}
+				else if (outcome && outcome.called) {
+					this._jobBackoff = { delay: 0, until: 0, wake: false };
+				}
+			}, e => this.logError("memory job " + job.key, e))
+			.finally(() => {
+				this._job = null;
+				this.refreshReadingChips(job.dir);
+				this.pumpJobs();
+			});
+		return job.promise;
+	},
+
+	// Resolves once no job is running.
+	async jobsIdle() {
+		while (this._job) {
+			await this._job.promise;
+		}
+	},
+
+	// At shutdown nothing new starts and a running call is stopped. What it would have
+	// written is dropped: its turns stay unconsolidated, so nothing is lost.
+	stopJobs() {
+		this._jobsStopped = true;
+		this._jobs = [];
+		if (this._job) {
+			this._job.cancelled = true;
+			try {
+				this._job.proc?.kill();
+			}
+			catch (e) {
+				this.logError("stopping a memory job", e);
+			}
+		}
+	},
+
+	isRateLimited(text) {
+		return /\b429\b|rate[ _-]?limit|usage limit|quota|resource[ _]?exhausted|too many requests/i.test(text || "");
+	},
+
+	// Stateless and with nothing to use: no session kept, no settings, MCP servers or tools.
+	// "--tools=" is one argument whose empty value Claude reads as no tools at all (an
+	// empty argument of its own would be dropped on Windows, #1).
+	backgroundArgs(backend) {
+		if (backend === "claude") {
+			return ["-p", "--output-format", "stream-json", "--verbose", "--model", "haiku", "--tools=",
+				"--strict-mcp-config", "--setting-sources=", "--no-session-persistence"];
+		}
+		return ["--output-format", "stream-json", "--sandbox", "--effort", "low"];
+	},
+
+	// A new empty folder per call, so a backend that can list or read files finds nothing.
+	async makeJobDir() {
+		let dir = OS.Path.join(PathUtils.tempDir, "zusia-job-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8));
+		await Zotero.File.createDirectoryIfMissingAsync(dir);
+		return dir;
+	},
+
+	// One prompt on stdin, no session, in an empty folder. Resolves to {text, error,
+	// rateLimited}; `job`, when given, can stop the call.
+	async runBackgroundCall(backend, prompt, job = null) {
+		let command = await this.findBinary(backend);
+		let cwd = await this.makeJobDir();
+		let proc = null;
+		let finished = false;
+		let timedOut = false;
+		Zotero.Promise.delay(this.JOB_TIMEOUT_MS).then(() => {
+			if (!finished && proc) {
+				timedOut = true;
+				proc.kill();
+			}
+		});
+		try {
+			let { stdout, stderr, exitCode } = await this.runProcess(command, this.backgroundArgs(backend), cwd, null, (p) => {
+				proc = p;
+				if (job) {
+					job.proc = p;
+					if (job.cancelled) {
+						p.kill();
+					}
+				}
+			}, prompt);
+			let events = this.parseJsonLines(stdout);
+			let text = "";
+			let error = "";
+			if (backend === "claude") {
+				({ text, error = "" } = this.parseClaudeEvents(events));
+			}
+			else {
+				let { final } = this.parseAntigravityEvents(events);
+				text = final && final.status === "SUCCESS" ? (final.response || "").trim() : "";
+				error = (final && final.error) || "";
+			}
+			if (timedOut) {
+				error = "no answer within " + Math.round(this.JOB_TIMEOUT_MS / 60000) + " minutes";
+			}
+			else if (exitCode !== 0 || !text) {
+				error = error || stderr.trim() || backend + " exited with code " + exitCode;
+			}
+			if (error) {
+				return { text: "", error, rateLimited: this.isRateLimited(stderr + "\n" + error) };
+			}
+			return { text, error: "", rateLimited: false };
+		}
+		finally {
+			finished = true;
+			if (job) {
+				job.proc = null;
+			}
+			await OS.File.removeDir(cwd);
+		}
+	},
+
+	// --------------------------------------------------------------- consolidation
+
+	// Queues a consolidation when `reason` calls for one: "turn" after an answer (every
+	// CONSOLIDATE_TURNS questions, or past CONSOLIDATE_CHARS of turns), "chapter" (the
+	// reader moved to another chapter) and "leave" (the sidebar left the paper or closed)
+	// whenever an answered question is not in the memory yet.
+	async scheduleConsolidation(dir, reason) {
+		if (this._jobsStopped || !this.memoryJobsAvailable() || !(await this.consolidationDue(dir, reason))) {
+			return false;
+		}
+		return this.queueConsolidation(dir, { reason });
+	},
+
+	// After a call that came back without a usable patch, the count starts again from the
+	// turns it was given, so a model that keeps failing costs a call per five questions,
+	// not one per question.
+	async consolidationDue(dir, reason) {
+		let memory = await this.loadMemory(dir);
+		let history = await this.loadHistory(dir);
+		let pending = history.slice(memory.coveredThrough + 1);
+		if (!pending.some(m => m.role === "assistant")) {
+			return false;
+		}
+		if (reason !== "turn") {
+			return true;
+		}
+		let counted = history.slice(Math.max(memory.coveredThrough + 1, this._memoryFailed.get(dir) || 0));
+		let questions = counted.filter(m => m.role === "user").length;
+		let chars = counted.reduce((sum, m) => sum + String(m.text || "").length, 0);
+		return questions >= this.CONSOLIDATE_TURNS || chars > this.CONSOLIDATE_CHARS;
+	},
+
+	// The check runs again when the job starts: a job that waited behind a question may
+	// find the memory already updated. A `snapshot` ({history, from, epoch}) is a chat
+	// that New chat put away, folded in as it was.
+	queueConsolidation(dir, { reason = "leave", snapshot = null } = {}) {
+		return this.queueJob({
+			key: "memory:" + dir + (snapshot ? "@" + snapshot.epoch : ""),
+			dir,
+			run: async job => (snapshot || (await this.consolidationDue(dir, reason)) ? this.consolidateMemory({ dir }, { job, snapshot }) : null),
+		});
+	},
+
+	// The messages one consolidation reads from chat index `from` on: each cleaned and cut,
+	// at most CONSOLIDATE_INPUT_CHARS in all, ending on an answer. Null when no answered
+	// question is left; `more` when the next call has some.
+	consolidationBatch(history, from) {
+		let messages = [];
+		let total = 0;
+		for (let i = Math.max(0, from); i < history.length; i++) {
+			let text = ZusiaMap.memoryInputText(history[i].text);
+			if (text.length > this.CONSOLIDATE_MESSAGE_CHARS) {
+				text = text.slice(0, this.CONSOLIDATE_MESSAGE_CHARS - 1) + "…";
+			}
+			if (messages.length && total + text.length > this.CONSOLIDATE_INPUT_CHARS) {
+				break;
+			}
+			messages.push({ index: i, role: history[i].role, text, page: history[i].page ?? null });
+			total += text.length;
+		}
+		while (messages.length && messages[messages.length - 1].role !== "assistant") {
+			messages.pop();
+		}
+		if (!messages.length) {
+			return null;
+		}
+		let through = messages[messages.length - 1].index;
+		return { messages, through, more: history.slice(through + 1).some(m => m.role === "assistant") };
+	},
+
+	consolidationPrompt(memory, progress, structure, batch) {
+		let turns = batch.messages.map(m => "#" + m.index + " " + (m.role === "user" ? "User" : "Assistant") +
+			(m.role === "user" && m.page ? " (on " + this.pdfPageName(m.page - 1, structure) + ")" : "") + ": " + m.text).join("\n\n");
+		let sections = structure && structure.outlineMethod !== "chunks"
+			? ZusiaMap.renderMap(structure, structure.outline, progress, { maxChars: 2000, files: [] })
+			: "";
+		return (
+			"You keep the reading memory of Zusia, a study assistant that helps one person read one document. " +
+			"The next conversation about the document starts from this memory, so it should hold what the turns " +
+			"below show about the reader: what they understood, what is still shaky, which of their questions are " +
+			"still open, and how they want to be answered. Record the reader, not the document: the document is " +
+			"always at hand, so do not summarise its content.\n\n" +
+			"Answer with one JSON object and nothing else, every field optional:\n" +
+			"{\"summary\": \"...\", \"add\": [{\"kind\": \"understood\", \"text\": \"...\", \"page\": 41}], \"resolve\": [\"m3\"], \"remove\": [\"m5\"]}\n\n" +
+			"- summary: the running summary of the conversation, rewritten to take in these turns, at most " +
+			ZusiaMap.MEMORY_SUMMARY_CHARS + " characters. Leave it out to keep the current one.\n" +
+			"- add: new items. kind is understood (the reader got it, for example restated it correctly), shaky " +
+			"(they struggled or got it wrong), open (a question of theirs still unanswered) or preference (how they " +
+			"want answers, only from something they said themselves; give \"source\": the number of that User turn). " +
+			"text is one short sentence, at most " + ZusiaMap.MEMORY_ITEM_CHARS + " characters. page is the PDF page " +
+			"number the turn was on, when there is one. Do not add what the memory already says.\n" +
+			"- resolve: ids of open or shaky items these turns settled.\n" +
+			"- remove: ids of items that proved wrong or no longer matter. Items marked note are the reader's own " +
+			"and stay as they are.\n" +
+			"- Plain text: LaTeX maths is fine, HTML and links are not. Answer {} when nothing changed.\n\n" +
+			this.contextBlock("reading_memory", ZusiaMap.renderMemory(memory, progress, structure)) +
+			(sections ? this.contextBlock("document_sections", sections) : "") +
+			this.contextBlock("conversation_turns", turns) +
+			"Answer with the JSON object only."
+		);
+	},
+
+	// One consolidation: the model proposes an id'd patch from the turns the memory does
+	// not cover yet, and only applyMemoryPatch, limited to the model's kinds, changes the
+	// memory. `coveredThrough` moves only within the chat the turns came from.
+	async consolidateMemory(ctx, { job = null, snapshot = null } = {}) {
+		let { dir } = ctx;
+		// Checked again here: the setting or the assistant may have changed while it waited.
+		let backend = this.jobBackend();
+		if (!backend || !this.consolidating()) {
+			return null;
+		}
+		let memory = await this.loadMemory(dir);
+		let history = snapshot ? snapshot.history : await this.loadHistory(dir);
+		let epoch = snapshot ? snapshot.epoch : memory.epoch;
+		let batch = this.consolidationBatch(history, snapshot ? snapshot.from : memory.coveredThrough + 1);
+		if (!batch) {
+			return null;
+		}
+		let structure = await this.cachedStructure(dir);
+		let progress = this.trackingReading() ? await this.loadProgress(dir) : null;
+		let result = await this.runBackgroundCall(backend, this.consolidationPrompt(memory, progress, structure, batch), job);
+		if (job && job.cancelled) {
+			return { called: true };
+		}
+		if (result.error) {
+			this.log("Memory consolidation got no answer: " + result.error.slice(0, 300));
+			if (!result.rateLimited && !snapshot) {
+				this._memoryFailed.set(dir, batch.through + 1);
+			}
+			return { called: true, rateLimited: result.rateLimited };
+		}
+		let patch = ZusiaMap.parsePatch(result.text);
+		if (!patch) {
+			this.log("Memory consolidation answered without a JSON object: " + result.text.slice(0, 300));
+			if (!snapshot) {
+				this._memoryFailed.set(dir, batch.through + 1);
+			}
+			return { called: true };
+		}
+		this._memoryFailed.delete(dir);
+		let rejected = [];
+		await this.updateMemory(dir, (current) => {
+			let applied = ZusiaMap.applyMemoryPatch(current, patch, {
+				history,
+				pageCount: structure ? structure.pageCount : Infinity,
+				now: Date.now(),
+				kinds: ZusiaMap.MODEL_KINDS,
+			});
+			rejected = applied.rejected;
+			if (current.epoch === epoch && batch.through > current.coveredThrough) {
+				applied.memory.coveredThrough = batch.through;
+			}
+			return applied.memory;
+		});
+		if (rejected.length) {
+			this.log("Memory patch applied without " + rejected.length + " parts: " + JSON.stringify(rejected).slice(0, 500));
+		}
+		if (batch.more) {
+			this.queueConsolidation(dir, { snapshot: snapshot && Object.assign({}, snapshot, { from: batch.through + 1 }) });
+		}
+		return { called: true };
+	},
+
+	// New chat and a restored chat start a new epoch with nothing covered; the chat put
+	// away is folded into the memory in the background from where the memory had got to.
+	async startMemoryEpoch(dir, history) {
+		let before = null;
+		await this.updateMemory(dir, (memory) => {
+			before = memory;
+			return Object.assign({}, memory, { coveredThrough: -1, epoch: memory.epoch + 1 });
+		});
+		if (this.memoryJobsAvailable() && history.slice(before.coveredThrough + 1).some(m => m.role === "assistant")) {
+			this.queueConsolidation(dir, { snapshot: { history, from: before.coveredThrough + 1, epoch: before.epoch } });
+		}
+	},
+
+	// The sidebar moved to another paper or closed.
+	leavePaper(dir) {
+		this.scheduleConsolidation(dir, "leave").catch(e => this.logError("scheduling memory consolidation", e));
+	},
+
+	// A page turn into another chapter folds the conversation so far into the memory, and a
+	// section turning read gets its gist when gists are on (sections before their part).
+	async afterPageEvent(dir, structure, before, progress) {
+		let outline = (structure && structure.outline) || [];
+		let from = Number.isInteger(before.current) ? ZusiaMap.chapterOf(outline, before.current) : null;
+		let to = ZusiaMap.chapterOf(outline, progress.current);
+		if (from && to && from.id !== to.id) {
+			await this.scheduleConsolidation(dir, "chapter").catch(e => this.logError("scheduling memory consolidation", e));
+		}
+		if (this.gisting() && this.jobBackend()) {
+			outline.filter(e => progress.sections[e.id] === "read" && (before.sections || {})[e.id] !== "read")
+				.sort((a, b) => b.level - a.level)
+				.forEach(e => this.queueGist(dir, e.id));
+		}
+	},
+
+	// --------------------------------------------------------------- gists
+
+	gistsPath(dir) {
+		return OS.Path.join(dir, "gists.json");
+	},
+
+	async loadGists(dir) {
+		return Object.assign({ version: 1, sections: {} }, await this.readJSON(this.gistsPath(dir), null));
+	},
+
+	updateGists(dir, change) {
+		return this.withDirLock(dir, async () => {
+			let next = change(await this.loadGists(dir));
+			await this.writeAtomic(this.gistsPath(dir), JSON.stringify(next, null, 1));
+			return next;
+		});
+	},
+
+	queueGist(dir, id) {
+		return this.queueJob({ key: "gist:" + dir + ":" + id, dir, run: job => this.gistSection({ dir }, id, { job }) });
+	},
+
+	// A section the reader finished, summarised from its pages with the gist before it for
+	// continuity, or a part merged from its sections' gists. Stored with the hash of the
+	// text it was written from: a changed file makes it stale, and it is written again.
+	async gistSection(ctx, id, { job = null } = {}) {
+		let { dir } = ctx;
+		let backend = this.jobBackend();
+		let structure = await this.cachedStructure(dir);
+		let entry = structure && structure.outline.find(e => e.id === id);
+		let saved = entry ? await this.readJSON(OS.Path.join(dir, "cache", "pages.json"), null) : null;
+		if (!backend || !this.gisting() || !saved || saved.pages.length !== structure.pageCount) {
+			return null;
+		}
+		let pages = saved.pages;
+		let hash = ZusiaMap.sectionHash(pages, entry);
+		let gists = await this.loadGists(dir);
+		if (gists.sections[id] && gists.sections[id].hash === hash) {
+			return null;
+		}
+		let fresh = new Map(ZusiaMap.freshGists(gists, structure, pages).map(g => [g.entry.id, g]));
+		let children = ZusiaMap.childrenOf(structure.outline, entry);
+		let prompt;
+		if (children.length) {
+			let parts = children.filter(c => fresh.has(c.id)).map(c => fresh.get(c.id));
+			if (!parts.length) {
+				return null;
+			}
+			prompt = this.gistMergePrompt(entry, parts, structure);
+		}
+		else {
+			let previous = structure.outline.filter(e => e.end < entry.start && fresh.has(e.id))
+				.sort((a, b) => a.end - b.end || a.level - b.level).pop();
+			prompt = this.gistPrompt(entry, pages, structure, previous ? fresh.get(previous.id) : null);
+		}
+		let result = await this.runBackgroundCall(backend, prompt, job);
+		if (job && job.cancelled) {
+			return { called: true };
+		}
+		if (result.error) {
+			this.log("Gist of " + id + " got no answer: " + result.error.slice(0, 300));
+			return { called: true, rateLimited: result.rateLimited };
+		}
+		let gist = ZusiaMap.validateGist(result.text);
+		if (gist.reason) {
+			this.log("Gist of " + id + " not kept: " + gist.reason);
+			return { called: true };
+		}
+		await this.updateGists(dir, g => Object.assign({}, g, {
+			sections: Object.assign({}, g.sections, { [id]: { hash, text: gist.text, ts: Date.now() } }),
+		}));
+		return { called: true };
+	},
+
+	gistPrompt(entry, pages, structure, previous) {
+		let body = [];
+		for (let i = entry.start; i <= entry.end; i++) {
+			body.push(ZusiaMap.renderPage(i, pages[i], structure));
+		}
+		let text = body.join("\n\n");
+		if (text.length > this.GIST_INPUT_CHARS) {
+			text = text.slice(0, this.GIST_INPUT_CHARS) + "\n[The rest of the section is left out.]";
+		}
+		return (
+			"You write short summaries of a document's sections for a study assistant, which reads them later to " +
+			"find its way around what the reader has already read. Summarise the section below in at most " +
+			ZusiaMap.GIST_CHARS + " characters of plain prose: what it covers, the ideas, definitions and results it " +
+			"introduces, and the numbers of its key equations, figures or theorems, in the document's own terms. " +
+			"Say only what the text says. No headings, no HTML, no links, no preamble: answer with the summary alone.\n\n" +
+			(previous ? "The summary of the part before it, for continuity (do not repeat it):\n" + this.contextBlock("previous_summary", previous.text) : "") +
+			"Section " + ZusiaMap.entryTitle(entry) + ", " + ZusiaMap.rangeName(entry.start, entry.end, structure) + ":\n" +
+			this.contextBlock("section_text", text)
+		);
+	},
+
+	gistMergePrompt(entry, parts, structure) {
+		return (
+			"You write short summaries of a document's parts for a study assistant, which reads them later to find " +
+			"its way around what the reader has already read. Below are the summaries of the sections of " +
+			ZusiaMap.entryTitle(entry) + " (" + ZusiaMap.rangeName(entry.start, entry.end, structure) + "). Merge them " +
+			"into one summary of the whole part, at most " + ZusiaMap.GIST_CHARS + " characters of plain prose, keeping " +
+			"the key results and equation numbers. Say only what the summaries say. No headings, no HTML, no links, " +
+			"no preamble: answer with the summary alone.\n\n" +
+			this.contextBlock("section_gists", parts.map(p => "- " + ZusiaMap.entryTitle(p.entry) + ": " + p.text.replace(/\s+/g, " ")).join("\n"))
+		);
 	},
 
 	// ---------------------------------------------------------------------
@@ -7300,23 +8067,42 @@ Zusia = {
 		return session ? "" : this.systemPrompt({ inline: backend === "agy" });
 	},
 
-	// Messages the backend's session has not seen yet: everything for a new
-	// session, or turns answered by another backend since this one last spoke.
-	transcriptFor(history, session) {
-		let unseen = history.slice(session ? session.seen || 0 : 0).slice(-20);
+	// Messages the backend's session has not seen yet: for a new session the chat, or
+	// turns answered by another backend since this one last spoke. While the memory is
+	// kept in the background, a new session gets every message the memory does not cover
+	// yet (and never fewer than the last few), uncut: the background job folds them in
+	// before they pile up, and until it has, they are the only record of what was said.
+	// Without background memory the chat is cut to its last 20 messages and 30k chars.
+	transcriptFor(history, session, memory = null) {
+		let seen = session ? session.seen || 0 : 0;
+		let kept = this.memoryJobsAvailable();
+		let unseen;
+		if (kept) {
+			let covered = memory ? memory.coveredThrough : -1;
+			let from = Math.min(covered + 1, Math.max(0, history.length - this.RECENT_MESSAGES));
+			// A resumed session missed the turns another backend answered, but those the
+			// memory covers reach it in <reading_memory>.
+			unseen = history.slice(Math.max(seen, from));
+		}
+		else {
+			unseen = history.slice(seen).slice(-20);
+		}
 		if (!unseen.length) {
 			return "";
 		}
 		let lines = unseen.map(m => (m.role === "user" ? "User: " : "Assistant: ") + m.text +
 			(m.images && m.images.length ? " [attached " + m.images.length + " image" + (m.images.length > 1 ? "s" : "") + "]" : ""));
 		let transcript = lines.join("\n\n");
-		if (transcript.length > 30000) {
+		if (!kept && transcript.length > 30000) {
 			transcript = "…" + transcript.slice(-30000);
 		}
+		let since = !session && unseen.length < history.length;
 		return (
 			(session
 				? "Meanwhile the conversation continued with another assistant:\n\n"
-				: "Earlier conversation about this paper (possibly with another assistant):\n\n") +
+				: since
+					? "The conversation about this paper since the reading memory was last updated (possibly with another assistant):\n\n"
+					: "Earlier conversation about this paper (possibly with another assistant):\n\n") +
 			transcript + "\n\n---\n\n"
 		);
 	},
@@ -7465,7 +8251,7 @@ Zusia = {
 	// reading map and memory, the turns this session has not seen, then the question.
 	// They read the pages themselves, so none are inlined.
 	questionPrompt({ files, question, history, session }) {
-		return this.readingBlocks(files, session, { withFiles: true }) + this.transcriptFor(history, session) +
+		return this.readingBlocks(files, session, { withFiles: true }) + this.transcriptFor(history, session, files.memory || null) +
 			question + this.contextNote(files) + this.formattingReminder();
 	},
 
@@ -7757,7 +8543,7 @@ Zusia = {
 			? "[Partial text: " + (inline.support.length + inline.focus.length) + " of " + inline.total +
 				" pages, chosen for this question; the page the user is on comes separately, right before the question.]\n\n"
 			: "";
-		let tail = this.transcriptFor(history, session) + (focus ? block("focus_page", focus) : "") + question +
+		let tail = this.transcriptFor(history, session, files.memory || null) + (focus ? block("focus_page", focus) : "") + question +
 			this.contextNote(files, coverage, { withFiles: false }) + reminder;
 		if (session) {
 			return reading + (support ? block("paper_fulltext", support) : "") + tail;
@@ -7770,6 +8556,22 @@ Zusia = {
 			(files.annotations ? block("user_annotations", files.annotations) : "") +
 			"---\n\n" + tail
 		);
+	},
+
+	// The conversation id and the final result event of an agy stream-json run.
+	parseAntigravityEvents(events) {
+		let sessionId = null;
+		let final = null;
+		for (let event of events) {
+			if (event.conversation_id) {
+				sessionId = event.conversation_id;
+			}
+			if (event.event === "result" && event.result) {
+				final = event.result;
+				sessionId = final.conversation_id || sessionId;
+			}
+		}
+		return { sessionId, final };
 	},
 
 	async runAntigravity(request) {
@@ -7789,17 +8591,7 @@ Zusia = {
 
 		let { stdout, stderr, exitCode } = await this.runProcess(command, args, request.ctx.dir, onEvent, onSpawn,
 			this.buildAntigravityPrompt(request));
-		let sessionId = null;
-		let final = null;
-		for (let event of this.parseJsonLines(stdout)) {
-			if (event.conversation_id) {
-				sessionId = event.conversation_id;
-			}
-			if (event.event === "result" && event.result) {
-				final = event.result;
-				sessionId = final.conversation_id || sessionId;
-			}
-		}
+		let { sessionId, final } = this.parseAntigravityEvents(this.parseJsonLines(stdout));
 
 		if (final && final.status === "SUCCESS" && (final.response || "").trim()) {
 			return { text: final.response.trim(), sessionId };

@@ -55,7 +55,16 @@ export function loadPlugin({ prefs = {}, files = new Map() } = {}) {
 	window.eval("var Zusia;\n" + read("src/content/zusia.js") + "\nwindow.Zusia = Zusia;");
 	const plugin = window.Zusia;
 	plugin.rootURI = "./";
-	return { window, document: window.document, plugin, map: window.ZusiaMap, prefs, files, Subprocess };
+	// Memory jobs start on their own after answers, New chat and page turns, so no test
+	// reaches a CLI through them by accident: each call is recorded and gets no answer.
+	// Tests of the runner itself put `runBackgroundCall` back.
+	const backgroundCalls = [];
+	const runBackgroundCall = plugin.runBackgroundCall;
+	plugin.runBackgroundCall = async (backend, prompt) => {
+		backgroundCalls.push({ backend, prompt });
+		return { text: "", error: "no model in tests", rateLimited: false };
+	};
+	return { window, document: window.document, plugin, map: window.ZusiaMap, prefs, files, Subprocess, backgroundCalls, runBackgroundCall };
 }
 
 export function fixture(name) {
