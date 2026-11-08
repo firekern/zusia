@@ -214,6 +214,34 @@ test("labels: an anchor that contradicts the folios on its page is dropped and r
 	assert.equal(M.inferPageLabels(BOOK, [{ pageIndex: idx(20), label: "20" }]).conflicts.length, 0);
 });
 
+test("labels: anchors with the PDF number on every page lose to the folios, a stray matching number too", () => {
+	// An unlabelled PDF: Zotero reports "1".."1132". One last line ending in its own PDF
+	// number agrees with them, which once made their giant cluster a folio run.
+	const pages = BIG.slice();
+	pages[105] += "\nSee Problem 106";
+	const identity = pages.map((_, i) => ({ pageIndex: i, label: String(i + 1) }));
+	const result = M.inferPageLabels(pages, identity);
+	assert.equal(result.labels[40], "18");
+	assert.equal(result.labels[14], "xv");
+	assert.equal(M.labelToIndex(result, "18"), 40);
+	assert.equal(M.pageIndexFor(result, "18", pages.length), 40);
+	assert.ok(M.trusted(result), "confidence " + result.confidence);
+	assert.ok(result.conflicts.length > 1000, "the PDF numbers are reported, not pinned");
+});
+
+test("labelToIndex: a number that two arabic runs carry means the page in the longer run", () => {
+	// Zotero's labels for Oppenheim are 1–23 on the front matter, then 1–1109: here the
+	// front matter has no folios of its own, so its anchors stand.
+	const pages = BIG.map((text, i) => (i < 23 ? "Front matter page\n" + text.split("\n")[1] : text));
+	const front = Array.from({ length: 23 }, (_, i) => ({ pageIndex: i, label: String(i + 1) }));
+	const result = M.inferPageLabels(pages, front);
+	assert.equal(result.labels[17], "18", "the front matter keeps Zotero's label");
+	assert.equal(result.labels[40], "18");
+	assert.equal(M.labelToIndex(result, "18"), 40);
+	assert.equal(M.labelToIndex(result, "5"), 27);
+	assert.equal(M.pageIndexFor(result, "18", pages.length), 40);
+});
+
 test("labels: a handful of folios in a long text stays below the marker threshold", () => {
 	const pages = Array.from({ length: 200 }, (_, i) => "Body of this page\n" + filler("noise", 300));
 	for (let i = 10; i < 15; i++) {

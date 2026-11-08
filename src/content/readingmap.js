@@ -35,6 +35,10 @@ var ZusiaMap = {
 	MEMORY_CAPS: { preference: 6, open: 8, shaky: 8, understood: 12, note: 12 },
 	MEMORY_ITEM_CHARS: 280,
 	MEMORY_SUMMARY_CHARS: 1500,
+	// Notes are the user's own (/remember): a model's patch may neither add nor drop one.
+	MODEL_KINDS: ["preference", "open", "shaky", "understood"],
+	GIST_CHARS: 900,
+	GIST_PROMPT_CHARS: 3000,
 
 	// ------------------------------------------------------------ page labels
 
@@ -100,7 +104,9 @@ var ZusiaMap = {
 	// parsed} from Zotero vote with a large weight and win their own page, unless a folio
 	// run holds that page and prints another number there: Zotero reports the PDF number
 	// when a PDF has no labels, and pinning it would leave the printed page unreachable
-	// and its number twice in the run. Those anchors come back as `conflicts`.
+	// and its number twice in the run. Those anchors come back as `conflicts`. A run is a
+	// folio run by its folios alone: anchors on every page of an unlabelled PDF plus one
+	// stray number that matches them must not outrank the printed folios.
 	labelRuns(candidates, anchors) {
 		let votes = new Map();
 		let vote = (style, offset, page, weight) => {
@@ -123,8 +129,8 @@ var ZusiaMap = {
 			let flush = () => {
 				let weight = group.reduce((sum, s) => sum + s.weight, 0);
 				if (weight >= this.RUN_MIN[style]) {
-					let folio = group.some(s => s.weight === 1);
-					clusters.push({ style, offset, start: group[0].page, end: group[group.length - 1].page, weight, folio });
+					let folios = group.filter(s => s.weight === 1).length;
+					clusters.push({ style, offset, start: group[0].page, end: group[group.length - 1].page, weight, folios, folio: folios >= this.RUN_MIN[style] });
 				}
 				group = [];
 			};
@@ -138,7 +144,7 @@ var ZusiaMap = {
 		}
 		// Anchors that no folio agrees with claim only pages no folio run holds: one odd
 		// annotation label must not relabel the pages around it.
-		clusters.sort((a, b) => b.folio - a.folio || b.weight - a.weight || a.start - b.start);
+		clusters.sort((a, b) => b.folio - a.folio || (a.folio ? b.folios - a.folios : 0) || b.weight - a.weight || a.start - b.start);
 		let owner = new Array(candidates.length).fill(null);
 		for (let cluster of clusters) {
 			let taken = 0;
@@ -233,7 +239,8 @@ var ZusiaMap = {
 	},
 
 	// The PDF index printed with `label`, or null. A label can repeat (an appendix that
-	// restarts at 1, a pinned anchor); "18" then means the page in an arabic run.
+	// restarts at 1, a pinned anchor, Zotero's arabic labels on the front matter); "18"
+	// then means the page in the longest arabic run, the main matter.
 	labelToIndex(structure, label) {
 		let want = String(label).trim().toLowerCase();
 		let labels = (structure && structure.labels) || [];
@@ -247,9 +254,17 @@ var ZusiaMap = {
 			return null;
 		}
 		if (/^\d+$/.test(want)) {
-			let arabic = matches.find(i => this.runAt(structure, i)?.style === "arabic");
-			if (arabic !== undefined) {
-				return arabic;
+			let best = null;
+			let length = -1;
+			for (let i of matches) {
+				let run = this.runAt(structure, i);
+				if (run && run.style === "arabic" && run.end - run.start > length) {
+					best = i;
+					length = run.end - run.start;
+				}
+			}
+			if (best !== null) {
+				return best;
 			}
 		}
 		return matches[0];
@@ -1070,7 +1085,9 @@ var ZusiaMap = {
 		};
 		let line = (e, fileText) => "  ".repeat(e.level - 1) + "- " + this.entryTitle(e) + " · " + this.rangeName(e.start, e.end, structure) +
 			(fileText ? " · " + fileText : "") + " · " + (states[e.id] || "unread");
-		let lines = [{ text: "Reading map: " + (structure.labels || []).length + " PDF pages, " + tops.length + " parts; text files in " + dir + ".", priority: Infinity }];
+		// A backend without file access is given no files, and no folder to look in.
+		let lines = [{ text: "Reading map: " + (structure.labels || []).length + " PDF pages, " + tops.length + " parts" +
+			(files.length ? "; text files in " + dir : "") + ".", priority: Infinity }];
 		for (let e of outline) {
 			if (e.level === 1) {
 				let k = tops.indexOf(e);
@@ -1107,11 +1124,12 @@ var ZusiaMap = {
 	// remove?: [id]}, which a model proposes, so every part is checked: the kind is known,
 	// a page is a PDF page number (1-based, as the markers show it) in the paper, a
 	// preference cites the index of a user message in `history`, text is cleaned and
-	// capped, and a kind over its cap drops its oldest items. Returns {memory, rejected}.
-	applyMemoryPatch(memory, patch, { history = [], pageCount = Infinity, now = null } = {}) {
+	// capped, and a kind over its cap drops its oldest items. `kinds` are the kinds this
+	// patch may add, resolve or remove. Returns {memory, rejected}.
+	applyMemoryPatch(memory, patch, { history = [], pageCount = Infinity, now = null, kinds = this.MEMORY_KINDS } = {}) {
 		let next = { ...memory, items: memory.items.map(item => ({ ...item })) };
 		let rejected = [];
-		if (!patch || typeof patch !== "object") {
+		if (!patch || typeof patch !== "object" || Array.isArray(patch)) {
 			return { memory: next, rejected: [{ reason: "not a patch" }] };
 		}
 		let ids = list => (Array.isArray(list) ? list : []);
@@ -1119,16 +1137,20 @@ var ZusiaMap = {
 			let k = next.items.findIndex(item => item.id === id);
 			if (k < 0) {
 				rejected.push({ id, reason: "unknown id" });
-				continue;
 			}
-			next.items.splice(k, 1);
+			else if (!kinds.includes(next.items[k].kind)) {
+				rejected.push({ id, reason: "not removable" });
+			}
+			else {
+				next.items.splice(k, 1);
+			}
 		}
 		for (let id of ids(patch.resolve)) {
 			let k = next.items.findIndex(item => item.id === id);
 			if (k < 0) {
 				rejected.push({ id, reason: "unknown id" });
 			}
-			else if (!["open", "shaky"].includes(next.items[k].kind)) {
+			else if (!["open", "shaky"].includes(next.items[k].kind) || !kinds.includes(next.items[k].kind)) {
 				rejected.push({ id, reason: "not resolvable" });
 			}
 			else {
@@ -1145,6 +1167,9 @@ var ZusiaMap = {
 			let hasPage = add.page !== undefined && add.page !== null;
 			if (!this.MEMORY_KINDS.includes(add.kind)) {
 				reason = "unknown kind";
+			}
+			else if (!kinds.includes(add.kind)) {
+				reason = "kind not allowed";
 			}
 			else if (!text) {
 				reason = "empty";
@@ -1178,10 +1203,118 @@ var ZusiaMap = {
 				next.items.splice(next.items.indexOf(sameKind[0]), 1);
 			}
 		}
-		if (patch.summary !== undefined && patch.summary !== null) {
+		if (typeof patch.summary === "string") {
 			next.summary = this.cleanMemoryText(patch.summary, this.MEMORY_SUMMARY_CHARS);
 		}
+		else if (patch.summary !== undefined && patch.summary !== null) {
+			rejected.push({ reason: "summary is not text" });
+		}
 		return { memory: next, rejected };
+	},
+
+	// The user's own edit of one item from the Memory sheet: cleaned like a patch's text,
+	// and an emptied item is refused rather than kept blank.
+	editMemoryItem(memory, id, text) {
+		let clean = this.cleanMemoryText(text, this.MEMORY_ITEM_CHARS);
+		let k = memory.items.findIndex(item => item.id === id);
+		if (k < 0) {
+			return { memory, rejected: [{ id, reason: "unknown id" }] };
+		}
+		if (!clean) {
+			return { memory, rejected: [{ id, reason: "empty" }] };
+		}
+		let items = memory.items.map((item, i) => (i === k ? { ...item, text: clean } : item));
+		return { memory: { ...memory, items }, rejected: [] };
+	},
+
+	// A turn as the consolidation model reads it: what the user and the assistant said,
+	// without the passages quoted from the document ("> …" lines) or context blocks a
+	// message carries, which are the document's words, not the reader's.
+	memoryInputText(text) {
+		return String(text ?? "")
+			.replace(/<(paper_[a-z]+|user_annotations|reading_map|reading_memory|focus_page|section_gists)\b[^>]*>[^]*?<\/\1>/gi, "")
+			.split("\n")
+			.filter(line => !/^\s*>/.test(line))
+			.join("\n")
+			.replace(/\n{3,}/g, "\n\n")
+			.trim();
+	},
+
+	// The JSON object a model answered with, fenced or with words around it, or null.
+	parsePatch(text) {
+		let t = String(text ?? "");
+		let a = t.indexOf("{");
+		let b = t.lastIndexOf("}");
+		if (a < 0 || b < a) {
+			return null;
+		}
+		try {
+			let value = JSON.parse(t.slice(a, b + 1));
+			return value && typeof value === "object" && !Array.isArray(value) ? value : null;
+		}
+		catch (e) {
+			if (!(e instanceof SyntaxError)) {
+				throw e;
+			}
+			return null;
+		}
+	},
+
+	// ------------------------------------------------------------ gists
+
+	// A gist is read as orientation in later prompts, so, like memory text, it keeps no
+	// tags (they could close a context block) and no links (they can only have come from
+	// the page text or a confused model); over the cap it is cut at the last sentence that
+	// fits. Returns {text} or {reason}.
+	validateGist(text) {
+		let t = String(text ?? "").trim().replace(/^```[a-z]*\s*\n?/i, "").replace(/\n?```$/, "")
+			.replace(/<\/?[A-Za-z][\w:-]*(?:\s+[\w:-]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'<>]+))*\s*\/?>/g, "")
+			.replace(/\b(?:https?|ftp|file):\/\/\S+|\bwww\.\S+/gi, "")
+			.replace(/[^\S\n]+/g, " ")
+			.replace(/ *\n */g, "\n")
+			.replace(/\n{3,}/g, "\n\n")
+			.trim();
+		if (!t) {
+			return { reason: "empty" };
+		}
+		if (t.length <= this.GIST_CHARS) {
+			return { text: t };
+		}
+		let head = t.slice(0, this.GIST_CHARS);
+		let end = Math.max(head.lastIndexOf(". "), head.lastIndexOf(".\n"));
+		return { text: end >= this.GIST_CHARS / 2 ? head.slice(0, end + 1) : head.slice(0, this.GIST_CHARS - 1).trimEnd() + "…" };
+	},
+
+	// What a gist was written from: when the section's text changes, its gist is stale.
+	sectionHash(pages, entry) {
+		return this.fnv1a(pages.slice(entry.start, entry.end + 1).join("\f"));
+	},
+
+	childrenOf(outline, entry) {
+		return (outline || []).filter(e => e.level === entry.level + 1 && e.start >= entry.start && e.end <= entry.end);
+	},
+
+	// The gists still true to the text, in outline order: [{entry, text}].
+	freshGists(gists, structure, pages) {
+		let sections = (gists && gists.sections) || {};
+		return ((structure && structure.outline) || [])
+			.filter(e => sections[e.id] && sections[e.id].hash === this.sectionHash(pages, e))
+			.map(e => ({ entry: e, text: sections[e.id].text }));
+	},
+
+	// The <section_gists> body: the sections nearest the page on screen kept first, and a
+	// chapter's own gist preferred over its sections' when room runs short.
+	renderGists(fresh, structure, current, { maxChars = this.GIST_PROMPT_CHARS } = {}) {
+		let lines = [{ text: "Summaries of sections the user has finished, for orientation only: check the pages before quoting or citing anything from them.", priority: Infinity }];
+		for (let { entry, text } of fresh) {
+			let distance = !Number.isInteger(current) ? entry.start
+				: current < entry.start ? entry.start - current : Math.max(0, current - entry.end);
+			lines.push({
+				text: "- " + this.entryTitle(entry) + " (" + this.rangeName(entry.start, entry.end, structure) + "): " + text.replace(/\s+/g, " "),
+				priority: 1e7 - distance - entry.level * 10,
+			});
+		}
+		return this.fitLines(lines, maxChars);
 	},
 
 	// Rendered live from progress and never stored, so it cannot go stale.

@@ -74,16 +74,63 @@ Zusia = {
 		{ name: "Graphite", color: "#5a6070" },
 	],
 	ZOTERO_ACCENT: "#4072e5",
-	// fulltext.md is read on demand by Claude and Codex, so it can hold a whole book.
+	// Claude and Codex read the text from files, so a whole book is written out.
 	// Antigravity gets the text inside its prompt. Prompts go on stdin now, so the
 	// smaller Windows budget only waits for agy's stdin to be checked on Windows.
-	FULLTEXT_FILE_CHARS: 1000000,
 	FULLTEXT_INLINE_CHARS: 60000,
 	FULLTEXT_INLINE_CHARS_WINDOWS: 12000,
-	FULLTEXT_CACHE_SIZE: 20,
+	// Extracted page text kept in memory across papers: a 1132-page book is about 2M.
+	TEXT_CACHE_CHARS: 20e6,
+	// Raise when structure.json, the text files or their markers change shape: every
+	// text file's stamp carries it, so all of them are written again.
+	MAP_VERSION: 1,
+	// Raise when cache/pages.json changes shape; an older one is extracted again.
+	PAGES_VERSION: 1,
+	// From this many PDF pages on, the text goes into section files under text/, so no
+	// Read call truncates it, and Antigravity gets chosen pages instead of the start.
+	BOOK_MIN_PAGES: 150,
+	// An Antigravity conversation keeps every page it was sent; past this the next question
+	// starts a new one, and the reading memory carries the continuity.
+	AGY_SESSION_CHARS: 200000,
+	// Pages the answering model may ask for at once with a NEED_PAGES line, and how much
+	// streamed text is held back so that line never flashes on screen.
+	NEED_PAGES_MAX: 3,
+	NEED_PAGES_HOLD: 40,
+	// progress.json is written at most this often while pages turn, at once on a new section.
+	PROGRESS_SAVE_MS: 20000,
+	// Turns kept in memory.json's log; the chat itself stays in chat.json.
+	MEMORY_TURNS: 200,
+	// Background memory: a consolidation after this many questions, or once the turns not
+	// yet folded into the memory pass this many characters. One call reads at most
+	// CONSOLIDATE_INPUT_CHARS of turns, each cut to CONSOLIDATE_MESSAGE_CHARS; the rest
+	// goes in the next call.
+	CONSOLIDATE_TURNS: 5,
+	CONSOLIDATE_CHARS: 12000,
+	CONSOLIDATE_INPUT_CHARS: 16000,
+	CONSOLIDATE_MESSAGE_CHARS: 3000,
+	// A new session always gets at least this many recent questions and their answers
+	// verbatim, even when the memory already covers them: the last exchanges are what a
+	// follow-up refers to. A turn is a question, as in CONSOLIDATE_TURNS.
+	RECENT_TURNS: 6,
+	// The transcript a new session gets while the memory is kept in the background, at
+	// most: the jobs normally keep it far below this, but they can fail or be paused for
+	// hours, and a restored chat starts with nothing covered.
+	MEMORY_TRANSCRIPT_CHARS: 60000,
+	// A gist reads at most this much of its section; agy's inline budget is 60k.
+	GIST_INPUT_CHARS: 40000,
+	// What a background prompt to agy leaves for its turns or section text when its
+	// instructions and memory already fill most of the inline budget (Windows: 12k).
+	JOB_MIN_INPUT_CHARS: 2000,
+	// Room for one turn's "#N Assistant (on PDF page …): " marker in a consolidation.
+	TURN_MARKER_CHARS: 60,
+	// A background call runs alone and in an empty folder; one that hangs is stopped so
+	// the queue moves on. A rate limit pauses every job, 15 minutes doubling up to 2 hours.
+	JOB_TIMEOUT_MS: 300000,
+	JOB_BACKOFF_MS: 900000,
+	JOB_BACKOFF_MAX_MS: 7200000,
 	// Stored with each session next to a hash of the system prompt it started with. The hash
 	// catches edits to the prompt itself; raise this when what a session stores changes.
-	PROMPT_VERSION: 3,
+	PROMPT_VERSION: 4,
 	// Toggle buttons in the message box that shape the answer. Settings → Chat chooses
 	// which are shown; each one's on/off state is remembered (pref "mode.<id>").
 	MODES: {
@@ -259,6 +306,7 @@ Zusia = {
 		previous: "arrow-left.svg",
 		done: "check-circle.svg",
 		clarifications: "highlighter.svg",
+		memory: "brain.svg",
 		quote: "quotes.svg",
 		prompt: "chat-centered-text.svg",
 		answer: "book-open-text.svg",
@@ -311,12 +359,43 @@ Zusia = {
 	// Text to put in (or send from) a paper's message box once its sidebar renders,
 	// keyed by context directory: { text, send }.
 	_drafts: new Map(),
+	// attachmentID → { stamp, result, chars }, oldest first, at most TEXT_CACHE_CHARS in all.
 	_fullTexts: new Map(),
+	// "attachmentID@stamp" → the extraction in flight.
+	_textLoads: new Map(),
+	// Per paper directory: the reading map in use { key, structure }, the labels and outline
+	// Zotero gave for a file version, builds in flight, and the BM25 index per file version.
+	_structures: new Map(),
+	_natives: new Map(),
+	_mapBuilds: new Map(),
+	// "attachmentID@stamp" → { promise, done, result }: Zotero 10's structured text, read
+	// in the background.
+	_sdt: new Map(),
+	_bm25: new WeakMap(),
+	// Per paper directory: { progress, dirty, scheduled }, saved by flushProgress.
+	_progress: new Map(),
+	// Per paper directory: the tail of the queue that serialises its file writes.
+	_dirQueue: new Map(),
+	_readingObserver: null,
+	// Background memory jobs: the queue, the one running ({key, dir, proc, cancelled,
+	// promise}), the rate-limit pause, and whether shutdown stopped them.
+	_jobs: [],
+	_job: null,
+	_jobBackoff: { delay: 0, until: 0, wake: false },
+	_jobsStopped: false,
+	// Per paper directory: the chat index after the turns of a consolidation that failed.
+	_memoryFailed: new Map(),
+	// Folds of a put-away chat ("dir\nfile") and gists ("dir\nid\nhash") that failed in
+	// this session: tried again only alongside a consolidation the chat earns, or not at all.
+	_archiveFailed: new Set(),
+	_gistFailed: new Set(),
 	IMAGE_TYPES: { "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp" },
 	MAX_IMAGES: 6,
 	ATTACH_KEY: "I",
 	// The live view behind each rendered .zs-root.
 	_views: new WeakMap(),
+	// The paper folder each item pane section body showed last.
+	_shownDirs: new WeakMap(),
 	// The capturing side-nav click listener added to each main window.
 	_sidenavListeners: new WeakMap(),
 
@@ -888,6 +967,14 @@ Zusia = {
 			onInit: ({ body }) => {
 				// The chat view's CSS finds our section by this class (see "chat view" in zusia.css).
 				body.closest("item-pane-custom-section")?.classList.add("zs-pane");
+			},
+			// The section goes with its window: what was said about the paper is folded into
+			// its memory. At shutdown the jobs are stopped first, so nothing new starts.
+			onDestroy: ({ body }) => {
+				let dir = this._shownDirs.get(body);
+				if (dir) {
+					this.leavePaper(dir);
+				}
 			},
 			onItemChange: ({ body, item, setEnabled }) => {
 				let usable = !!item && (item.isRegularItem() || item.isFileAttachment());
@@ -1868,7 +1955,44 @@ Zusia = {
 				? "Answers use the title, authors, abstract and your annotations, not the paper's full text"
 				: "Answers use the paper's full text, its metadata and your annotations");
 		chip.append(this.svgIcon(doc, "paper", "zs-context-icon"), this.el(doc, "span", "zs-context-label", info.label));
+		if (info.reading) {
+			chip.append(this.el(doc, "span", "zs-context-reading", info.reading));
+			chip.title += "\nWhere you are and what you have read in this section, from the page shown in the reader";
+		}
+		// The chip opens the Memory sheet: what Zusia keeps about this paper.
+		chip.title += "\nClick to see the reading map and what Zusia remembers";
+		chip.setAttribute("role", "button");
+		chip.tabIndex = 0;
+		let open = () => this.openMemory(root).catch(e => this.logError("openMemory", e));
+		chip.addEventListener("click", open);
+		chip.addEventListener("keydown", (event) => {
+			if (event.key === "Enter" || event.key === " ") {
+				event.preventDefault();
+				open();
+			}
+		});
 		holder.appendChild(chip);
+		let status = this.memoryStatus(this._views.get(root)?.ctx.dir);
+		if (status) {
+			let line = this.el(doc, "span", "zs-memory-status", status);
+			line.setAttribute("role", "status");
+			holder.appendChild(line);
+		}
+	},
+
+	// "Memory: updating" while a job for this paper runs, "Memory: paused" while a rate
+	// limit holds one back; nothing otherwise.
+	memoryStatus(dir) {
+		if (!dir) {
+			return "";
+		}
+		if (this._job && this._job.dir === dir) {
+			return "Memory: updating";
+		}
+		if (this._jobBackoff.until > Date.now() && this._jobs.some(job => job.dir === dir)) {
+			return "Memory: paused (rate limit)";
+		}
+		return "";
 	},
 
 	// "Read fulltext.md · searched twice · thought for 8s", from the recorded steps.
@@ -2195,13 +2319,24 @@ Zusia = {
 		if (!logEl.isConnected) {
 			return;
 		}
+		// Each render builds a new .zs-root, so the paper shown last is kept per section body.
+		let previous = this._shownDirs.get(body);
+		if (previous && previous !== ctx.dir) {
+			this.leavePaper(previous);
+		}
+		if (previous !== ctx.dir) {
+			this.resumeMemory(ctx.dir).catch(e => this.logError("resuming memory consolidation", e));
+		}
+		this._shownDirs.set(body, ctx.dir);
 		this._views.set(root, view);
 		let info = this.paperInfo(ctx);
+		view.info = info;
 		this.renderPaperChip(root, info);
 		this.renderPaperTitle(root, info);
 		this.renderAttachments(view);
 		this.renderMessages(view, history);
 		this.applyJump(view);
+		this.updateReading(view).catch(e => this.logError("updateReading", e));
 
 		input.addEventListener("input", () => {
 			this.autoGrow(input);
@@ -2329,12 +2464,15 @@ Zusia = {
 	},
 
 	// Keeps a conversation next to the current one (chat-<time>.json) so it can be reopened.
+	// Returns the file's name, or null for an empty chat.
 	async archiveHistory(dir, history) {
 		if (!history.length) {
-			return;
+			return null;
 		}
 		let stamp = new Date(history[history.length - 1].ts || Date.now()).toISOString().replace(/[:.]/g, "-");
-		await Zotero.File.putContentsAsync(OS.Path.join(dir, "chat-" + stamp + ".json"), JSON.stringify(history, null, 2));
+		let name = "chat-" + stamp + ".json";
+		await Zotero.File.putContentsAsync(OS.Path.join(dir, name), JSON.stringify(history, null, 2));
+		return name;
 	},
 
 	async listArchives(dir) {
@@ -2373,9 +2511,11 @@ Zusia = {
 		if (!view || this._pending.has(view.ctx.dir)) {
 			return;
 		}
-		await this.archiveHistory(view.ctx.dir, await this.loadHistory(view.ctx.dir));
+		let history = await this.loadHistory(view.ctx.dir);
+		let archived = await this.archiveHistory(view.ctx.dir, history);
 		await this.saveHistory(view.ctx.dir, []);
 		await this.saveSessions(view.ctx.dir, {});
+		await this.startMemoryEpoch(view.ctx.dir, history, archived);
 		this.renderMessages(view, []);
 		view.input.focus();
 	},
@@ -2386,11 +2526,16 @@ Zusia = {
 			return;
 		}
 		let restored = JSON.parse(await Zotero.File.getContentsAsync(archive.path));
-		await this.archiveHistory(view.ctx.dir, await this.loadHistory(view.ctx.dir));
+		let replaced = await this.loadHistory(view.ctx.dir);
+		let archived = await this.archiveHistory(view.ctx.dir, replaced);
 		await this.saveHistory(view.ctx.dir, restored);
 		// The agents' own sessions belong to the chat being replaced; the restored
 		// chat is replayed to them as a transcript on its next question.
 		await this.saveSessions(view.ctx.dir, {});
+		// Whether the memory took in the restored chat before is not known, so it counts
+		// as not covered: replayed (up to MEMORY_TRANSCRIPT_CHARS), and folded in again, so
+		// a fold of it still owed is dropped.
+		await this.startMemoryEpoch(view.ctx.dir, replaced, archived, { restored: OS.Path.basename(archive.path) });
 		await OS.File.remove(archive.path);
 		this.renderMessages(view, restored);
 		this.setBusy(view, false);
@@ -2872,6 +3017,194 @@ Zusia = {
 		return panel;
 	},
 
+	MEMORY_KIND_LABELS: { preference: "Preference", open: "Open question", shaky: "Still shaky", understood: "Understood", note: "Your note" },
+
+	// A panel over the chat with what Zusia keeps about the paper: where the reader is, the
+	// reading map with what was read, the memory items (each editable and deletable),
+	// Reset, and the two background memory settings.
+	async openMemory(root) {
+		let view = this._views.get(root);
+		if (!view) {
+			return null;
+		}
+		let doc = root.ownerDocument;
+		let dir = view.ctx.dir;
+		root.querySelector(".zs-panel")?.remove();
+		let panel = this.el(doc, "div", "zs-panel zs-memory-panel");
+		panel.setAttribute("role", "dialog");
+		panel.setAttribute("aria-label", "Reading memory");
+		let head = this.el(doc, "div", "zs-panel-head");
+		let title = this.el(doc, "div", "zs-panel-title");
+		title.append(this.svgIcon(doc, "memory"), this.el(doc, "span", null, "Reading memory"));
+		let close = this.iconButton(doc, "zs-small zs-panel-close", "Close", "remove", () => panel.remove());
+		head.append(title, close);
+		let body = this.el(doc, "div", "zs-panel-body");
+		panel.append(head, body);
+		panel.addEventListener("keydown", (event) => {
+			if (event.key === "Escape") {
+				event.preventDefault();
+				event.stopPropagation();
+				panel.remove();
+			}
+		});
+		root.appendChild(panel);
+
+		let structure = await this.cachedStructure(dir);
+		let progress = this.trackingReading() ? await this.loadProgress(dir) : null;
+		let section = (label, className) => {
+			let box = this.el(doc, "section", "zs-memory-section " + className);
+			box.appendChild(this.el(doc, "div", "zs-memory-heading", label));
+			body.appendChild(box);
+			return box;
+		};
+		let printed = i => ZusiaMap.printedLabel(i, structure) || String(i + 1);
+
+		// The heading already says "Where we are"; the line under it starts a sentence.
+		let where = ZusiaMap.whereWeAre(progress, structure).replace(/^Where we are: /, "");
+		section("Where we are", "zs-memory-where").appendChild(
+			this.el(doc, "div", "zs-memory-line", where.charAt(0).toUpperCase() + where.slice(1)));
+
+		if (structure && structure.outline.length && structure.outlineMethod !== "chunks") {
+			let states = (progress && progress.sections) || {};
+			let here = progress && Number.isInteger(progress.current) ? progress.current : null;
+			let list = this.el(doc, "ul", "zs-memory-outline");
+			for (let e of structure.outline.filter(entry => entry.level <= 2)) {
+				let state = states[e.id] || "unread";
+				let li = this.el(doc, "li", "zs-memory-entry");
+				li.dataset.level = String(e.level);
+				li.dataset.state = state;
+				li.classList.toggle("zs-here", here !== null && ZusiaMap.sectionOf(structure.outline, here)?.id === e.id);
+				let mark = this.el(doc, "span", "zs-memory-mark", state === "read" ? "✓" : state === "reading" ? "▶" : "");
+				mark.title = state === "read" ? "Read" : state === "reading" ? "Reading" : "Not read yet";
+				li.append(mark, this.el(doc, "span", "zs-memory-entry-title", ZusiaMap.entryTitle(e)),
+					this.el(doc, "span", "zs-memory-entry-pages", "p. " + printed(e.start) + (e.end > e.start ? "–" + printed(e.end) : "")));
+				list.appendChild(li);
+			}
+			section("Reading map", "zs-memory-map").appendChild(list);
+		}
+
+		let itemsBox = section("What Zusia remembers", "zs-memory-items");
+		let list = this.el(doc, "div", "zs-memory-list");
+		itemsBox.appendChild(list);
+		let change = async (fn) => {
+			let rejected = [];
+			await this.updateMemory(dir, (memory) => {
+				let result = fn(memory);
+				rejected = result.rejected;
+				return result.memory;
+			});
+			await draw();
+			return rejected;
+		};
+		let edit = (row, item) => {
+			let input = this.el(doc, "textarea", "zs-memory-edit");
+			input.value = item.text;
+			input.rows = 2;
+			input.setAttribute("aria-label", "Edit this memory");
+			let save = this.iconButton(doc, "zs-small zs-memory-save", "Save", "check", async () => {
+				let rejected = await change(memory => ZusiaMap.editMemoryItem(memory, item.id, input.value));
+				if (rejected.length) {
+					this.log("Memory edit not kept: " + rejected[0].reason);
+				}
+			});
+			let cancel = this.iconButton(doc, "zs-small zs-memory-cancel", "Cancel", "remove", () => draw());
+			input.addEventListener("keydown", (event) => {
+				if (event.key === "Enter" && !event.shiftKey) {
+					event.preventDefault();
+					save.click();
+				}
+				else if (event.key === "Escape") {
+					event.preventDefault();
+					event.stopPropagation();
+					draw();
+				}
+			});
+			row.querySelector(".zs-memory-text").replaceWith(input);
+			row.querySelector(".zs-memory-actions").replaceChildren(save, cancel);
+			input.focus();
+		};
+		let draw = async () => {
+			let memory = await this.loadMemory(dir);
+			list.textContent = "";
+			if (memory.summary) {
+				let summary = this.el(doc, "div", "zs-memory-summary");
+				summary.append(this.el(doc, "span", "zs-memory-kind", "So far"), this.el(doc, "span", "zs-memory-text", memory.summary));
+				list.appendChild(summary);
+			}
+			for (let kind of ["preference", "open", "shaky", "understood", "note"]) {
+				for (let item of memory.items.filter(it => it.kind === kind)) {
+					let row = this.el(doc, "div", "zs-memory-item");
+					row.dataset.id = item.id;
+					row.dataset.kind = kind;
+					let text = this.el(doc, "span", "zs-memory-text", item.text);
+					let meta = this.el(doc, "div", "zs-memory-meta");
+					meta.appendChild(this.el(doc, "span", "zs-memory-kind", this.MEMORY_KIND_LABELS[kind]));
+					if (item.page) {
+						meta.appendChild(this.el(doc, "span", "zs-memory-page", "p. " + printed(item.page - 1)));
+					}
+					let actions = this.el(doc, "span", "zs-memory-actions");
+					actions.append(
+						this.iconButton(doc, "zs-small zs-memory-edit-btn", "Edit", "edit", () => edit(row, item)),
+						this.iconButton(doc, "zs-small zs-memory-delete", "Forget this", "trash",
+							() => change(current => ZusiaMap.applyMemoryPatch(current, { remove: [item.id] }))),
+					);
+					meta.appendChild(actions);
+					row.append(meta, text);
+					list.appendChild(row);
+				}
+			}
+			if (!list.childElementCount) {
+				list.appendChild(this.el(doc, "div", "zs-memory-empty",
+					"Nothing yet. As you talk, Zusia notes what you understood, what is still unclear and how you like " +
+					"answers; /remember in the chat adds a note of your own."));
+			}
+		};
+		await draw();
+
+		let reset = this.el(doc, "button", "zs-button zs-memory-reset", "Reset memory");
+		reset.type = "button";
+		reset.addEventListener("click", async () => {
+			if (!reset.classList.contains("zs-confirm")) {
+				reset.classList.add("zs-confirm");
+				reset.textContent = "Click again to forget everything";
+				return;
+			}
+			reset.classList.remove("zs-confirm");
+			reset.textContent = "Reset memory";
+			// The chat so far counts as covered and put-away chats are no longer owed, or the
+			// next update would learn it all again; a new generation drops what a job still
+			// running computed from the memory before.
+			let history = await this.loadHistory(dir);
+			this.forgetMemoryJobs(dir);
+			await change(memory => ({
+				memory: Object.assign({}, memory, {
+					summary: "", items: [], coveredThrough: history.length - 1, pendingArchives: [], generation: memory.generation + 1,
+				}),
+				rejected: [],
+			}));
+		});
+		itemsBox.appendChild(this.el(doc, "div", "zs-memory-reset-row")).appendChild(reset);
+
+		let settings = section("In the background", "zs-memory-settings");
+		let runner = this.jobBackend() ? "" : " Needs Claude or Antigravity as the assistant: Codex is never used for it.";
+		// A switch is a button, which the row's <label> does not name.
+		let toggle = (label, checked, pref, hint) => {
+			let control = this.switchControl(doc, checked, v => this.setPref(pref, v));
+			control.setAttribute("aria-label", label);
+			return this.row(doc, label, control, hint);
+		};
+		settings.append(
+			toggle("Update the memory as we talk", this.consolidating(), "memory.consolidate",
+				"Every few questions, and when you move on to another chapter or close the chat, a short call to your " +
+				"assistant's cheapest model folds the conversation into this memory." + runner),
+			toggle("Summarise sections I finish", this.gisting(), "memory.gists",
+				"When a section is read, one call writes a short summary of it, which later questions get for " +
+				"orientation. Costs about one call per section." + runner),
+		);
+		doc.defaultView.setTimeout(() => close.focus(), 0);
+		return panel;
+	},
+
 	// ---------------------------------------------------------------------
 	// First-run setup wizard: a few visual steps over the chat
 	// ---------------------------------------------------------------------
@@ -3139,8 +3472,9 @@ Zusia = {
 			if (!match) {
 				continue;
 			}
+			// cache/ and text/ hold the reading map and the book's text, never a chat.
 			for (let file of await this.listChildren(folder.path)) {
-				if (!/^chat(-.+)?\.json$/.test(file.name)) {
+				if (file.isDir || !/^chat(-.+)?\.json$/.test(file.name)) {
 					continue;
 				}
 				try {
@@ -3509,13 +3843,29 @@ Zusia = {
 			let win = Zotero.getMainWindow();
 			let reader = this.readerFor(ctx, win);
 			let currentPage = this.readerPageIndex(reader);
-			let selectedPage = pending.selection && pending.selection.position ? pending.selection.position.pageIndex : null;
+			let selection = pending.selection;
+			let selectedPage = selection && selection.position ? selection.position.pageIndex : null;
 			let files = await this.exportContext(this.withOpenAttachment(ctx, reader),
-				{ focus: [selectedPage, currentPage].filter(Number.isInteger) });
+				{ focus: [selectedPage, currentPage].filter(Number.isInteger), reader });
 			files.selectedPage = Number.isInteger(selectedPage) ? selectedPage : null;
 			// A reader in a background tab still steers which pages are kept, but the user is not looking at it.
 			let onScreen = reader && (!reader.tabID || reader.tabID === win?.Zotero_Tabs?.selectedID);
 			files.currentPage = onScreen ? currentPage : null;
+			files.query = question || "";
+			files.selectionText = selection ? selection.text || "" : "";
+			if (Number.isInteger(selectedPage) && selection.pageLabel) {
+				await this.recordAnchor(ctx.dir, selectedPage, selection.pageLabel);
+			}
+			if (files.structure && Number.isInteger(files.currentPage)) {
+				await this.recordPage(ctx.dir, files.currentPage, files.structure);
+			}
+			// With tracking off, a position stored earlier is not sent either.
+			files.progress = this.trackingReading() ? await this.loadProgress(ctx.dir) : null;
+			files.memory = await this.loadMemory(ctx.dir);
+			files.gists = this.gisting() ? await this.loadGists(ctx.dir) : null;
+			if (files.gists && files.structure && this.isPaged(files)) {
+				this.queueMissingGists(ctx.dir, files.structure, files.fullText.pages, files.progress, files.gists);
+			}
 			let history = await this.loadHistory(ctx.dir);
 			let sessions = await this.loadSessions(ctx.dir);
 			let session = sessions[backend] || null;
@@ -3524,6 +3874,12 @@ Zusia = {
 			// Claude chat keeps answering in the old voice although it gets the new prompt.
 			let promptHash = this.promptHash(backend);
 			if (session && (session.prompt !== this.PROMPT_VERSION || session.promptHash !== promptHash)) {
+				session = null;
+			}
+			// Every page an Antigravity conversation was sent stays in it; a long one starts
+			// afresh, and the reading memory carries what matters across.
+			if (session && session.paper && session.paper.chars > this.AGY_SESSION_CHARS) {
+				this.log(label + ": the conversation holds " + session.paper.chars + " characters of pages, starting a new one");
 				session = null;
 			}
 
@@ -3537,7 +3893,8 @@ Zusia = {
 					this.modeInstructions(pending.modes),
 				model: pending.model,
 				effort: pending.effort,
-				onProgress: pending.progress,
+				// Antigravity may open with a NEED_PAGES line, which is never shown.
+				onProgress: backend === "agy" ? this.holdNeedPages(pending.progress) : pending.progress,
 				onSpawn: (proc) => {
 					pending.proc = proc;
 					if (pending.cancelled) {
@@ -3556,6 +3913,14 @@ Zusia = {
 				sent = Object.assign({}, request, { session: null });
 				result = await this.runBackend(backend, sent);
 			}
+			let paper = this.sessionPaper(backend, files, sent.session);
+			let need = backend === "agy" && !pending.cancelled && result.text ? this.parseNeedPages(result.text, files) : null;
+			if (need) {
+				result = await this.followUpWithPages(sent, result, paper, need, pending);
+				if (need.length) {
+					paper = this.addSentPages(paper, need, files);
+				}
+			}
 
 			let meta = { backend, model: pending.model || undefined, effort: pending.effort || undefined };
 			if ((pending.steps && pending.steps.length) || pending.thoughtMs) {
@@ -3570,8 +3935,12 @@ Zusia = {
 			else if (!result.text) {
 				return { error: result.error || label + " returned no text." };
 			}
+			let turnPage = Number.isInteger(files.currentPage) ? files.currentPage : files.selectedPage;
+			// The PDF page the question was asked on, 1-based like the markers, which the
+			// memory's items cite.
 			await this.appendHistory(ctx.dir, [
 				Object.assign({ role: "user", text: question, ts: Date.now() },
+					Number.isInteger(turnPage) ? { page: turnPage + 1 } : {},
 					images.length ? { images: images.map(p => p.startsWith(ctx.dir) ? p.slice(ctx.dir.length).replace(/^[\/\\]+/, "") : p) } : {},
 					pending.modes && pending.modes.length ? { modes: pending.modes } : {}),
 				Object.assign({ role: "assistant", text: result.text, ts: Date.now() }, meta, result.stopped ? { stopped: true } : {}),
@@ -3600,11 +3969,28 @@ Zusia = {
 					this.logError("appendClarification", e);
 				}
 			}
+			let outline = files.structure && Number.isInteger(turnPage) ? files.structure.outline : null;
+			let memory = await this.recordTurn(ctx.dir, {
+				ts: Date.now(),
+				page: Number.isInteger(turnPage) ? turnPage + 1 : null,
+				section: outline ? ZusiaMap.sectionOf(outline, turnPage)?.id ?? null : null,
+				chapter: outline ? ZusiaMap.chapterOf(outline, turnPage)?.id ?? null : null,
+				refs: ZusiaMap.findObjectRefs(question || "").map(ref => ref.kind + ":" + (ref.id ?? ref.label)),
+				backend,
+			});
+			let [before, now] = memory.turns.slice(-2);
+			let crossed = !!(before && now && before.chapter && now.chapter && before.chapter !== now.chapter);
+			// The answer is saved by now; a memory that cannot be scheduled must not fail it.
+			await this.scheduleConsolidation(ctx.dir, crossed ? "chapter" : "turn")
+				.catch(e => this.logError("scheduling memory consolidation", e));
 			if (result.sessionId) {
+				// `map` is the section the session last got the whole map for.
+				let map = this.mapDue(files, sent.session, backend !== "agy") ? { section: this.mapSection(files) } : (sent.session && sent.session.map) || null;
 				sessions[backend] = { id: result.sessionId, seen: history.length + 2, prompt: this.PROMPT_VERSION,
-					promptHash, paper: this.sessionPaper(backend, files, sent.session) };
+					promptHash, paper, map };
 				await this.saveSessions(ctx.dir, sessions);
 			}
+			this.refreshReadingChips(ctx.dir);
 			return {};
 		}
 		catch (e) {
@@ -3613,6 +3999,8 @@ Zusia = {
 		}
 		finally {
 			this._pending.delete(ctx.dir);
+			// Memory jobs wait while a question runs.
+			this.pumpJobs();
 		}
 	},
 
@@ -3848,6 +4236,10 @@ Zusia = {
 			this.switchControl(doc, this.getPref("fullText") !== false, v => this.setPref("fullText", v)),
 			"The text Zotero extracts from the PDF, EPUB or snapshot goes to the assistant on your computer, " +
 			"so answers come from the paper and not just its abstract. Off: only the metadata, abstract and your annotations."));
+		card.body.appendChild(this.row(doc, "Track reading progress",
+			this.switchControl(doc, this.trackingReading(), v => this.setPref("trackReading", v)),
+			"Zusia notes the pages you turn to in Zotero's reader, so the assistant knows where you are and what " +
+			"you have read. Kept in the paper's folder on this computer."));
 
 		let prompts = this.getPrompts();
 		let list = this.el(doc, "div", "zs-prompt-list");
@@ -4120,6 +4512,25 @@ Zusia = {
 		let buttons = this.el(doc, "div", "zs-button-row");
 		buttons.append(folder, logButton, setup);
 		card.body.appendChild(this.row(doc, "Files", buttons));
+		let rebuild = this.el(doc, "button", "zs-button", "Rebuild reading map");
+		rebuild.type = "button";
+		let rebuildRow = this.row(doc, "Reading map", rebuild,
+			"Page numbers, sections and the book's text files are worked out again on each paper's next question.");
+		rebuild.addEventListener("click", () => {
+			rebuild.disabled = true;
+			let hint = rebuildRow.querySelector(".zs-row-hint");
+			this.rebuildReadingMaps().then((count) => {
+				rebuild.disabled = false;
+				hint.textContent = count
+					? count + (count > 1 ? " reading maps" : " reading map") + " will be rebuilt on the next question."
+					: "No reading map was built yet.";
+			}, (e) => {
+				this.logError("rebuildReadingMaps", e);
+				rebuild.disabled = false;
+				hint.textContent = "Could not rebuild: " + ((e && e.message) || e);
+			});
+		});
+		card.body.appendChild(rebuildRow);
 		return card;
 	},
 
@@ -4534,7 +4945,18 @@ Zusia = {
 		flushParagraph();
 	},
 
+	// A memory command returns the promise of its update, so its outcome can be awaited.
 	sendText(view, text, images = []) {
+		let command = images.length ? null : this.memoryCommand(text);
+		if (command) {
+			view.input.value = "";
+			this.autoGrow(view.input);
+			view.root.querySelector(".zs-send").disabled = true;
+			return this.runMemoryCommand(view, command).catch((e) => {
+				this.logError("memory command", e);
+				this.appendError(view, String((e && e.message) || e), { title: "Could not update the notes for this paper" });
+			});
+		}
 		let draft = view.draftSelection;
 		view.draftSelection = null;
 		let quoteLine = draft && draft.quote.split("\n").find(line => line.startsWith("> "));
@@ -5488,10 +5910,12 @@ Zusia = {
 	},
 
 	// `focus` lists the 0-based PDF pages the user is looking at (selection, page on
-	// screen); a text too long for its budget keeps the pages nearest to them.
-	async exportContext(ctx, { focus = [] } = {}) {
+	// screen); `reader` is the open reader, whose page labels and outline the reading map
+	// prefers. A file is rewritten only when its content changed, so a question about a
+	// book does not rewrite megabytes of text each time.
+	async exportContext(ctx, { focus = [], reader = null } = {}) {
 		let { paperItem, attachmentItem, dir } = ctx;
-		this.log("exportContext: writing metadata.md/annotations.md/fulltext.md to " + dir);
+		this.log("exportContext: updating the context files in " + dir);
 
 		let lines = ["# " + (this.safeField(paperItem, "title") || "Untitled")];
 		let creators = (paperItem.getCreators() || [])
@@ -5517,7 +5941,7 @@ Zusia = {
 			lines.push("\n## Abstract\n" + abstractNote);
 		}
 		let metadata = lines.join("\n") + "\n";
-		await Zotero.File.putContentsAsync(OS.Path.join(dir, "metadata.md"), metadata);
+		await this.writeIfChanged(OS.Path.join(dir, "metadata.md"), metadata);
 
 		// Pre-release versions exported an unbounded paper.txt; fulltext.md replaces it.
 		let paperPath = OS.Path.join(dir, "paper.txt");
@@ -5525,15 +5949,15 @@ Zusia = {
 			await OS.File.remove(paperPath);
 		}
 
-		let fullPath = OS.Path.join(dir, "fulltext.md");
-		let fullText = this.getPref("fullText") === false ? { status: "off" } : await this.loadFullText(attachmentItem);
+		let fullText = this.getPref("fullText") === false ? { status: "off" } : await this.loadFullText(attachmentItem, dir);
+		let structure = null;
 		if (fullText.status === "ok") {
-			let { text, ...file } = this.renderFullText(fullText, this.FULLTEXT_FILE_CHARS, focus);
-			fullText = Object.assign({}, fullText, { file: Object.assign({ name: "fulltext.md" }, file) });
-			await Zotero.File.putContentsAsync(fullPath, "# Full text\n\n" + text + "\n");
+			// EPUBs and web pages come as one page, with no folios or page numbers to map.
+			structure = fullText.paged ? await this.ensureStructure(ctx, fullText, reader) : null;
+			fullText = Object.assign({}, fullText, { file: await this.writeTextFiles(dir, fullText, structure) });
 		}
-		else if (await OS.File.exists(fullPath)) {
-			await OS.File.remove(fullPath);
+		else {
+			await this.removeTextFiles(dir);
 		}
 
 		let annotations = "";
@@ -5557,40 +5981,103 @@ Zusia = {
 				annotations = "# Annotations\n\n" + parts.join("\n");
 			}
 		}
-		await Zotero.File.putContentsAsync(OS.Path.join(dir, "annotations.md"), annotations);
+		await this.writeIfChanged(OS.Path.join(dir, "annotations.md"), annotations);
 
-		return { metadata, annotations, fullText, focus };
+		return { metadata, annotations, fullText, structure, focus };
+	},
+
+	async writeIfChanged(path, text) {
+		if ((await OS.File.exists(path)) && (await Zotero.File.getContentsAsync(path)) === text) {
+			return false;
+		}
+		await Zotero.File.putContentsAsync(path, text);
+		return true;
 	},
 
 	// The attachment's text, split into PDF pages for a PDF. Extraction runs once per
-	// file version: the result is kept until the file's modification time changes.
-	async loadFullText(attachment) {
+	// file version (modification time and size): the result is kept in memory and, with
+	// `dir`, in <dir>/cache/pages.json, so a restart does not run the PDF worker again.
+	async loadFullText(attachment, dir = null) {
 		if (!attachment || !attachment.isFileAttachment()) {
 			return { status: "none", reason: "this item has no PDF, EPUB or web snapshot attached" };
 		}
 		if (!(await attachment.fileExists())) {
 			return { status: "none", reason: "the attachment's file is not on this computer" };
 		}
-		let stamp = String(await attachment.attachmentModificationTime);
+		let stamp = await this.fileStamp(attachment);
 		let cached = this._fullTexts.get(attachment.id);
 		if (cached && cached.stamp === stamp) {
+			this._fullTexts.delete(attachment.id);
+			this._fullTexts.set(attachment.id, cached);
 			return cached.result;
 		}
+		// The sidebar rendering and a question can both ask for a book that is not cached yet;
+		// the PDF worker runs once for both.
+		let key = attachment.id + "@" + stamp;
+		let running = this._textLoads.get(key);
+		if (running) {
+			return running;
+		}
+		let load = this.readOrExtract(attachment, stamp, dir);
+		this._textLoads.set(key, load);
+		let done = () => this._textLoads.delete(key);
+		load.then(done, done);
+		return load;
+	},
+
+	async readOrExtract(attachment, stamp, dir) {
+		let cachePath = dir && OS.Path.join(dir, "cache", "pages.json");
+		let saved = cachePath ? await this.readJSON(cachePath, null) : null;
 		let result;
-		try {
-			result = await this.extractFullText(attachment);
+		if (saved && saved.version === this.PAGES_VERSION && saved.attachmentID === attachment.id && saved.stamp === stamp && Array.isArray(saved.pages)) {
+			result = { status: "ok", paged: saved.paged, pages: saved.pages, stamp };
 		}
-		catch (e) {
-			// Encrypted or damaged files: the assistant is told why it has no text.
-			this.logError("loadFullText", e);
-			return { status: "none", reason: "Zotero could not extract it (" + ((e && e.message) || e) + ")" };
+		else {
+			try {
+				result = await this.extractFullText(attachment);
+			}
+			catch (e) {
+				// Encrypted or damaged files: the assistant is told why it has no text.
+				this.logError("loadFullText", e);
+				return { status: "none", reason: "Zotero could not extract it (" + ((e && e.message) || e) + ")" };
+			}
+			if (result.status === "ok") {
+				result.stamp = stamp;
+				if (cachePath) {
+					await this.ensureCacheDir(dir);
+					await this.writeAtomic(cachePath, JSON.stringify({ version: this.PAGES_VERSION, attachmentID: attachment.id, stamp, paged: result.paged, pages: result.pages }));
+				}
+			}
 		}
-		this._fullTexts.delete(attachment.id);
-		this._fullTexts.set(attachment.id, { stamp, result });
-		if (this._fullTexts.size > this.FULLTEXT_CACHE_SIZE) {
-			this._fullTexts.delete(this._fullTexts.keys().next().value);
-		}
+		this.rememberText(attachment.id, stamp, result);
 		return result;
+	},
+
+	// "mtime:size": a file replaced within the same second, as a sync can do, still differs in size.
+	async fileStamp(attachment) {
+		let mtime = await attachment.attachmentModificationTime;
+		let path = await attachment.getFilePathAsync();
+		let size = path ? (await OS.File.stat(path)).size : "";
+		return mtime + ":" + size;
+	},
+
+	// Newest last; the oldest texts go while the total is over TEXT_CACHE_CHARS, but the
+	// one just loaded always stays.
+	rememberText(id, stamp, result) {
+		let chars = (result.pages || []).reduce((sum, page) => sum + page.length, 0);
+		this._fullTexts.delete(id);
+		this._fullTexts.set(id, { stamp, result, chars });
+		let total = 0;
+		for (let entry of this._fullTexts.values()) {
+			total += entry.chars;
+		}
+		for (let [key, entry] of this._fullTexts) {
+			if (total <= this.TEXT_CACHE_CHARS || key === id) {
+				break;
+			}
+			this._fullTexts.delete(key);
+			total -= entry.chars;
+		}
 	},
 
 	async extractFullText(attachment) {
@@ -5725,10 +6212,13 @@ Zusia = {
 		return { text: head + parts.join("\n\n"), paged: true, complete, kept, total };
 	},
 
-	// Facts that change with every question, which the system prompt cannot know:
-	// which text the assistant has and where the user is in the paper.
-	contextNote(files, coverage) {
+	// Facts that change with every question, which the system prompt cannot know: which
+	// text the assistant has, where the user is in the document, and which PDF page a
+	// printed page number in the question means. `withFiles` names the section file the
+	// page is in, for the backends that can open it.
+	contextNote(files, coverage, { withFiles = true } = {}) {
 		let full = (files && files.fullText) || { status: "none", reason: "it was not exported" };
+		let structure = files && files.structure;
 		let parts = [];
 		if (full.status === "off") {
 			parts.push("the user turned off sending the full text in Zusia's settings, so only the " +
@@ -5741,10 +6231,13 @@ Zusia = {
 			parts.push(this.coverageText(coverage || full.file));
 		}
 		if (Number.isInteger(files && files.selectedPage)) {
-			parts.push("the quoted passage is on PDF page " + (files.selectedPage + 1));
+			parts.push("the quoted passage is on " + this.pdfPageName(files.selectedPage, structure));
 		}
 		if (Number.isInteger(files && files.currentPage)) {
-			parts.push("the user is viewing PDF page " + (files.currentPage + 1));
+			parts.push("the user is viewing " + this.pdfPageName(files.currentPage, structure) + this.placeOf(files, files.currentPage, withFiles));
+		}
+		if (files) {
+			parts.push(...this.pageTranslations(files));
 		}
 		return "\n\n[Context for this question: " + parts.join("; ") + ".]";
 	},
@@ -5758,61 +6251,72 @@ Zusia = {
 			return "earlier in this conversation you were sent " + earlier + " in <paper_fulltext>" +
 				(c.added && c.added.length
 					? ", and " + (c.added.length > 1 ? "pages " : "page ") + this.formatPageRanges(c.added) +
-						(c.added.length > 1 ? " are" : " is") + " added in <paper_fulltext> below for this question"
+						(c.added.length > 1 ? " are" : " is") + " added in " + (c.focusBlock ? "<paper_fulltext> and <focus_page>" : "<paper_fulltext>") +
+						" below for this question"
 					: "");
 		}
+		if (c.sections) {
+			return "the whole text (" + c.total + " pages) is in " + c.sections + " section files in text/, listed in fulltext.md";
+		}
+		let name = c.name + (c.focusBlock ? " and <focus_page> hold" : " holds");
 		if (c.complete) {
-			return c.name + " holds the whole text" + (c.paged ? " (" + c.total + " pages)" : "");
+			return name + " the whole text" + (c.paged ? " (" + c.total + " pages)" : "") +
+				(c.focusBlock ? ", the page the user is on last, in <focus_page>" : "");
 		}
 		if (!c.paged) {
-			return c.name + " holds only the beginning of the text; the rest was left out to fit";
+			return name + " only the beginning of the text; the rest was left out to fit";
 		}
 		return c.kept.length === c.total
-			? c.name + " holds every page of " + c.total + ", the longest cut short to fit"
-			: c.name + " holds pages " + this.formatPageRanges(c.kept) + " of " + c.total + "; the rest was left out to fit";
+			? name + " every page of " + c.total + ", the longest cut short to fit"
+			: name + " pages " + this.formatPageRanges(c.kept) + " of " + c.total + "; the rest was left out to fit";
 	},
 
-	// What a new Antigravity session is sent of the paper.
+	// What a new Antigravity session is sent of an EPUB or a web page, which has no pages.
 	antigravityPaper(files) {
 		let full = files.fullText;
 		return full && full.status === "ok" ? this.renderFullText(full, this.inlineFullTextBudget(), files.focus || []) : null;
 	},
 
-	// Focus pages an Antigravity session has not been sent yet.
-	missingPages(files, paper) {
-		let full = files.fullText;
-		if (!full || full.status !== "ok" || !full.paged || (paper && paper.complete)) {
-			return [];
-		}
-		let sent = (paper && paper.kept) || [];
-		return this.focusPages(full.pages, 1, files.focus || []).valid.filter(i => !sent.includes(i));
-	},
-
-	// The pages a backend's session has seen, without the text, to store in session.json.
+	// The pages a backend's session has seen, without the text, to store in session.json;
+	// `chars` adds up what the conversation was sent, which caps how long it is kept.
 	sessionPaper(backend, files, session) {
 		if (backend !== "agy") {
 			return undefined;
 		}
-		if (!session) {
-			let inline = this.antigravityPaper(files);
-			return inline ? { complete: inline.complete, paged: inline.paged, kept: inline.kept || [], total: inline.total } : null;
+		let inline = this.inlinePages(files, session);
+		if (!inline) {
+			if (session) {
+				return session.paper || null;
+			}
+			let paper = this.antigravityPaper(files);
+			return paper ? { complete: paper.complete, paged: paper.paged, kept: paper.kept || [], total: paper.total, chars: paper.text.length } : null;
 		}
-		let added = this.missingPages(files, session.paper);
-		if (!added.length) {
-			return session.paper || null;
-		}
-		let earlier = session.paper || { complete: false, paged: true, kept: [], total: files.fullText.pages.length };
-		return Object.assign({}, earlier, { kept: [...new Set([...earlier.kept, ...added])].sort((a, b) => a - b) });
+		let earlier = (session && session.paper) || { complete: false, paged: true, kept: [], total: inline.total, chars: 0 };
+		let added = [...inline.support, ...inline.focus].map(p => p.page);
+		return {
+			complete: !!earlier.complete || inline.complete,
+			paged: true,
+			kept: [...new Set([...(earlier.kept || []), ...added])].sort((a, b) => a - b),
+			total: inline.total,
+			chars: (earlier.chars || 0) + inline.chars,
+		};
+	},
+
+	// `paper` after a NEED_PAGES follow-up sent `pages` as well.
+	addSentPages(paper, pages, files) {
+		let base = paper || { complete: false, paged: true, kept: [], total: files.fullText.pages.length, chars: 0 };
+		let chars = pages.reduce((sum, i) => sum + files.fullText.pages[i].length + ZusiaMap.PAGE_OVERHEAD, 0);
+		return Object.assign({}, base, { kept: [...new Set([...base.kept, ...pages])].sort((a, b) => a - b), chars: (base.chars || 0) + chars });
 	},
 
 	inlineFullTextBudget() {
 		return Zotero.isWin ? this.FULLTEXT_INLINE_CHARS_WINDOWS : this.FULLTEXT_INLINE_CHARS;
 	},
 
-	// The paper travels inside these tags in Antigravity's prompt; a closing tag in the
-	// paper's own text must not end the block early.
+	// The paper and the reading context travel inside these tags; a closing tag in the
+	// paper's own text, an outline title or a note must not end its block early.
 	escapeContextTags(text) {
-		return String(text).replace(/<(\/?)(paper_metadata|paper_fulltext|user_annotations)\b/gi, "&lt;$1$2");
+		return String(text).replace(/<(\/?)(paper_metadata|paper_fulltext|user_annotations|reading_map|reading_memory|focus_page|section_gists|conversation_turns|document_sections|section_text|previous_summary)\b/gi, "&lt;$1$2");
 	},
 
 	// The PDF attachment open in the reader when it belongs to this paper, otherwise the
@@ -5836,35 +6340,1644 @@ Zusia = {
 	},
 
 	// ---------------------------------------------------------------------
+	// Reading map: structure.json, the text files, page selection, progress, memory
+	// ---------------------------------------------------------------------
+
+	isBook(files) {
+		let full = files && files.fullText;
+		return !!full && full.status === "ok" && full.paged && full.pages.length >= this.BOOK_MIN_PAGES;
+	},
+
+	// Section files under text/ for a book, one fulltext.md for anything shorter, with
+	// "--- page 41 (printed 18) ---" markers. cache/text.json records what each file was
+	// written from (its pages' hash and labels), so only a changed file is written again.
+	async writeTextFiles(dir, full, structure) {
+		let book = full.paged && full.pages.length >= this.BOOK_MIN_PAGES;
+		let want = new Map();
+		if (book) {
+			for (let file of structure.files) {
+				want.set("text/" + file.name, {
+					stamp: this.MAP_VERSION + ":" + file.hash + ":" + this.labelsDigest(structure, file.start, file.end),
+					render: () => ZusiaMap.renderSectionFile(full.pages, file, structure),
+				});
+			}
+			let index = this.textIndex(full, structure);
+			want.set("fulltext.md", { stamp: this.MAP_VERSION + ":" + this.hashText(index), render: () => index });
+		}
+		else {
+			let text = "# Full text\n\n" + (full.paged
+				? full.pages.map((page, i) => ZusiaMap.renderPage(i, page.trim(), structure)).join("\n\n")
+				: full.pages[0].trim()) + "\n";
+			want.set("fulltext.md", { stamp: this.MAP_VERSION + ":" + this.hashText(text), render: () => text });
+		}
+		let manifestPath = OS.Path.join(dir, "cache", "text.json");
+		let manifest = await this.readJSON(manifestPath, { files: {} });
+		await this.ensureCacheDir(dir);
+		if (book) {
+			await Zotero.File.createDirectoryIfMissingAsync(OS.Path.join(dir, "text"));
+		}
+		let changed = false;
+		for (let [name, entry] of want) {
+			let path = OS.Path.join(dir, ...name.split("/"));
+			if (manifest.files[name] === entry.stamp && (await OS.File.exists(path))) {
+				continue;
+			}
+			await Zotero.File.putContentsAsync(path, entry.render());
+			changed = true;
+		}
+		for (let name of Object.keys(manifest.files)) {
+			let path = OS.Path.join(dir, ...name.split("/"));
+			if (!want.has(name) && (await OS.File.exists(path))) {
+				await OS.File.remove(path);
+				changed = true;
+			}
+		}
+		if (changed || Object.keys(manifest.files).length !== want.size) {
+			let files = {};
+			for (let [name, entry] of want) {
+				files[name] = entry.stamp;
+			}
+			await this.writeAtomic(manifestPath, JSON.stringify({ version: this.MAP_VERSION, files }));
+		}
+		return { name: "fulltext.md", paged: full.paged, complete: true, total: full.pages.length, sections: book ? structure.files.length : 0 };
+	},
+
+	// Markers print the labels only when they are trusted, so a file changes with them.
+	labelsDigest(structure, start, end) {
+		return ZusiaMap.trusted(structure) ? this.hashText(structure.labels.slice(start, end + 1).join("|")) : "pdf";
+	},
+
+	textIndex(full, structure) {
+		let lines = structure.files.map(f => "- text/" + f.name + ": " + f.title + ", " + ZusiaMap.rangeName(f.start, f.end, structure));
+		return "# Full text\n\nThis document has " + full.pages.length + " PDF pages. Its text is split into " +
+			structure.files.length + " section files in text/, in reading order, each with page markers:\n\n" + lines.join("\n") + "\n";
+	},
+
+	// Claude and Codex search the paper folder with ripgrep, which honours .ignore even
+	// outside git: a hit in cache/pages.json, the whole book on one line with no page
+	// markers, would have them read that instead of text/.
+	async ensureCacheDir(dir) {
+		await Zotero.File.createDirectoryIfMissingAsync(OS.Path.join(dir, "cache"));
+		let ignore = OS.Path.join(dir, ".ignore");
+		if (!(await OS.File.exists(ignore))) {
+			await Zotero.File.putContentsAsync(ignore, "# Zusia's own bookkeeping; the text is in fulltext.md and text/.\ncache/\n");
+		}
+	},
+
+	// The full text is off or gone: no stale copy stays for the assistant to read.
+	async removeTextFiles(dir) {
+		let manifestPath = OS.Path.join(dir, "cache", "text.json");
+		let manifest = await this.readJSON(manifestPath, { files: {} });
+		let names = new Set([...Object.keys(manifest.files), "fulltext.md"]);
+		for (let name of names) {
+			let path = OS.Path.join(dir, ...name.split("/"));
+			if (await OS.File.exists(path)) {
+				await OS.File.remove(path);
+			}
+		}
+		if (await OS.File.exists(manifestPath)) {
+			await OS.File.remove(manifestPath);
+		}
+	},
+
+	// structure.json for this file version, built once: from memory, from cache/, or from
+	// the page texts. Concurrent calls for one paper (the sidebar rendering while a
+	// question starts) share one build.
+	ensureStructure(ctx, full, reader = null) {
+		let running = this._mapBuilds.get(ctx.dir);
+		if (running) {
+			return running;
+		}
+		let build = this.buildStructureFor(ctx, full, reader);
+		this._mapBuilds.set(ctx.dir, build);
+		let done = () => this._mapBuilds.delete(ctx.dir);
+		build.then(done, done);
+		return build;
+	},
+
+	async buildStructureFor(ctx, full, reader) {
+		let { dir, attachmentItem } = ctx;
+		let count = full.pages.length;
+		let native = await this.nativeStructure(dir, attachmentItem, reader, full.stamp, count);
+		// Sorted (stably, so a selection's label still comes after an annotation's on its
+		// page): the order the anchors were recorded in carries no information, and must
+		// not change the key.
+		let anchors = this.annotationAnchors(attachmentItem, count).concat((await this.loadProgress(dir)).anchors || [])
+			.sort((a, b) => a.pageIndex - b.pageIndex);
+		// The key covers everything the map is built from, so a new annotation label or an
+		// outline Zotero only now reports rebuilds it, and nothing else does.
+		let key = [this.MAP_VERSION, attachmentItem.id, full.stamp,
+			this.hashText(JSON.stringify([anchors, native.labels, native.outline]))].join(":");
+		let cached = this._structures.get(dir);
+		if (cached && cached.key === key) {
+			return cached.structure;
+		}
+		let path = OS.Path.join(dir, "cache", "structure.json");
+		let saved = await this.readJSON(path, null);
+		if (saved && saved.key === key) {
+			this._structures.set(dir, { key, structure: saved });
+			return saved;
+		}
+		let started = Date.now();
+		let structure = Object.assign(this.mapStructure(full.pages, { anchors, native }), { key });
+		await this.ensureCacheDir(dir);
+		await this.writeAtomic(path, JSON.stringify(structure));
+		this._structures.set(dir, { key, structure });
+		this.log("Reading map for " + dir + ": " + count + " pages, labels " + structure.labelMethod + " (" +
+			structure.confidence.toFixed(2) + "), outline " + structure.outlineMethod + " (" + structure.outline.length +
+			" entries), " + structure.files.length + " files, " + (Date.now() - started) + " ms");
+		return structure;
+	},
+
+	// ZusiaMap.buildStructure, but with the labels and outline Zotero reports: its labels
+	// vote as anchors, which lose to a folio run on the pages it holds, and its outline
+	// replaces the guessed one. A label that is just the PDF number is dropped: a PDF
+	// without labels reports nothing else, which says no more than the fallback does
+	// and would make "18" mean PDF page 18 next to the printed 18. Titles come from the
+	// PDF, so they are cleaned like model text before they reach a prompt.
+	mapStructure(pages, { anchors = [], native = {} } = {}) {
+		let votes = anchors.slice();
+		(native.labels || []).forEach((label, i) => {
+			let text = label === null ? "" : String(label).trim();
+			if (text && text !== String(i + 1)) {
+				votes.push({ pageIndex: i, label: text });
+			}
+		});
+		let { labels, confidence, method, runs, conflicts } = ZusiaMap.inferPageLabels(pages, votes);
+		let structure = {
+			version: this.MAP_VERSION, pageCount: pages.length, labels, confidence,
+			labelMethod: method + (native.labels ? "+zotero" : ""), runs, labelConflicts: conflicts.length,
+		};
+		let entries = this.outlineEntries(native.outline || []);
+		if (entries.length >= 2) {
+			structure.outline = ZusiaMap.outlineRanges(entries, structure, pages.length);
+			structure.outlineMethod = "zotero";
+		}
+		else {
+			let built = ZusiaMap.buildOutline(pages, structure);
+			structure.outline = built.outline;
+			structure.outlineMethod = built.method;
+		}
+		structure.outline = structure.outline.map(e => Object.assign({}, e, { title: this.cleanTitle(e.title) || "Untitled" }));
+		structure.objects = ZusiaMap.indexObjects(pages);
+		structure.files = ZusiaMap.splitSections(pages, structure.outline);
+		return structure;
+	},
+
+	cleanTitle(title) {
+		return ZusiaMap.cleanMemoryText(title, 120);
+	},
+
+	// Flat outline items {title, level, start} as ZusiaMap.outlineRanges wants them, with a
+	// leading section number as the id ("2.3 Convolution" → id "2.3"), so "§2.3" works.
+	outlineEntries(flat) {
+		let seen = new Set();
+		return flat.map((e, k) => {
+			let title = this.cleanTitle(e.title);
+			let m = /^(\d{1,2}(?:\.\d{1,2}){0,3})\.?\s+(\S.*)$/.exec(title);
+			let id = m && !seen.has(m[1]) ? m[1] : "o" + (k + 1);
+			seen.add(id);
+			return { id, title: m ? m[2] : title, level: e.level, start: e.start };
+		}).filter(e => e.title);
+	},
+
+	// Reader outline items {title, items, location.position.pageIndex} and SDT ones
+	// {title, children, target.position.pageIndex}, depth first.
+	flattenOutline(items, level = 1, out = []) {
+		for (let item of items || []) {
+			if (out.length >= 1000) {
+				break;
+			}
+			let start = item.location?.position?.pageIndex ?? item.target?.position?.pageIndex ?? item.pageIndex;
+			if (Number.isInteger(start) && String(item.title || "").trim()) {
+				out.push({ title: String(item.title), level, start });
+			}
+			this.flattenOutline(item.items || item.children, level + 1, out);
+		}
+		return out;
+	},
+
+	// The labels and outline Zotero has for this file version, from cache/native.json or
+	// asked for once per source while the PDF is open: the reader's own state, pdf.js, and
+	// Zotero 10's structured text. Each source is skipped once it answered.
+	async nativeStructure(dir, attachment, reader, stamp, count) {
+		let native = this._natives.get(dir);
+		if (!native || native.stamp !== stamp || native.attachmentID !== attachment.id) {
+			let saved = await this.readJSON(OS.Path.join(dir, "cache", "native.json"), null);
+			native = saved && saved.stamp === stamp && saved.attachmentID === attachment.id
+				? saved
+				: { attachmentID: attachment.id, stamp, labels: null, outline: null, tried: [] };
+		}
+		let before = JSON.stringify(native);
+		let open = reader && reader.itemID === attachment.id ? reader : null;
+		for (let source of open ? ["reader", "pdfjs", "sdt"] : []) {
+			if ((native.labels && native.outline) || native.tried.includes(source)) {
+				continue;
+			}
+			let found = await this.nativeFrom(source, open, attachment, stamp);
+			if (!found) {
+				continue;
+			}
+			if (!native.labels && Array.isArray(found.labels) && found.labels.length === count) {
+				native.labels = found.labels;
+			}
+			if (!native.outline && found.outline && found.outline.length >= 2) {
+				native.outline = found.outline;
+			}
+			native.tried.push(source);
+		}
+		if (JSON.stringify(native) !== before) {
+			await this.ensureCacheDir(dir);
+			await this.writeAtomic(OS.Path.join(dir, "cache", "native.json"), JSON.stringify(native));
+		}
+		this._natives.set(dir, native);
+		return native;
+	},
+
+	// {labels, outline} from one source, or null when it is not ready yet (the reader has
+	// not processed the PDF, the structured text is still being built), so it is asked
+	// again next time. These are Zotero internals, unverified across versions: a source
+	// that throws is logged and asked again next time, since the failure may pass (a
+	// reader torn down mid-call) and caching it would disable the source until a rebuild.
+	async nativeFrom(source, reader, attachment, stamp) {
+		try {
+			if (source === "reader") {
+				let state = reader._internalReader?._state;
+				let labels = state && state.pageLabels && state.pageLabels.length ? Array.from(state.pageLabels, l => (l == null ? null : String(l))) : null;
+				let outline = state && state.outline && state.outline.length ? this.flattenOutline(state.outline) : null;
+				return labels || outline ? { labels, outline } : null;
+			}
+			if (source === "pdfjs") {
+				let frame = reader._internalReader?._primaryView?._iframeWindow;
+				let doc = (frame && (frame.wrappedJSObject || frame))?.PDFViewerApplication?.pdfDocument;
+				if (!doc) {
+					return null;
+				}
+				let labels = await doc.getPageLabels();
+				let items = await doc.getOutline();
+				let resolve = async (list) => {
+					let out = [];
+					for (let item of list || []) {
+						let dest = typeof item.dest === "string" ? await doc.getDestination(item.dest) : item.dest;
+						let ref = dest && dest[0];
+						let pageIndex = ref == null ? null : Number.isInteger(ref) ? ref : await doc.getPageIndex(ref);
+						out.push({ title: String(item.title || ""), pageIndex, items: await resolve(item.items) });
+					}
+					return out;
+				};
+				return { labels: labels ? Array.from(labels, l => (l == null ? null : String(l))) : null, outline: this.flattenOutline(await resolve(items)) };
+			}
+			if (!Zotero.SDT) {
+				return { labels: null, outline: null };
+			}
+			return this.sdtStructure(attachment, stamp);
+		}
+		catch (e) {
+			this.logError("reading map: " + source + " labels and outline", e);
+			return null;
+		}
+	},
+
+	// Zotero.SDT.getReader() builds the structured-text pack when it is missing, which for
+	// a thousand-page book takes far longer than a question should wait. It runs in the
+	// background, once per file version; null until it is done, and the next build of
+	// the map picks the result up.
+	sdtStructure(attachment, stamp) {
+		let key = attachment.id + "@" + stamp;
+		let entry = this._sdt.get(key);
+		if (!entry) {
+			entry = { done: false, result: null };
+			entry.promise = this.readSDT(attachment.id).then((result) => {
+				entry.result = result;
+				entry.done = true;
+			}, (e) => {
+				// Started again by the next build.
+				this._sdt.delete(key);
+				this.logError("reading map: Zotero.SDT", e);
+			});
+			this._sdt.set(key, entry);
+		}
+		return entry.done ? entry.result : null;
+	},
+
+	async readSDT(id) {
+		let packReader = await Zotero.SDT.getReader(id);
+		if (!packReader) {
+			return { labels: null, outline: null };
+		}
+		let catalog = await packReader.getCatalog();
+		let pages = (catalog && catalog.pages) || [];
+		return {
+			labels: pages.length ? pages.map(p => (p && p.label != null ? String(p.label) : null)) : null,
+			outline: this.flattenOutline((catalog && catalog.outline) || []),
+		};
+	},
+
+	// The user's own annotations pin their page's printed label: Zotero stores it with the
+	// PDF page index in the position.
+	annotationAnchors(attachment, count) {
+		if (!attachment.isPDFAttachment()) {
+			return [];
+		}
+		let anchors = new Map();
+		for (let a of attachment.getAnnotations()) {
+			if (!a.annotationPageLabel || !a.annotationPosition) {
+				continue;
+			}
+			let position;
+			try {
+				position = JSON.parse(a.annotationPosition);
+			}
+			catch (e) {
+				if (!(e instanceof SyntaxError)) {
+					throw e;
+				}
+				this.log("Skipping an annotation with an unreadable position: " + e.message);
+				continue;
+			}
+			if (Number.isInteger(position.pageIndex) && position.pageIndex < count) {
+				anchors.set(position.pageIndex + ":" + a.annotationPageLabel, { pageIndex: position.pageIndex, label: a.annotationPageLabel });
+			}
+		}
+		return [...anchors.values()];
+	},
+
+	// Pages for Antigravity, which cannot read files: a paper that fits goes whole, anything
+	// else is chosen by ZusiaMap.selectPages around the focus pages and the question. A
+	// resumed conversation gets only pages it was not sent yet, from half the budget.
+	// Returns { support, focus, complete, total, cap, chars } with supporting pages
+	// ascending and the focus pages, which go last, apart; null without paged text.
+	inlinePages(files, session) {
+		let full = files.fullText;
+		if (!full || full.status !== "ok" || !full.paged) {
+			return null;
+		}
+		let pages = full.pages;
+		let total = pages.length;
+		let earlier = session && session.paper;
+		let budget = this.inlineFullTextBudget();
+		let focus = [...new Set(files.focus || [])].filter(i => Number.isInteger(i) && i >= 0 && i < total);
+		let cap = Math.floor(budget / Math.max(1, focus.length));
+		if (earlier && earlier.complete) {
+			return { support: [], focus: [], complete: true, total, cap, chars: 0 };
+		}
+		let size = pages.reduce((sum, page) => sum + page.length + ZusiaMap.PAGE_OVERHEAD, 0);
+		let picks;
+		if (total < this.BOOK_MIN_PAGES && size <= budget) {
+			picks = pages.map((page, i) => ({ page: i, reason: focus.includes(i) ? "focus" : "whole", ahead: false }));
+		}
+		else {
+			if (!this._bm25.has(pages)) {
+				this._bm25.set(pages, ZusiaMap.buildBM25(pages));
+			}
+			picks = ZusiaMap.selectPages({
+				pages, structure: files.structure || null, progress: files.progress || null,
+				query: files.query || "", selection: files.selectionText || "", focus,
+				budget: earlier ? Math.floor(budget / 2) : budget, index: this._bm25.get(pages),
+			});
+		}
+		let sent = new Set((earlier && earlier.kept) || []);
+		let fresh = picks.filter(p => !sent.has(p.page));
+		let support = fresh.filter(p => !focus.includes(p.page));
+		let focusPicks = focus.filter(i => !sent.has(i)).map(i => ({ page: i, reason: "focus", ahead: false }));
+		let chars = [...support, ...focusPicks].reduce((sum, p) => sum + Math.min(pages[p.page].length, cap) + ZusiaMap.PAGE_OVERHEAD, 0);
+		return { support, focus: focusPicks, complete: !earlier && picks.length === total, total, cap, chars };
+	},
+
+	renderInlinePage(files, pick, cap) {
+		let text = files.fullText.pages[pick.page].trim();
+		if (text.length > cap) {
+			text = text.slice(0, cap) + "\n[the rest of page " + (pick.page + 1) + " was left out to fit]";
+		}
+		return ZusiaMap.renderPage(pick.page, (pick.ahead ? "[ahead of where the user has read so far]\n" : "") + text, files.structure || null);
+	},
+
+	contextBlock(tag, body) {
+		return "<" + tag + ">\n" + this.escapeContextTags(body).trim() + "\n</" + tag + ">\n\n";
+	},
+
+	// A map is worth sending when the outline came from somewhere better than fixed chunks
+	// of pages, or, for a backend that reads files, to name a book's section files.
+	mapUseful(files, withFiles) {
+		let s = files.structure;
+		return !!s && (s.outlineMethod !== "chunks" || (withFiles && this.isBook(files)));
+	},
+
+	// The section the map is drawn around: the page last recorded, else the first focus page.
+	mapSection(files) {
+		let s = files.structure;
+		let current = files.progress && Number.isInteger(files.progress.current) ? files.progress.current : (files.focus || [])[0];
+		return s && Number.isInteger(current) ? ZusiaMap.sectionOf(s.outline, current)?.id ?? null : null;
+	},
+
+	// The whole map goes to a new session (a changed prompt resets the session too) and
+	// whenever the user is in another section than when the session last saw it.
+	mapDue(files, session, withFiles) {
+		if (!this.mapUseful(files, withFiles)) {
+			return false;
+		}
+		return !session || !session.map || session.map.section !== this.mapSection(files);
+	},
+
+	// <reading_map> when it is due, then <reading_memory>, which opens with where the user
+	// is. Text file names only for backends that can read them, and only for books.
+	readingBlocks(files, session, { withFiles = true } = {}) {
+		let s = files.structure;
+		let out = "";
+		if (this.mapDue(files, session, withFiles)) {
+			out += this.contextBlock("reading_map", ZusiaMap.renderMap(s, s.outline, files.progress || null,
+				{ files: withFiles && this.isBook(files) ? s.files : [] }));
+		}
+		let memory = files.memory;
+		let progress = files.progress;
+		if (memory && (memory.items.length || memory.summary || (progress && Number.isInteger(progress.current)))) {
+			out += this.contextBlock("reading_memory", ZusiaMap.renderMemory(memory, progress, s || null));
+		}
+		let fresh = files.gists && s && this.isPaged(files) ? ZusiaMap.freshGists(files.gists, s, files.fullText.pages) : [];
+		if (fresh.length) {
+			let current = progress && Number.isInteger(progress.current) ? progress.current : (files.focus || [])[0];
+			out += this.contextBlock("section_gists", ZusiaMap.renderGists(fresh, s, current));
+		}
+		return out;
+	},
+
+	pdfPageName(i, structure) {
+		return "PDF " + ZusiaMap.pageName(i, structure || null);
+	},
+
+	// ", in section 2.3 Convolution, file text/02-discrete-time-signals.md".
+	placeOf(files, i, withFiles) {
+		let s = files.structure;
+		if (!s) {
+			return "";
+		}
+		let out = "";
+		let section = s.outlineMethod !== "chunks" ? ZusiaMap.sectionOf(s.outline, i) : null;
+		if (section) {
+			out += ", in section " + ZusiaMap.entryTitle(section);
+		}
+		let file = withFiles && this.isBook(files) ? s.files.find(f => f.start <= i && i <= f.end) : null;
+		if (file) {
+			out += ", file text/" + file.name;
+		}
+		return out;
+	},
+
+	// The user says "page 18" for the number printed on the page; the model sees PDF pages.
+	pageTranslations(files) {
+		let s = files.structure;
+		if (!s || !files.query || !this.isPaged(files)) {
+			return [];
+		}
+		let out = [];
+		for (let ref of ZusiaMap.findObjectRefs(files.query)) {
+			if (ref.kind !== "page") {
+				continue;
+			}
+			let i = ZusiaMap.pageIndexFor(s, ref.label, files.fullText.pages.length);
+			if (i !== null && String(i + 1) !== ref.label) {
+				out.push("\"page " + ref.label + "\" in the question means " + this.pdfPageName(i, s));
+			}
+		}
+		return out.slice(0, 5);
+	},
+
+	isPaged(files) {
+		let full = files.fullText;
+		return !!full && full.status === "ok" && full.paged;
+	},
+
+	// --------------------------------------------------------------- NEED_PAGES
+
+	// "NEED_PAGES: 41, 52-53" as the answer's first line: Antigravity, which has only the
+	// pages it was sent, asks for PDF pages; at most NEED_PAGES_MAX that exist.
+	// Flash models dress the line up: "**NEED_PAGES:** 41", "NEED_PAGES 41", backticks, a
+	// code fence, lower case. Group 1 is what follows the keyword on its line.
+	NEED_PAGES_LINE: /^\s*(?:```[^\n]*\n\s*)?[*_`]*need[_ ]pages[*_`]*[ \t]*:?([^\n]*?)[*_` \t]*(?:\n[ \t]*```[ \t]*)?(?=\n|$)/i,
+	NEED_PAGES_START: /^\s*(?:```[^\n]*\n\s*)?[*_`]*need[_ ]pages/i,
+
+	parseNeedPages(text, files) {
+		let m = this.NEED_PAGES_LINE.exec(text || "");
+		if (!m) {
+			return null;
+		}
+		let count = this.isPaged(files) ? files.fullText.pages.length : 0;
+		let pages = [];
+		for (let part of m[1].replace(/^[*_`:\s]+/, "").split(/[,;\s]+/)) {
+			let r = /^(\d{1,4})(?:[-–](\d{1,4}))?$/.exec(part);
+			if (!r) {
+				continue;
+			}
+			let last = Math.min(r[2] ? +r[2] : +r[1], +r[1] + this.NEED_PAGES_MAX);
+			for (let k = +r[1]; k <= last; k++) {
+				if (k >= 1 && k <= count && !pages.includes(k - 1)) {
+					pages.push(k - 1);
+				}
+			}
+		}
+		return pages.slice(0, this.NEED_PAGES_MAX);
+	},
+
+	stripNeedPages(text) {
+		return String(text || "").replace(this.NEED_PAGES_LINE, "").trim();
+	},
+
+	// Streamed text that is, or may still become, a NEED_PAGES line stays off screen.
+	mayBeNeedPages(text) {
+		let head = String(text).trimStart();
+		if (this.NEED_PAGES_START.test(head)) {
+			return true;
+		}
+		if (head.length >= this.NEED_PAGES_HOLD) {
+			return false;
+		}
+		// What is left once an opening fence and emphasis are peeled off must still be able
+		// to grow into the keyword.
+		let rest = head.replace(/^```[^\n`]*\n?/, "").replace(/^[\s*_`]+/, "").toUpperCase().replace(" ", "_");
+		return "NEED_PAGES".startsWith(rest.slice(0, 10));
+	},
+
+	holdNeedPages(progress) {
+		return (update) => {
+			if (update.text !== undefined && this.mayBeNeedPages(update.text)) {
+				let { text, ...rest } = update;
+				progress(rest);
+				return;
+			}
+			progress(update);
+		};
+	},
+
+	// One more turn in the same conversation with the pages the answer asked for, and only
+	// one: a second NEED_PAGES line is dropped and what follows it kept. The line itself is
+	// never stored.
+	async followUpWithPages(sent, result, paper, pages, pending) {
+		let fail = error => ({ text: "", error, sessionId: result.sessionId });
+		if (!pages.length || !result.sessionId) {
+			let text = this.stripNeedPages(result.text);
+			return text ? Object.assign({}, result, { text }) : fail("Antigravity asked for pages this document does not have instead of answering.");
+		}
+		pending.progress({ status: "reading " + (pages.length > 1 ? "pages " : "page ") + this.formatPageRanges(pages) });
+		let follow = Object.assign({}, sent, { session: { id: result.sessionId, seen: 0, paper }, needPages: pages });
+		let second = await this.runBackend("agy", follow);
+		let sessionId = second.sessionId || result.sessionId;
+		if (!second.text) {
+			return Object.assign({}, second, { sessionId });
+		}
+		let text = this.stripNeedPages(second.text);
+		return text ? { text, sessionId } : fail("Antigravity asked for more pages again instead of answering.");
+	},
+
+	// --------------------------------------------------------------- progress
+
+	trackingReading() {
+		return this.getPref("trackReading") !== false;
+	},
+
+	progressPath(dir) {
+		return OS.Path.join(dir, "progress.json");
+	},
+
+	// The paper's progress, read once and then kept in memory, where page events update it.
+	async progressState(dir) {
+		let state = this._progress.get(dir);
+		if (state) {
+			return state;
+		}
+		let saved = await this.readJSON(this.progressPath(dir), null);
+		// Another caller may have loaded it while this one waited for the file.
+		if (this._progress.has(dir)) {
+			return this._progress.get(dir);
+		}
+		state = { progress: Object.assign(ZusiaMap.emptyProgress(), { anchors: [] }, saved || {}), dirty: false, scheduled: false };
+		this._progress.set(dir, state);
+		return state;
+	},
+
+	async loadProgress(dir) {
+		return (await this.progressState(dir)).progress;
+	},
+
+	// The reader shows `pageIndex` now. Saved within PROGRESS_SAVE_MS, or at once when the
+	// page is in another section, so a crash loses at most a few page turns.
+	async recordPage(dir, pageIndex, structure, t = Date.now()) {
+		if (!this.trackingReading() || !Number.isInteger(pageIndex)) {
+			return;
+		}
+		let state = await this.progressState(dir);
+		let before = state.progress;
+		state.progress = ZusiaMap.applyPageEvent(state.progress, pageIndex, t, structure || null);
+		state.dirty = true;
+		if (state.progress.section !== before.section) {
+			await this.flushProgress(dir);
+		}
+		else {
+			this.scheduleProgressSave(dir);
+		}
+		this.refreshReadingChips(dir);
+		await this.afterPageEvent(dir, structure, before, state.progress);
+	},
+
+	// A selection carries Zotero's label for its page, which pins that page's printed number.
+	// It says which page the user was on too, so it is kept only while reading is tracked.
+	// One already known is left where it is: rewriting it would only change the file.
+	async recordAnchor(dir, pageIndex, label) {
+		if (!this.trackingReading()) {
+			return;
+		}
+		let state = await this.progressState(dir);
+		label = String(label);
+		if ((state.progress.anchors || []).some(a => a.pageIndex === pageIndex && a.label === label)) {
+			return;
+		}
+		let anchors = (state.progress.anchors || []).filter(a => a.pageIndex !== pageIndex);
+		anchors.push({ pageIndex, label });
+		state.progress = Object.assign({}, state.progress, { anchors: anchors.slice(-50) });
+		state.dirty = true;
+		this.scheduleProgressSave(dir);
+	},
+
+	scheduleProgressSave(dir) {
+		let state = this._progress.get(dir);
+		if (state.scheduled) {
+			return;
+		}
+		state.scheduled = true;
+		Zotero.Promise.delay(this.PROGRESS_SAVE_MS)
+			.then(() => this.flushProgress(dir))
+			.catch(e => this.logError("saving progress.json", e));
+	},
+
+	async flushProgress(dir) {
+		let state = this._progress.get(dir);
+		state.scheduled = false;
+		if (!state.dirty) {
+			return;
+		}
+		state.dirty = false;
+		let text = JSON.stringify(state.progress);
+		try {
+			await this.withDirLock(dir, () => this.writeAtomic(this.progressPath(dir), text));
+		}
+		catch (e) {
+			// The page events it held are still only in memory: the next save writes them.
+			state.dirty = true;
+			throw e;
+		}
+	},
+
+	flushAllProgress() {
+		return Promise.all([...this._progress.keys()].map(dir => this.flushProgress(dir)));
+	},
+
+	// Every page turn in Zotero's reader stores the attachment's last page as a synced
+	// setting, and the notifier reports it: no polling and no private reader API.
+	watchReading() {
+		this._readingObserver = Zotero.Notifier.registerObserver({
+			notify: (event, type, ids) => {
+				this.onReadingNotify(event, ids).catch(e => this.logError("reading progress", e));
+			},
+		}, ["setting"], "zusia");
+	},
+
+	unwatchReading() {
+		if (this._readingObserver) {
+			Zotero.Notifier.unregisterObserver(this._readingObserver);
+			this._readingObserver = null;
+		}
+		this.flushAllProgress().catch(e => this.logError("saving progress.json at shutdown", e));
+	},
+
+	// "<libraryID>/lastPageIndex_u_<key>" in the user library, "..._g<groupID>_<key>" in a
+	// group, as Zotero.Item._getSettingKey writes them.
+	parseLastPageSetting(id) {
+		let m = /^\d+\/lastPageIndex_(?:u|g(\d+))_([A-Z0-9]{8})$/.exec(String(id));
+		return m ? { groupID: m[1] ? +m[1] : null, key: m[2] } : null;
+	},
+
+	async onReadingNotify(event, ids) {
+		if ((event !== "add" && event !== "modify") || !this.trackingReading()) {
+			return;
+		}
+		for (let id of ids) {
+			let setting = this.parseLastPageSetting(id);
+			if (!setting) {
+				continue;
+			}
+			let libraryID = setting.groupID === null ? Zotero.Libraries.userLibraryID : Zotero.Groups.getLibraryIDFromGroupID(setting.groupID);
+			let attachment = libraryID && Zotero.Items.getByLibraryAndKey(libraryID, setting.key);
+			if (!attachment || !attachment.isPDFAttachment()) {
+				continue;
+			}
+			// A sync brings pages read on other devices too; only a reader open here is reading.
+			if (!(Zotero.Reader._readers || []).some(r => r.itemID === attachment.id)) {
+				continue;
+			}
+			let dir = this.contextDirFor(attachment);
+			if (!(await OS.File.exists(dir))) {
+				continue;
+			}
+			await this.recordPage(dir, attachment.getAttachmentLastPageIndex(), await this.cachedStructure(dir, attachment));
+		}
+	},
+
+	// The map last built for the paper, without building one: page events only need sections.
+	// One read from cache/ is kept, so page turns after a restart parse it once; with the
+	// attachment given, a map of another file version is not used.
+	async cachedStructure(dir, attachment = null) {
+		let cached = this._structures.get(dir);
+		if (cached) {
+			return cached.structure;
+		}
+		let saved = await this.readJSON(OS.Path.join(dir, "cache", "structure.json"), null);
+		if (!saved) {
+			return null;
+		}
+		if (attachment && !String(saved.key).startsWith([this.MAP_VERSION, attachment.id, await this.fileStamp(attachment)].join(":") + ":")) {
+			return null;
+		}
+		this._structures.set(dir, { key: saved.key, structure: saved });
+		return saved;
+	},
+
+	// "§2.3 · p. 18 · 9/15 read" for the paper chip, or "" before any page was recorded.
+	readingLine(structure, progress) {
+		if (!structure || !progress || !Number.isInteger(progress.current)) {
+			return "";
+		}
+		let i = progress.current;
+		let section = structure.outlineMethod !== "chunks" ? ZusiaMap.sectionOf(structure.outline, i) : null;
+		let parts = [];
+		if (section) {
+			parts.push(/^\d/.test(section.id) ? "§" + section.id : section.title.length > 18 ? section.title.slice(0, 17) + "…" : section.title);
+		}
+		parts.push("p. " + (ZusiaMap.printedLabel(i, structure) || String(i + 1)));
+		if (section) {
+			let read = (progress.read || []).filter(p => p >= section.start && p <= section.end).length;
+			parts.push(read + "/" + (section.end - section.start + 1) + " read");
+		}
+		return parts.join(" · ");
+	},
+
+	refreshReadingChips(dir) {
+		let cached = this._structures.get(dir);
+		let state = this.trackingReading() ? this._progress.get(dir) : null;
+		let reading = this.readingLine(cached && cached.structure, state && state.progress);
+		for (let win of Zotero.getMainWindows()) {
+			for (let root of win.document.querySelectorAll(".zs-root")) {
+				let view = this._views.get(root);
+				if (view && view.ctx.dir === dir && view.info) {
+					this.renderPaperChip(root, Object.assign({}, view.info, { reading }));
+				}
+			}
+		}
+	},
+
+	// When the sidebar shows a paper whose PDF is open in the reader: the map is built or
+	// read back and the page on screen recorded, so the chip says where the user is.
+	async updateReading(view) {
+		let { ctx } = view;
+		let reader = this.readerFor(ctx, Zotero.getMainWindow());
+		if (!reader || this.getPref("fullText") === false) {
+			this.refreshReadingChips(ctx.dir);
+			return;
+		}
+		let open = this.withOpenAttachment(ctx, reader);
+		let full = await this.loadFullText(open.attachmentItem, ctx.dir);
+		if (full.status !== "ok" || !full.paged) {
+			return;
+		}
+		let structure = await this.ensureStructure(open, full, reader);
+		await this.recordPage(ctx.dir, this.readerPageIndex(reader), structure);
+		this.refreshReadingChips(ctx.dir);
+	},
+
+	// Settings → Troubleshooting: every paper's map is built again on its next question,
+	// asking Zotero again for labels and outline. The extracted text stays.
+	async rebuildReadingMaps() {
+		this._structures.clear();
+		this._natives.clear();
+		this._sdt.clear();
+		let root = this.getDataDir();
+		if (!(await OS.File.exists(root))) {
+			return 0;
+		}
+		let count = 0;
+		for (let folder of await this.listChildren(root)) {
+			if (!folder.isDir) {
+				continue;
+			}
+			for (let name of ["structure.json", "native.json"]) {
+				let path = OS.Path.join(folder.path, "cache", name);
+				if (await OS.File.exists(path)) {
+					await OS.File.remove(path);
+					count += name === "structure.json" ? 1 : 0;
+				}
+			}
+		}
+		return count;
+	},
+
+	// --------------------------------------------------------------- memory
+
+	memoryPath(dir) {
+		return OS.Path.join(dir, "memory.json");
+	},
+
+	// `coveredThrough` is the index in chat.json of the last message folded into the memory,
+	// and `epoch` counts the chats (New chat, a restored chat), so a consolidation of the
+	// chat before never moves the new one's `coveredThrough`.
+	// `pendingArchives` ([{file, from}]) are put-away chats not yet folded in, from chat
+	// index `from` on, kept on disk so a quit or a long rate-limit pause loses none, and
+	// `generation` counts resets, so a patch computed before one is dropped.
+	async loadMemory(dir) {
+		return Object.assign(ZusiaMap.emptyMemory(), { turns: [], coveredThrough: -1, epoch: 0, pendingArchives: [], generation: 0 },
+			await this.readJSON(this.memoryPath(dir), null));
+	},
+
+	// `change` gets the stored memory and returns the next one; read and write happen under
+	// the folder's lock, so a note typed while an answer is recorded is not lost.
+	updateMemory(dir, change) {
+		return this.withDirLock(dir, async () => {
+			let next = change(await this.loadMemory(dir));
+			await this.writeAtomic(this.memoryPath(dir), JSON.stringify(next, null, 1));
+			return next;
+		});
+	},
+
+	// Where each question was asked and what it cited, the raw log phase two summarises.
+	recordTurn(dir, turn) {
+		return this.updateMemory(dir, memory => Object.assign({}, memory, { turns: [...memory.turns, turn].slice(-this.MEMORY_TURNS) }));
+	},
+
+	// "/remember <text>", "ricorda: <text>" and "/forget <n>" are notes for the memory, not
+	// questions: handled before anything is sent.
+	memoryCommand(text) {
+		let t = String(text || "").trim();
+		let m;
+		if ((m = /^\/remember(?:\s+([\s\S]*))?$/i.exec(t))) {
+			return { kind: "remember", text: (m[1] || "").trim() };
+		}
+		if ((m = /^ricorda\s*:\s*([\s\S]*)$/i.exec(t))) {
+			return { kind: "remember", text: m[1].trim() };
+		}
+		if ((m = /^\/forget(?:\s+#?m?(\d+))?\s*$/i.exec(t))) {
+			return { kind: "forget", id: m[1] ? "m" + m[1] : null };
+		}
+		return null;
+	},
+
+	async runMemoryCommand(view, command) {
+		let dir = view.ctx.dir;
+		let number = id => id.replace(/^m/, "");
+		if (command.kind === "forget") {
+			let removed = null;
+			if (command.id) {
+				await this.updateMemory(dir, (memory) => {
+					removed = memory.items.find(item => item.id === command.id) || null;
+					return ZusiaMap.applyMemoryPatch(memory, { remove: removed ? [command.id] : [] }).memory;
+				});
+			}
+			this.appendMemo(view, removed
+				? "Forgot note " + number(removed.id) + ": " + removed.text
+				: "There is no note " + (command.id ? number(command.id) : "with that number") + ". Type /remember alone to list them.");
+			return;
+		}
+		let structure = await this.cachedStructure(dir);
+		if (!command.text) {
+			let notes = (await this.loadMemory(dir)).items.filter(item => item.kind === "note");
+			this.appendMemo(view, notes.length
+				? "Notes for this paper: " + notes.map(item => number(item.id) + ". " + item.text).join(" · ") + ". /forget <number> drops one."
+				: "No notes yet. Type /remember and what to keep, and it goes with every question about this paper.");
+			return;
+		}
+		let reader = this.readerFor(view.ctx, Zotero.getMainWindow());
+		let page = this.readerPageIndex(reader);
+		let rejected = [];
+		let memory = await this.updateMemory(dir, (current) => {
+			let result = ZusiaMap.applyMemoryPatch(current,
+				{ add: [Object.assign({ kind: "note", text: command.text }, Number.isInteger(page) ? { page: page + 1 } : {})] },
+				{ pageCount: structure ? structure.pageCount : Infinity, now: Date.now() });
+			rejected = result.rejected;
+			return result.memory;
+		});
+		if (rejected.length) {
+			this.appendMemo(view, "Not noted: " + rejected[0].reason + ".");
+			return;
+		}
+		let item = memory.items[memory.items.length - 1];
+		this.appendMemo(view, "Noted (" + number(item.id) + "): " + item.text +
+			(item.page ? ", " + ZusiaMap.pageName(item.page - 1, structure) : "") +
+			". It goes with every question about this paper; /forget " + number(item.id) + " drops it.");
+	},
+
+	// A line in the chat that is not a message: never stored, never sent.
+	appendMemo(view, text) {
+		view.logEl.querySelector(".zs-empty")?.remove();
+		let memo = this.el(view.doc, "div", "zs-memo", text);
+		memo.setAttribute("role", "status");
+		view.logEl.appendChild(memo);
+		this.scrollToEnd(view.logEl);
+	},
+
+	// --------------------------------------------------------------- background memory
+
+	consolidating() {
+		return this.getPref("memory.consolidate") !== false;
+	},
+
+	gisting() {
+		return this.getPref("memory.gists") === true;
+	},
+
+	// The CLI that runs memory jobs: the assistant in use, when it can run with nothing to
+	// read. Codex cannot: its read-only sandbox still reads the whole home folder.
+	jobBackend() {
+		let backend = this.getBackend();
+		return backend === "claude" || backend === "agy" ? backend : null;
+	},
+
+	memoryJobsAvailable() {
+		return this.consolidating() && this.jobBackend() !== null;
+	},
+
+	// Queued unless the same job is already waiting; one running is not enough, as turns
+	// may have come in after it read them. `run(job)` resolves to {called, rateLimited}
+	// or nothing.
+	queueJob(job) {
+		if (this._jobsStopped || this._jobs.some(j => j.key === job.key)) {
+			return false;
+		}
+		this._jobs.push(Object.assign({ proc: null, cancelled: false }, job));
+		this.pumpJobs();
+		return true;
+	},
+
+	// Starts the next job: one at a time, never while a question runs (the CLI and the
+	// subscription are the user's first), and not while a rate limit pauses them. Returns
+	// the job's promise, which never rejects.
+	pumpJobs() {
+		if (this._job || this._jobsStopped || !this._jobs.length || this._pending.size) {
+			return null;
+		}
+		let wait = this._jobBackoff.until - Date.now();
+		if (wait > 0) {
+			if (!this._jobBackoff.wake) {
+				this._jobBackoff.wake = true;
+				Zotero.Promise.delay(wait).then(() => {
+					this._jobBackoff.wake = false;
+					this.pumpJobs();
+				});
+			}
+			return null;
+		}
+		let job = this._jobs.shift();
+		this._job = job;
+		this.refreshReadingChips(job.dir);
+		job.promise = Promise.resolve()
+			.then(() => job.run(job))
+			.then((outcome) => {
+				if (outcome && outcome.rateLimited) {
+					let delay = Math.min(this._jobBackoff.delay ? this._jobBackoff.delay * 2 : this.JOB_BACKOFF_MS, this.JOB_BACKOFF_MAX_MS);
+					this._jobBackoff = { delay, until: Date.now() + delay, wake: false };
+					this.log("Memory jobs paused for " + Math.round(delay / 60000) + " minutes: the assistant reported a rate limit");
+					if (!job.cancelled && !this._jobs.some(j => j.key === job.key)) {
+						this._jobs.unshift(job);
+					}
+				}
+				else if (outcome && outcome.called) {
+					this._jobBackoff = { delay: 0, until: 0, wake: false };
+				}
+			}, e => this.logError("memory job " + job.key, e))
+			.finally(() => {
+				this._job = null;
+				this.refreshReadingChips(job.dir);
+				this.pumpJobs();
+			});
+		return job.promise;
+	},
+
+	// Resolves once no job is running.
+	async jobsIdle() {
+		while (this._job) {
+			await this._job.promise;
+		}
+	},
+
+	// At shutdown nothing new starts and a running call is stopped. What it would have
+	// written is dropped: its turns stay unconsolidated, the chat's after coveredThrough and
+	// a put-away chat's in memory.json's pendingArchives, so the next start takes them up.
+	stopJobs() {
+		this._jobsStopped = true;
+		this._jobs = [];
+		if (this._job) {
+			this._job.cancelled = true;
+			try {
+				this._job.proc?.kill();
+			}
+			catch (e) {
+				this.logError("stopping a memory job", e);
+			}
+		}
+	},
+
+	isRateLimited(text) {
+		return /\b429\b|rate[ _-]?limit|usage limit|quota|resource[ _]?exhausted|too many requests/i.test(text || "");
+	},
+
+	// Stateless and with nothing to use: no session kept, no MCP servers or tools.
+	// "--tools=" is one argument whose empty value Claude reads as no tools at all (an
+	// empty argument of its own would be dropped on Windows, #1). The user's settings are
+	// left out as for the chat, unless the chat uses them: a login or endpoint set there
+	// (apiKeyHelper, ANTHROPIC_BASE_URL) is needed by the jobs too, and tools stay off.
+	// agy has no flag that keeps a conversation from being stored, so each job is one in
+	// its history (not checked yet: whether "agy --continue" elsewhere could resume one).
+	backgroundArgs(backend) {
+		if (backend === "claude") {
+			let args = ["-p", "--output-format", "stream-json", "--verbose", "--model", "haiku", "--tools=",
+				"--strict-mcp-config", "--no-session-persistence"];
+			if (!this.getPref("useClaudeUserSettings")) {
+				args.push("--setting-sources=");
+			}
+			return args;
+		}
+		return ["--output-format", "stream-json", "--sandbox", "--effort", "low"];
+	},
+
+	// A new empty folder per call, so a backend that can list or read files finds nothing.
+	async makeJobDir() {
+		let dir = OS.Path.join(PathUtils.tempDir, "zusia-job-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8));
+		await Zotero.File.createDirectoryIfMissingAsync(dir);
+		return dir;
+	},
+
+	// One prompt on stdin, no session, in an empty folder. Resolves to {text, error,
+	// rateLimited}; `job`, when given, can stop the call. A CLI that cannot be found or
+	// started is an error like one that answered nothing, so the failure counts apply.
+	async runBackgroundCall(backend, prompt, job = null) {
+		let command;
+		try {
+			command = await this.findBinary(backend);
+		}
+		catch (e) {
+			this.logError("starting a memory job", e);
+			return { text: "", error: e.message, rateLimited: false };
+		}
+		let cwd = await this.makeJobDir();
+		let proc = null;
+		let finished = false;
+		let timedOut = false;
+		Zotero.Promise.delay(this.JOB_TIMEOUT_MS).then(() => {
+			if (!finished && proc) {
+				timedOut = true;
+				proc.kill();
+			}
+		});
+		try {
+			let run;
+			try {
+				run = await this.runProcess(command, this.backgroundArgs(backend), cwd, null, (p) => {
+					proc = p;
+					if (job) {
+						job.proc = p;
+						if (job.cancelled) {
+							p.kill();
+						}
+					}
+				}, prompt);
+			}
+			catch (e) {
+				this.logError("running a memory job", e);
+				return { text: "", error: e.message, rateLimited: false };
+			}
+			let { stdout, stderr, exitCode } = run;
+			let events = this.parseJsonLines(stdout);
+			let text = "";
+			let error = "";
+			if (backend === "claude") {
+				({ text, error = "" } = this.parseClaudeEvents(events));
+			}
+			else {
+				let { final } = this.parseAntigravityEvents(events);
+				text = final && final.status === "SUCCESS" ? (final.response || "").trim() : "";
+				error = (final && final.error) || "";
+			}
+			if (timedOut) {
+				error = "no answer within " + Math.round(this.JOB_TIMEOUT_MS / 60000) + " minutes";
+			}
+			else if (exitCode !== 0 || !text) {
+				error = error || stderr.trim() || backend + " exited with code " + exitCode;
+			}
+			if (error) {
+				return { text: "", error, rateLimited: this.isRateLimited(stderr + "\n" + error) };
+			}
+			return { text, error: "", rateLimited: false };
+		}
+		finally {
+			finished = true;
+			if (job) {
+				job.proc = null;
+			}
+			// A just-stopped CLI can still hold the folder on Windows; the call's outcome
+			// (a rate limit above all) matters more than a leftover empty folder.
+			try {
+				await OS.File.removeDir(cwd);
+			}
+			catch (e) {
+				this.logError("removing a job folder", e);
+			}
+		}
+	},
+
+	// --------------------------------------------------------------- consolidation
+
+	// Queues what `reason` calls for: "turn" after an answer (every CONSOLIDATE_TURNS
+	// questions, or past CONSOLIDATE_CHARS of turns), "chapter" (the reader moved to another
+	// chapter), "leave" (the sidebar left the paper or closed) and "open" (it showed the
+	// paper: the first chance after a restart) whenever an answered question is not in the
+	// memory yet. A put-away chat still owed goes first, with any consolidation that is
+	// due, and on its own unless its fold already failed in this session.
+	async scheduleConsolidation(dir, reason) {
+		if (this._jobsStopped || !this.memoryJobsAvailable()) {
+			return false;
+		}
+		let due = await this.consolidationDue(dir, reason);
+		let queued = false;
+		for (let { file } of (await this.loadMemory(dir)).pendingArchives) {
+			if (due || !this._archiveFailed.has(dir + "\n" + file)) {
+				queued = this.queueConsolidation(dir, { archive: file }) || queued;
+			}
+		}
+		return (due && this.queueConsolidation(dir, { reason })) || queued;
+	},
+
+	// Showing a paper picks up what a quit or a pause left unconsolidated.
+	resumeMemory(dir) {
+		return this.scheduleConsolidation(dir, "open");
+	},
+
+	// After a call that came back without a usable patch, only the turns after the ones it
+	// was given count, whatever the reason: a model that keeps failing costs a call per
+	// five questions, not one per question, paper switch or chapter.
+	async consolidationDue(dir, reason) {
+		let memory = await this.loadMemory(dir);
+		let history = await this.loadHistory(dir);
+		let counted = history.slice(Math.max(memory.coveredThrough + 1, this._memoryFailed.get(dir) || 0));
+		if (!counted.some(m => m.role === "assistant")) {
+			return false;
+		}
+		if (reason !== "turn") {
+			return true;
+		}
+		let questions = counted.filter(m => m.role === "user").length;
+		let chars = counted.reduce((sum, m) => sum + String(m.text || "").length, 0);
+		return questions >= this.CONSOLIDATE_TURNS || chars > this.CONSOLIDATE_CHARS;
+	},
+
+	// The check runs again when the job starts: a job that waited behind a question may
+	// find the memory already updated. An `archive` is the file of a put-away chat listed
+	// in pendingArchives, folded in as it was.
+	queueConsolidation(dir, { reason = "leave", archive = null } = {}) {
+		return this.queueJob({
+			key: "memory:" + dir + (archive ? "@" + archive : ""),
+			dir,
+			run: async job => (archive || (await this.consolidationDue(dir, reason)) ? this.consolidateMemory({ dir }, { job, archive }) : null),
+		});
+	},
+
+	// Reset memory: the paper's queued updates go and its failures are forgotten. One
+	// already running is dropped when it writes, by the generation it read.
+	forgetMemoryJobs(dir) {
+		this._jobs = this._jobs.filter(job => !(job.dir === dir && job.key.startsWith("memory:")));
+		this._memoryFailed.delete(dir);
+		for (let key of [...this._archiveFailed].filter(k => k.startsWith(dir + "\n"))) {
+			this._archiveFailed.delete(key);
+		}
+	},
+
+	// How much turns or section text a background prompt may carry beside its `fixed`
+	// part. agy gets the whole prompt inline, so it is held to the inline budget (12k on
+	// Windows, whose stdin is not checked yet; escaped tags lengthen a text slightly, hence
+	// the margin). Claude has no such limit.
+	jobInputChars(backend, cap, fixed) {
+		if (backend !== "agy") {
+			return cap;
+		}
+		return Math.max(this.JOB_MIN_INPUT_CHARS, Math.min(cap, this.inlineFullTextBudget() - fixed - 200));
+	},
+
+	// The messages one consolidation reads from chat index `from` on: each cleaned and cut,
+	// at most `maxChars` in all with their markers, ending on an answer. Null when no
+	// answered question is left; `more` when the next call has some.
+	consolidationBatch(history, from, maxChars = this.CONSOLIDATE_INPUT_CHARS) {
+		let cap = Math.min(this.CONSOLIDATE_MESSAGE_CHARS, maxChars - this.TURN_MARKER_CHARS);
+		let messages = [];
+		let total = 0;
+		for (let i = Math.max(0, from); i < history.length; i++) {
+			// A line that looks like a turn marker is the message's own text (a pasted chat,
+			// a passage); escaped, it cannot pass for a turn of the user's.
+			let text = ZusiaMap.memoryInputText(history[i].text).replace(/^(\s*)#(?=\d)/gm, "$1\\#");
+			if (text.length > cap) {
+				text = text.slice(0, cap - 1) + "…";
+			}
+			if (messages.length && total + text.length + this.TURN_MARKER_CHARS > maxChars) {
+				break;
+			}
+			messages.push({ index: i, role: history[i].role, text, page: history[i].page ?? null });
+			total += text.length + this.TURN_MARKER_CHARS;
+		}
+		while (messages.length && messages[messages.length - 1].role !== "assistant") {
+			messages.pop();
+		}
+		if (!messages.length) {
+			return null;
+		}
+		let through = messages[messages.length - 1].index;
+		return { messages, through, more: history.slice(through + 1).some(m => m.role === "assistant") };
+	},
+
+	consolidationPrompt(memory, progress, structure, batch) {
+		let turns = batch.messages.map(m => "#" + m.index + " " + (m.role === "user" ? "User" : "Assistant") +
+			(m.role === "user" && m.page ? " (on " + this.pdfPageName(m.page - 1, structure) + ")" : "") + ": " + m.text).join("\n\n");
+		let sections = structure && structure.outlineMethod !== "chunks"
+			? ZusiaMap.renderMap(structure, structure.outline, progress, { maxChars: 2000, files: [] })
+			: "";
+		return (
+			"You keep the reading memory of Zusia, a study assistant that helps one person read one document. " +
+			"The next conversation about the document starts from this memory, so it should hold what the turns " +
+			"below show about the reader: what they understood, what is still shaky, which of their questions are " +
+			"still open, and how they want to be answered. Record the reader, not the document: the document is " +
+			"always at hand, so do not summarise its content.\n\n" +
+			"Answer with one JSON object and nothing else, every field optional:\n" +
+			"{\"summary\": \"...\", \"add\": [{\"kind\": \"understood\", \"text\": \"...\", \"page\": 41}], \"resolve\": [\"m3\"], \"remove\": [\"m5\"]}\n\n" +
+			"- summary: the running summary of the conversation, rewritten to take in these turns, at most " +
+			ZusiaMap.MEMORY_SUMMARY_CHARS + " characters. Leave it out to keep the current one.\n" +
+			"- add: new items. kind is understood (the reader got it, for example restated it correctly), shaky " +
+			"(they struggled or got it wrong), open (a question of theirs still unanswered) or preference (how they " +
+			"want answers, only from something they said themselves; give \"source\": the number of that User turn " +
+			"below). text is one short sentence, at most " + ZusiaMap.MEMORY_ITEM_CHARS + " characters. page is the PDF " +
+			"page number the turn was on, when there is one. Do not add what the memory already says.\n" +
+			"- resolve: ids of open or shaky items these turns settled.\n" +
+			"- remove: ids of items that proved wrong or no longer matter. Items marked note are the reader's own " +
+			"and stay as they are.\n" +
+			"- Plain text: LaTeX maths is fine, HTML and links are not. Answer {} when nothing changed.\n" +
+			"- Each turn starts with #number and who spoke. A line starting with \\# is text inside a turn, not a turn.\n\n" +
+			this.contextBlock("reading_memory", ZusiaMap.renderMemory(memory, progress, structure)) +
+			(sections ? this.contextBlock("document_sections", sections) : "") +
+			this.contextBlock("conversation_turns", turns) +
+			"Answer with the JSON object only."
+		);
+	},
+
+	// One consolidation: the model proposes an id'd patch from the turns the memory does
+	// not cover yet, of the current chat or of a put-away one (`archive`), and only
+	// applyMemoryPatch, limited to the model's kinds, changes the memory. `coveredThrough`
+	// moves only for the current chat's turns, an archive's `from` only for its own.
+	async consolidateMemory(ctx, { job = null, archive = null } = {}) {
+		let { dir } = ctx;
+		// Checked again here: the setting or the assistant may have changed while it waited.
+		let backend = this.jobBackend();
+		if (!backend || !this.consolidating()) {
+			return null;
+		}
+		let memory = await this.loadMemory(dir);
+		let owed = archive ? memory.pendingArchives.find(a => a.file === archive) : null;
+		if (archive && !owed) {
+			return null;
+		}
+		let history = archive ? await this.readJSON(OS.Path.join(dir, archive), null) : await this.loadHistory(dir);
+		if (!history) {
+			this.log("The put-away chat " + archive + " is gone; it is no longer folded into the memory");
+			await this.updateMemory(dir, current => Object.assign({}, current, { pendingArchives: current.pendingArchives.filter(a => a.file !== archive) }));
+			return null;
+		}
+		let structure = await this.cachedStructure(dir);
+		let progress = this.trackingReading() ? await this.loadProgress(dir) : null;
+		let fixed = this.consolidationPrompt(memory, progress, structure, { messages: [] }).length;
+		let batch = this.consolidationBatch(history, archive ? owed.from : memory.coveredThrough + 1,
+			this.jobInputChars(backend, this.CONSOLIDATE_INPUT_CHARS, fixed));
+		if (!batch) {
+			if (archive) {
+				await this.updateMemory(dir, current => Object.assign({}, current, { pendingArchives: current.pendingArchives.filter(a => a.file !== archive) }));
+			}
+			return null;
+		}
+		let result = await this.runBackgroundCall(backend, this.consolidationPrompt(memory, progress, structure, batch), job);
+		if (job && job.cancelled) {
+			return { called: true };
+		}
+		let patch = result.error ? null : ZusiaMap.parsePatch(result.text);
+		if (!patch) {
+			this.log(result.error
+				? "Memory consolidation got no answer: " + result.error.slice(0, 300)
+				: "Memory consolidation answered without a JSON object: " + result.text.slice(0, 300));
+			if (!result.rateLimited) {
+				if (archive) {
+					this._archiveFailed.add(dir + "\n" + archive);
+				}
+				else {
+					this._memoryFailed.set(dir, batch.through + 1);
+				}
+			}
+			return { called: true, rateLimited: result.rateLimited };
+		}
+		if (archive) {
+			this._archiveFailed.delete(dir + "\n" + archive);
+		}
+		else {
+			this._memoryFailed.delete(dir);
+		}
+		// A preference may cite only a user message the model was shown.
+		let shown = [];
+		for (let m of batch.messages) {
+			shown[m.index] = history[m.index];
+		}
+		// What the user edited during the call is theirs: the patch neither removes nor
+		// resolves it.
+		let read = new Map(memory.items.map(item => [item.id, item.text]));
+		let rejected = [];
+		let dropped = false;
+		await this.updateMemory(dir, (current) => {
+			if (current.generation !== memory.generation) {
+				dropped = true;
+				return current;
+			}
+			let untouched = id => current.items.some(item => item.id === id && item.text === read.get(id));
+			let checked = Object.assign({}, patch);
+			for (let key of ["remove", "resolve"]) {
+				if (Array.isArray(patch[key])) {
+					checked[key] = patch[key].filter(untouched);
+					rejected.push(...patch[key].filter(id => !untouched(id)).map(id => ({ id, reason: "edited or gone meanwhile" })));
+				}
+			}
+			let applied = ZusiaMap.applyMemoryPatch(current, checked, {
+				history: shown,
+				pageCount: structure ? structure.pageCount : Infinity,
+				now: Date.now(),
+				kinds: ZusiaMap.MODEL_KINDS,
+			});
+			rejected.push(...applied.rejected);
+			let next = applied.memory;
+			if (archive) {
+				next.pendingArchives = batch.more
+					? current.pendingArchives.map(a => (a.file === archive ? Object.assign({}, a, { from: batch.through + 1 }) : a))
+					: current.pendingArchives.filter(a => a.file !== archive);
+			}
+			else if (current.epoch === memory.epoch && batch.through > current.coveredThrough) {
+				next.coveredThrough = batch.through;
+			}
+			return next;
+		});
+		if (dropped) {
+			this.log("Memory update dropped: the memory was reset while it ran");
+			return { called: true };
+		}
+		if (rejected.length) {
+			this.log("Memory patch applied without " + rejected.length + " parts: " + JSON.stringify(rejected).slice(0, 500));
+		}
+		if (batch.more) {
+			this.queueConsolidation(dir, { archive });
+		}
+		return { called: true };
+	},
+
+	// New chat and a restored chat start a new epoch with nothing covered. The chat put
+	// away (`archived`, its file) is owed to the memory from where the memory had got to,
+	// noted in memory.json before it is queued; a `restored` chat is the current one again,
+	// so no longer owed. Failures of the chat before no longer hold the counts back.
+	async startMemoryEpoch(dir, history, archived, { restored = null } = {}) {
+		let owe = false;
+		await this.updateMemory(dir, (memory) => {
+			let from = memory.coveredThrough + 1;
+			let pendingArchives = memory.pendingArchives.filter(a => a.file !== restored && a.file !== archived);
+			owe = !!archived && this.memoryJobsAvailable() && history.slice(from).some(m => m.role === "assistant");
+			if (owe) {
+				pendingArchives.push({ file: archived, from });
+			}
+			return Object.assign({}, memory, { coveredThrough: -1, epoch: memory.epoch + 1, pendingArchives });
+		});
+		this._memoryFailed.delete(dir);
+		if (owe) {
+			this.queueConsolidation(dir, { archive: archived });
+		}
+	},
+
+	// The sidebar moved to another paper or closed.
+	leavePaper(dir) {
+		this.scheduleConsolidation(dir, "leave").catch(e => this.logError("scheduling memory consolidation", e));
+	},
+
+	// A page turn into another chapter folds the conversation so far into the memory, and a
+	// section turning read gets its gist when gists are on.
+	async afterPageEvent(dir, structure, before, progress) {
+		let outline = (structure && structure.outline) || [];
+		let from = Number.isInteger(before.current) ? ZusiaMap.chapterOf(outline, before.current) : null;
+		let to = ZusiaMap.chapterOf(outline, progress.current);
+		if (from && to && from.id !== to.id) {
+			await this.scheduleConsolidation(dir, "chapter").catch(e => this.logError("scheduling memory consolidation", e));
+		}
+		if (this.gisting() && this.jobBackend()) {
+			this.queueGists(dir, outline.filter(e => progress.sections[e.id] === "read" && (before.sections || {})[e.id] !== "read"));
+		}
+	},
+
+	// --------------------------------------------------------------- gists
+
+	gistsPath(dir) {
+		return OS.Path.join(dir, "gists.json");
+	},
+
+	async loadGists(dir) {
+		return Object.assign({ version: 1, sections: {} }, await this.readJSON(this.gistsPath(dir), null));
+	},
+
+	updateGists(dir, change) {
+		return this.withDirLock(dir, async () => {
+			let next = change(await this.loadGists(dir));
+			await this.writeAtomic(this.gistsPath(dir), JSON.stringify(next, null, 1));
+			return next;
+		});
+	},
+
+	queueGist(dir, id) {
+		return this.queueJob({ key: "gist:" + dir + ":" + id, dir, run: job => this.gistSection({ dir }, id, { job }) });
+	},
+
+	// Sections before the part they belong to, which is merged from their gists.
+	queueGists(dir, entries) {
+		[...entries].sort((a, b) => b.level - a.level).forEach(e => this.queueGist(dir, e.id));
+	},
+
+	// Every question checks for read sections whose gist is missing or stale (the text
+	// changed, or gists were off while they were read): page turns only see a section the
+	// moment it turns read. One whose gist failed in this session is not asked for again.
+	queueMissingGists(dir, structure, pages, progress, gists) {
+		if (!this.jobBackend() || !progress) {
+			return;
+		}
+		let fresh = new Set(ZusiaMap.freshGists(gists, structure, pages).map(g => g.entry.id));
+		this.queueGists(dir, structure.outline.filter(e => progress.sections[e.id] === "read" && !fresh.has(e.id) &&
+			!this._gistFailed.has(dir + "\n" + e.id + "\n" + ZusiaMap.sectionHash(pages, e))));
+	},
+
+	// A section the reader finished, summarised from its pages with the gist before it for
+	// continuity, or a part merged from its sections' gists. Stored with the hash of the
+	// text it was written from: a changed file makes it stale, and it is written again.
+	async gistSection(ctx, id, { job = null } = {}) {
+		let { dir } = ctx;
+		let backend = this.jobBackend();
+		let structure = await this.cachedStructure(dir);
+		let entry = structure && structure.outline.find(e => e.id === id);
+		let saved = entry ? await this.readJSON(OS.Path.join(dir, "cache", "pages.json"), null) : null;
+		if (!backend || !this.gisting() || !saved || saved.pages.length !== structure.pageCount) {
+			return null;
+		}
+		let pages = saved.pages;
+		let hash = ZusiaMap.sectionHash(pages, entry);
+		let gists = await this.loadGists(dir);
+		if (gists.sections[id] && gists.sections[id].hash === hash) {
+			return null;
+		}
+		let fresh = new Map(ZusiaMap.freshGists(gists, structure, pages).map(g => [g.entry.id, g]));
+		let children = ZusiaMap.childrenOf(structure.outline, entry);
+		let prompt;
+		if (children.length) {
+			let parts = children.filter(c => fresh.has(c.id)).map(c => fresh.get(c.id));
+			if (!parts.length) {
+				return null;
+			}
+			prompt = this.gistMergePrompt(entry, parts, structure);
+		}
+		else {
+			let previous = structure.outline.filter(e => e.end < entry.start && fresh.has(e.id))
+				.sort((a, b) => a.end - b.end || a.level - b.level).pop();
+			prompt = this.gistPrompt(entry, pages, structure, previous ? fresh.get(previous.id) : null, backend);
+		}
+		let result = await this.runBackgroundCall(backend, prompt, job);
+		if (job && job.cancelled) {
+			return { called: true };
+		}
+		let failed = dir + "\n" + id + "\n" + hash;
+		if (result.error) {
+			this.log("Gist of " + id + " got no answer: " + result.error.slice(0, 300));
+			if (!result.rateLimited) {
+				this._gistFailed.add(failed);
+			}
+			return { called: true, rateLimited: result.rateLimited };
+		}
+		let gist = ZusiaMap.validateGist(result.text);
+		if (gist.reason) {
+			this.log("Gist of " + id + " not kept: " + gist.reason);
+			this._gistFailed.add(failed);
+			return { called: true };
+		}
+		this._gistFailed.delete(failed);
+		await this.updateGists(dir, g => Object.assign({}, g, {
+			sections: Object.assign({}, g.sections, { [id]: { hash, text: gist.text, ts: Date.now() } }),
+		}));
+		return { called: true };
+	},
+
+	gistPrompt(entry, pages, structure, previous, backend = null) {
+		let body = [];
+		for (let i = entry.start; i <= entry.end; i++) {
+			body.push(ZusiaMap.renderPage(i, pages[i], structure));
+		}
+		let text = body.join("\n\n");
+		let frame = section => (
+			"You write short summaries of a document's sections for a study assistant, which reads them later to " +
+			"find its way around what the reader has already read. Summarise the section below in at most " +
+			ZusiaMap.GIST_CHARS + " characters of plain prose: what it covers, the ideas, definitions and results it " +
+			"introduces, and the numbers of its key equations, figures or theorems, in the document's own terms. " +
+			"Say only what the text says. No headings, no HTML, no links, no preamble: answer with the summary alone.\n\n" +
+			(previous ? "The summary of the part before it, for continuity (do not repeat it):\n" + this.contextBlock("previous_summary", previous.text) : "") +
+			"Section " + ZusiaMap.entryTitle(entry) + ", " + ZusiaMap.rangeName(entry.start, entry.end, structure) + ":\n" +
+			this.contextBlock("section_text", section)
+		);
+		let cut = "\n[The rest of the section is left out.]";
+		let limit = this.jobInputChars(backend, this.GIST_INPUT_CHARS, frame("").length + cut.length);
+		return frame(text.length > limit ? text.slice(0, limit) + cut : text);
+	},
+
+	gistMergePrompt(entry, parts, structure) {
+		return (
+			"You write short summaries of a document's parts for a study assistant, which reads them later to find " +
+			"its way around what the reader has already read. Below are the summaries of the sections of " +
+			ZusiaMap.entryTitle(entry) + " (" + ZusiaMap.rangeName(entry.start, entry.end, structure) + "). Merge them " +
+			"into one summary of the whole part, at most " + ZusiaMap.GIST_CHARS + " characters of plain prose, keeping " +
+			"the key results and equation numbers. Say only what the summaries say. No headings, no HTML, no links, " +
+			"no preamble: answer with the summary alone.\n\n" +
+			this.contextBlock("section_gists", parts.map(p => "- " + ZusiaMap.entryTitle(p.entry) + ": " + p.text.replace(/\s+/g, " ")).join("\n"))
+		);
+	},
+
+	// ---------------------------------------------------------------------
 	// Conversation persistence
 	// ---------------------------------------------------------------------
 
+	// A damaged chat.json is moved aside by readJSON, so appendHistory starts a new one
+	// next to it instead of writing over the only copy; a file that cannot be read at all
+	// throws, and nothing is written.
 	async loadHistory(dir) {
-		let path = OS.Path.join(dir, "chat.json");
-		try {
-			if (!(await OS.File.exists(path))) {
-				return [];
-			}
-			let text = await Zotero.File.getContentsAsync(path);
-			return JSON.parse(text);
-		}
-		catch (e) {
-			this.log("loadHistory failed: " + e);
-			return [];
-		}
+		return this.readJSON(OS.Path.join(dir, "chat.json"), []);
 	},
 
+	// Read and rewritten under the folder's lock, so two answers finishing together
+	// (a NEED_PAGES follow-up, a retry) cannot drop each other's messages.
 	async appendHistory(dir, messages) {
-		let history = await this.loadHistory(dir);
-		history.push(...messages);
-		await this.saveHistory(dir, history);
+		await this.withDirLock(dir, async () => {
+			let history = await this.loadHistory(dir);
+			history.push(...messages);
+			await this.writeAtomic(OS.Path.join(dir, "chat.json"), JSON.stringify(history, null, 2));
+		});
 	},
 
 	async saveHistory(dir, history) {
-		await Zotero.File.putContentsAsync(
-			OS.Path.join(dir, "chat.json"),
-			JSON.stringify(history, null, 2)
-		);
+		await this.withDirLock(dir, () => this.writeAtomic(OS.Path.join(dir, "chat.json"), JSON.stringify(history, null, 2)));
+	},
+
+	// A crash or a full disk mid-write leaves the old file whole: the text goes to a
+	// temporary file first, and a move replaces the target in one step.
+	async writeAtomic(path, text) {
+		let tmp = path + ".tmp";
+		await Zotero.File.putContentsAsync(tmp, text);
+		await OS.File.move(tmp, path);
+	},
+
+	// Runs `fn` after every earlier write queued for `dir`, so chat.json, session.json,
+	// progress.json and memory.json updates never interleave. A failed write rejects its
+	// own caller only; the next one still runs.
+	withDirLock(dir, fn) {
+		let previous = this._dirQueue.get(dir) || Promise.resolve();
+		let run = previous.then(() => fn(), () => fn());
+		this._dirQueue.set(dir, run);
+		let release = () => {
+			if (this._dirQueue.get(dir) === run) {
+				this._dirQueue.delete(dir);
+			}
+		};
+		run.then(release, release);
+		return run;
+	},
+
+	// Parsed JSON, or `fallback` when the file is missing. A damaged file is moved aside
+	// rather than overwritten, so what it held can still be recovered by hand.
+	async readJSON(path, fallback) {
+		if (!(await OS.File.exists(path))) {
+			return fallback;
+		}
+		let text = await Zotero.File.getContentsAsync(path);
+		try {
+			return JSON.parse(text);
+		}
+		catch (e) {
+			if (!(e instanceof SyntaxError)) {
+				throw e;
+			}
+			this.log("Damaged " + path + " (" + e.message + "), moved to " + path + ".damaged");
+			await OS.File.move(path, path + ".damaged");
+			return fallback;
+		}
 	},
 
 	// session.json maps each backend to { id, seen }, where `seen` is how many
@@ -5893,10 +8006,7 @@ Zusia = {
 	},
 
 	async saveSessions(dir, sessions) {
-		await Zotero.File.putContentsAsync(
-			OS.Path.join(dir, "session.json"),
-			JSON.stringify({ sessions })
-		);
+		await this.withDirLock(dir, () => this.writeAtomic(OS.Path.join(dir, "session.json"), JSON.stringify({ sessions })));
 	},
 
 	// ---------------------------------------------------------------------
@@ -6071,9 +8181,12 @@ Zusia = {
 			"marker reads \"--- page N ---\", N counting PDF pages from 1, or \"--- page N (printed M) ---\" " +
 			"when the page carries its own printed number M. The note with the question says whether you " +
 			"have it; when you do, it's your main source." +
-			(inline ? "" : " Long documents are long, so search for the terms of the question and read the " +
+			(inline ? " A long document comes as chosen pages, and the page the user is on as <focus_page>, " +
+				"right before the question." : " Long documents are long, so search for the terms of the question and read the " +
 				"pages around the hits before you answer; the page the user is on is usually the best place " +
-				"to start, and a term can appear in several places, so look past the first match.") +
+				"to start, and a term can appear in several places, so look past the first match. For a book, " +
+				"fulltext.md is only an index: the pages are in section files under text/, which the reading map lists. " +
+				"Only fulltext.md and text/ hold the text; cache/ is Zusia's own bookkeeping, so leave it out of your searches.") +
 			" Extraction sometimes garbles equations, tables and figure labels; when it has, say so instead " +
 			"of guessing what was there. If pages were left out to fit, a note at the top says which.\n" +
 			"- " + name.notes + ": the user's own highlights and comments, labelled with the page number " +
@@ -6081,8 +8194,15 @@ Zusia = {
 			"- The message itself: maybe a passage they selected (quoted with >, its \"(p. X)\" also a " +
 			"printed number), images, a transcript of earlier turns, and a \"[Context for this question: ...]\" " +
 			"note. Zusia writes that note just before sending, with the text you have this time, the PDF page " +
-			"of the quoted passage and the PDF page the user is viewing, so trust it over anything older in " +
-			"the chat.",
+			"of the quoted passage and the PDF page the user is viewing, and which PDF page a printed page number " +
+			"in the question means, so trust it over anything older in the chat.\n" +
+			"- <reading_map> and <reading_memory>, when the message has them: the document's outline with page " +
+			"ranges and what the user has read, then where they are now and the notes they asked you to keep. " +
+			"Use them quietly to find your way and to connect the answer to what they have read, without " +
+			"talking about them; quotes, equations and numbers come from the page text only." +
+			(inline ? "\n- If the pages you have don't hold what the question needs and you can tell which would, " +
+				"answer with only a first line like NEED_PAGES: 41, 52 (PDF page numbers, at most three); Zusia " +
+				"then sends those pages, once, and you answer." : ""),
 			"Because the user studies from your answers and may quote them later, keep a clear line between " +
 			"what the document says and what you know:\n" +
 			"- When you tell them what the document says, show where. Cite the printed number, (p. 18), when " +
@@ -6131,23 +8251,61 @@ Zusia = {
 		return session ? "" : this.systemPrompt({ inline: backend === "agy" });
 	},
 
-	// Messages the backend's session has not seen yet: everything for a new
-	// session, or turns answered by another backend since this one last spoke.
-	transcriptFor(history, session) {
-		let unseen = history.slice(session ? session.seen || 0 : 0).slice(-20);
+	// Messages the backend's session has not seen yet: for a new session the chat, or
+	// turns answered by another backend since this one last spoke. While the memory is
+	// kept in the background, a new session gets every message the memory does not cover
+	// yet (and never fewer than the last RECENT_TURNS questions): the background job folds
+	// them in before they pile up, and until it has, they are the only record of what was
+	// said. Only past MEMORY_TRANSCRIPT_CHARS (jobs failing or paused, a restored chat)
+	// are the oldest left out, and the prompt says so. Without background memory the chat
+	// is cut to its last 20 messages and 30k chars.
+	transcriptFor(history, session, memory = null) {
+		let seen = session ? session.seen || 0 : 0;
+		let background = this.memoryJobsAvailable();
+		let unseen;
+		if (background) {
+			let covered = memory ? memory.coveredThrough : -1;
+			let questions = history.map((m, i) => (m.role === "user" ? i : -1)).filter(i => i >= 0);
+			let recent = questions.length > this.RECENT_TURNS ? questions[questions.length - this.RECENT_TURNS] : 0;
+			let from = Math.min(covered + 1, recent);
+			// A resumed session missed the turns another backend answered, but those the
+			// memory covers reach it in <reading_memory>.
+			unseen = history.slice(Math.max(seen, from));
+		}
+		else {
+			unseen = history.slice(seen).slice(-20);
+		}
 		if (!unseen.length) {
 			return "";
 		}
 		let lines = unseen.map(m => (m.role === "user" ? "User: " : "Assistant: ") + m.text +
 			(m.images && m.images.length ? " [attached " + m.images.length + " image" + (m.images.length > 1 ? "s" : "") + "]" : ""));
 		let transcript = lines.join("\n\n");
-		if (transcript.length > 30000) {
+		if (background && transcript.length > this.MEMORY_TRANSCRIPT_CHARS) {
+			let kept = [];
+			let total = 0;
+			for (let k = lines.length - 1; k >= 0 && (!kept.length || total + lines[k].length + 2 <= this.MEMORY_TRANSCRIPT_CHARS); k--) {
+				kept.unshift(lines[k]);
+				total += lines[k].length + 2;
+			}
+			let left = lines.length - kept.length;
+			this.log("Transcript cut: " + left + " messages the memory does not cover yet left out");
+			transcript = (left ? "[" + left + " earlier messages are left out: the reading memory has not taken them in yet.]\n\n" : "") +
+				kept.join("\n\n");
+			if (transcript.length > this.MEMORY_TRANSCRIPT_CHARS) {
+				transcript = "…" + transcript.slice(-this.MEMORY_TRANSCRIPT_CHARS);
+			}
+		}
+		else if (!background && transcript.length > 30000) {
 			transcript = "…" + transcript.slice(-30000);
 		}
+		let since = !session && unseen.length < history.length;
 		return (
 			(session
 				? "Meanwhile the conversation continued with another assistant:\n\n"
-				: "Earlier conversation about this paper (possibly with another assistant):\n\n") +
+				: since
+					? "The conversation about this paper since the reading memory was last updated (possibly with another assistant):\n\n"
+					: "Earlier conversation about this paper (possibly with another assistant):\n\n") +
 			transcript + "\n\n---\n\n"
 		);
 	},
@@ -6292,9 +8450,12 @@ Zusia = {
 		return "using " + name;
 	},
 
-	// The text Claude and Codex get on stdin, after Codex's preamble on a new session.
+	// The text Claude and Codex get on stdin, after Codex's preamble on a new session: the
+	// reading map and memory, the turns this session has not seen, then the question.
+	// They read the pages themselves, so none are inlined.
 	questionPrompt({ files, question, history, session }) {
-		return this.transcriptFor(history, session) + question + this.contextNote(files) + this.formattingReminder();
+		return this.readingBlocks(files, session, { withFiles: true }) + this.transcriptFor(history, session, files.memory || null) +
+			question + this.contextNote(files) + this.formattingReminder();
 	},
 
 	claudeSystemPromptPath(ctx) {
@@ -6544,30 +8705,76 @@ Zusia = {
 		return { text, error: text ? "" : errorText, sessionId };
 	},
 
-	// Antigravity cannot be granted read-only file access in headless mode, so a new
-	// session receives the paper inline instead, its full text cut to the inline budget.
-	buildAntigravityPrompt({ files, question, history, session }) {
-		let block = (tag, body) => "<" + tag + ">\n" + this.escapeContextTags(body).trim() + "\n</" + tag + ">\n\n";
-		let note = (coverage) => this.transcriptFor(history, session) + question + this.contextNote(files, coverage) +
-			this.formattingReminder();
-		if (session) {
-			// The session keeps the text it started with; pages the user has moved to since
-			// then come with the question, so the page on screen is never silently missing.
-			let added = this.missingPages(files, session.paper);
-			let cap = Math.floor(this.inlineFullTextBudget() / 2 / Math.max(1, added.length));
-			let excerpt = added.map(i => "--- page " + (i + 1) + " ---\n" + files.fullText.pages[i].trim().slice(0, cap)).join("\n\n");
-			return (excerpt ? block("paper_fulltext", excerpt) : "") +
-				note({ resumed: true, earlier: session.paper || null, added });
+	// Antigravity cannot be granted read-only file access in headless mode, so it gets the
+	// text in the prompt: a new session the metadata, chosen pages and annotations, a
+	// resumed one only the pages it has not seen. Stable blocks come first and the page
+	// the user is on last, right before the question, where long prompts are read best.
+	// With `needPages`, the pages it asked for and the question once more.
+	buildAntigravityPrompt({ files, question, history, session, needPages = null }) {
+		let block = (tag, body) => this.contextBlock(tag, body);
+		let reminder = this.formattingReminder();
+		if (needPages) {
+			let cap = Math.floor(this.inlineFullTextBudget() / Math.max(1, needPages.length));
+			let text = needPages.map(page => this.renderInlinePage(files, { page, ahead: false }, cap)).join("\n\n");
+			return block("paper_fulltext", text) +
+				"Here are the pages you asked for. Answer the question now from these and the pages you already have; " +
+				"more pages cannot be sent this time.\n\n" + question +
+				this.contextNote(files, { resumed: true, earlier: session.paper || null, added: needPages }, { withFiles: false }) + reminder;
 		}
-		let inline = this.antigravityPaper(files);
-		let tail = note(inline && Object.assign({ name: "<paper_fulltext>" }, inline));
+		let reading = this.readingBlocks(files, session, { withFiles: false });
+		let inline = this.inlinePages(files, session);
+		let support = "";
+		let focus = "";
+		let coverage = null;
+		if (inline) {
+			support = inline.support.map(p => this.renderInlinePage(files, p, inline.cap)).join("\n\n");
+			focus = inline.focus.map(p => this.renderInlinePage(files, p, inline.cap)).join("\n\n");
+			let added = [...inline.support, ...inline.focus].map(p => p.page).sort((a, b) => a - b);
+			coverage = session
+				? { resumed: true, earlier: session.paper || null, added, focusBlock: !!focus }
+				: { name: "<paper_fulltext>", paged: true, complete: inline.complete, kept: added, total: inline.total, focusBlock: !!focus };
+		}
+		else if (!session) {
+			let paper = this.antigravityPaper(files);
+			support = paper ? paper.text : "";
+			coverage = paper && Object.assign({ name: "<paper_fulltext>" }, paper);
+		}
+		else {
+			coverage = { resumed: true, earlier: session.paper || null, added: [] };
+		}
+		let head = !session && inline && !inline.complete
+			? "[Partial text: " + (inline.support.length + inline.focus.length) + " of " + inline.total +
+				" pages, chosen for this question; the page the user is on comes separately, right before the question.]\n\n"
+			: "";
+		let tail = this.transcriptFor(history, session, files.memory || null) + (focus ? block("focus_page", focus) : "") + question +
+			this.contextNote(files, coverage, { withFiles: false }) + reminder;
+		if (session) {
+			return reading + (support ? block("paper_fulltext", support) : "") + tail;
+		}
 		return (
 			this.systemPrompt({ inline: true }) + "\n\n" +
 			block("paper_metadata", files.metadata) +
-			(inline ? block("paper_fulltext", inline.text) : "") +
+			reading +
+			(support ? block("paper_fulltext", head + support) : "") +
 			(files.annotations ? block("user_annotations", files.annotations) : "") +
 			"---\n\n" + tail
 		);
+	},
+
+	// The conversation id and the final result event of an agy stream-json run.
+	parseAntigravityEvents(events) {
+		let sessionId = null;
+		let final = null;
+		for (let event of events) {
+			if (event.conversation_id) {
+				sessionId = event.conversation_id;
+			}
+			if (event.event === "result" && event.result) {
+				final = event.result;
+				sessionId = final.conversation_id || sessionId;
+			}
+		}
+		return { sessionId, final };
 	},
 
 	async runAntigravity(request) {
@@ -6587,17 +8794,7 @@ Zusia = {
 
 		let { stdout, stderr, exitCode } = await this.runProcess(command, args, request.ctx.dir, onEvent, onSpawn,
 			this.buildAntigravityPrompt(request));
-		let sessionId = null;
-		let final = null;
-		for (let event of this.parseJsonLines(stdout)) {
-			if (event.conversation_id) {
-				sessionId = event.conversation_id;
-			}
-			if (event.event === "result" && event.result) {
-				final = event.result;
-				sessionId = final.conversation_id || sessionId;
-			}
-		}
+		let { sessionId, final } = this.parseAntigravityEvents(this.parseJsonLines(stdout));
 
 		if (final && final.status === "SUCCESS" && (final.response || "").trim()) {
 			return { text: final.response.trim(), sessionId };
