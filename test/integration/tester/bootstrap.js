@@ -5,6 +5,8 @@
 var results = { checks: [], errors: [] };
 var outDir;
 var repo;
+// Prompts the memory jobs would have sent; see run().
+var backgroundCalls = [];
 
 function check(name, ok, detail) {
 	results.checks.push({ name, ok: !!ok, detail: detail === undefined ? null : detail });
@@ -116,6 +118,18 @@ async function testSidebar(win, CS) {
 	check("paper chip names the item and says what the assistant reads",
 		!!chip && chip.textContent.includes("Integration test paper") && /full text/.test(chip.title),
 		chip && [chip.textContent, chip.title]);
+	chip.click();
+	let sheet = await waitFor(() => root.querySelector(".zs-memory-panel .zs-memory-settings .zs-switch"), 5000, "memory sheet")
+		.then(() => root.querySelector(".zs-memory-panel"), () => null);
+	let sheetRect = sheet && sheet.getBoundingClientRect();
+	check("memory sheet: the paper chip opens it over the chat, with its two settings and Reset",
+		!!sheet && sheet.querySelectorAll(".zs-memory-settings .zs-switch").length === 2 && !!sheet.querySelector(".zs-memory-reset") &&
+		sheetRect.height > 200, sheet && { height: sheetRect.height, text: sheet.textContent.slice(0, 120) });
+	if (sheet) {
+		await snapshot(win, "zotero-memory-sheet", { x: sheetRect.x, y: sheetRect.y, width: sheetRect.width, height: sheetRect.height });
+		sheet.dispatchEvent(new win.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+	}
+	check("memory sheet: Escape closes it", !root.querySelector(".zs-memory-panel"));
 	// The visible edge of the item pane is where its side navigation starts;
 	// section containers themselves grow with their content, so they are no reference.
 	let visibleRight = () => {
@@ -176,6 +190,11 @@ async function testSidebar(win, CS) {
 	// History: New chat archives the conversation; it can be reopened from the menu.
 	await CS.newChat(root);
 	check("New chat clears the conversation", (await CS.loadHistory(dir)).length === 0 && !!root.querySelector(".zs-empty"));
+	await CS.jobsIdle();
+	check("memory: New chat queues a consolidation of the chat it puts away, run through the job queue",
+		backgroundCalls.length === 1 && backgroundCalls[0].prompt.includes("#0 User: Explain the FFT") &&
+		(await CS.loadMemory(dir)).epoch === 1,
+		backgroundCalls.map(c => c.prompt.length));
 	let archives = await CS.listArchives(dir);
 	check("the previous chat is listed in history", archives.length === 1 && archives[0].count === 4 && archives[0].title.startsWith("Explain the FFT"),
 		archives.map(a => ({ title: a.title, count: a.count })));
@@ -486,6 +505,28 @@ async function run() {
 		await Zotero.uiReadyPromise;
 		let CS = await waitFor(() => Zotero.Zusia, 30000, "Claude Sidebar startup");
 		check("plugin started", true, CS.version);
+		// New chat and page turns start memory jobs, which would call the real CLI: no model
+		// runs here, live or not. The real call runs once with a fake process, to check the
+		// folder it gets in a real Zotero.
+		let realBackgroundCall = CS.runBackgroundCall;
+		CS.runBackgroundCall = async (backend, prompt) => {
+			backgroundCalls.push({ backend, prompt });
+			return { text: "{}", error: "", rateLimited: false };
+		};
+		let { findBinary, runProcess } = CS;
+		let spawned = null;
+		CS.findBinary = async () => "/nonexistent/claude";
+		CS.runProcess = async (command, args, cwd, onEvent, onSpawn, stdin) => {
+			spawned = { cwd, args, stdin, children: (await IOUtils.getChildren(cwd)).length };
+			return { stdout: JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text: "{}" }] } }) + "\n", stderr: "", exitCode: 0 };
+		};
+		let answered = await realBackgroundCall.call(CS, "claude", "PROMPT").finally(() => {
+			CS.findBinary = findBinary;
+			CS.runProcess = runProcess;
+		});
+		check("memory: a background call runs in a new empty folder under the system temp folder, removed after",
+			answered.text === "{}" && spawned && spawned.cwd.startsWith(PathUtils.tempDir) && spawned.children === 0 &&
+			spawned.stdin === "PROMPT" && !(await IOUtils.exists(spawned.cwd)), spawned);
 		let links = [...Zotero.getMainWindow().document.querySelectorAll("#zusia-stylesheet")];
 		check("one stylesheet link, versioned so updates never reuse a cached copy",
 			links.length === 1 && /zusia\.css\?v=/.test(links[0].href), links.map(l => l.href));
