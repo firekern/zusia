@@ -272,13 +272,14 @@ async function testReaderWidth(win, CS) {
 	await IOUtils.makeDirectory(dir, { createAncestors: true });
 
 	// Zotero's own PDF worker, file times and paths, which jsdom only stubs.
-	let full = await CS.loadFullText(attachment);
+	let full = await CS.loadFullText(attachment, dir);
 	check("pdf: Zotero extracts the full text", full.status === "ok" && full.paged && full.pages.join("").includes("PELICAN"),
 		{ status: full.status, reason: full.reason, pages: full.pages && full.pages.length });
 	let files = await CS.exportContext({ paperItem: parent, attachmentItem: attachment, dir }, { focus: [0] });
 	let written = await IOUtils.exists(PathUtils.join(dir, "fulltext.md")) ? await IOUtils.readUTF8(PathUtils.join(dir, "fulltext.md")) : "";
 	check("pdf: fulltext.md holds the paper with page markers", /--- page 1 ---\n[^]*PELICAN/.test(written),
 		{ chars: written.length, note: CS.contextNote(files) });
+	await testReadingMap(CS, attachment, dir, full);
 	await IOUtils.writeUTF8(PathUtils.join(dir, "chat.json"), JSON.stringify([
 		{ role: "user", text: "What does the convolution theorem say?" },
 		{ role: "assistant", backend: "claude", model: "opus", text: await readFixture("latex.md"),
@@ -327,6 +328,55 @@ async function testReaderWidth(win, CS) {
 		Math.round(footer.getBoundingClientRect().height));
 
 	await snapshot(win, "zotero-pdf-paper", { x: paneRect.x, y: paneRect.y, width: paneRect.width, height: paneRect.height });
+}
+
+// The reading map in real Zotero: readingmap.js loaded by bootstrap.js, the files it
+// writes, and the page-turn signal it listens for. The reader cannot open headless, so
+// the page change is made the way the reader makes it, with setAttachmentLastPageIndex.
+async function testReadingMap(CS, attachment, dir, full) {
+	let structurePath = PathUtils.join(dir, "cache", "structure.json");
+	let structure = await IOUtils.exists(structurePath) ? JSON.parse(await IOUtils.readUTF8(structurePath)) : null;
+	let pages = full.pages ? full.pages.length : 0;
+	check("reading map: readingmap.js builds structure.json for the PDF",
+		!!structure && structure.pageCount === pages && structure.labels.length === pages && structure.outline.length > 0 &&
+			structure.files.length > 0 && typeof structure.key === "string",
+		structure && { pages: structure.pageCount, labels: structure.labelMethod, confidence: structure.confidence,
+			outline: structure.outlineMethod, entries: structure.outline.length, files: structure.files.length });
+	let cached = await IOUtils.exists(PathUtils.join(dir, "cache", "pages.json"))
+		? JSON.parse(await IOUtils.readUTF8(PathUtils.join(dir, "cache", "pages.json"))) : null;
+	check("reading map: the page text is kept for the next start, keyed by file time and size",
+		!!cached && cached.pages.length === pages && /^\d+:\d+$/.test(cached.stamp), cached && cached.stamp);
+
+	let seen = [];
+	let observer = Zotero.Notifier.registerObserver({
+		notify: (event, type, ids) => seen.push(...ids.map(id => ({ event, id }))),
+	}, ["setting"], "zusia-tester");
+	let calls = [];
+	let original = CS.onReadingNotify;
+	CS.onReadingNotify = function (event, ids) {
+		calls.push({ event, ids: [...ids] });
+		return original.call(this, event, ids);
+	};
+	try {
+		await attachment.setAttachmentLastPageIndex(pages > 1 ? 1 : 0);
+		await waitFor(() => seen.length && calls.length, 5000, "a setting notification").catch(() => null);
+	}
+	finally {
+		Zotero.Notifier.unregisterObserver(observer);
+		CS.onReadingNotify = original;
+	}
+	let parsed = seen.map(s => CS.parseLastPageSetting(s.id)).filter(Boolean);
+	check("reading progress: a page change fires a lastPageIndex setting event Zusia parses",
+		parsed.some(p => p.key === attachment.key && p.groupID === null), seen);
+	check("reading progress: Zusia's own observer receives it", calls.some(c => c.ids.some(id => id.includes(attachment.key))), calls);
+
+	if (Zotero.SDT) {
+		// Informational: what Zotero 10's structured text gives for this PDF. The map works
+		// without it, so only the reported shape is recorded.
+		let sdt = await CS.nativeFrom("sdt", null, attachment);
+		check("reading map (info): Zotero.SDT answered for the test PDF", true,
+			sdt ? { labels: sdt.labels && sdt.labels.slice(0, 5), outline: sdt.outline && sdt.outline.length } : "still building after 5 s");
+	}
 }
 
 // Opt-in (LIVE=1): real Claude Code runs from inside the sandboxed Zotero.
