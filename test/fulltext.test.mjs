@@ -140,10 +140,9 @@ test("Claude and Codex get the context note with every question", () => {
 	const { plugin } = loadPlugin();
 	const files = { metadata: "# T\n", annotations: "", fullText: { status: "ok", file: { name: "fulltext.md", paged: true, complete: true, kept: [0], total: 1 } }, currentPage: 0 };
 	const request = { ctx: { dir: "/d" }, files, question: "Why?", history: [], session: null };
-	const claude = plugin.claudeArgs(request);
-	assert.equal(claude[claude.indexOf("-p") + 1], "Why?" + plugin.contextNote(files) + plugin.formattingReminder());
-	const codex = plugin.codexArgs({ ...request, session: { id: "t", seen: 0 } });
-	assert.ok(codex[codex.length - 1].startsWith("Why?\n\n[Context for this question: fulltext.md holds the whole text"));
+	assert.equal(plugin.questionPrompt(request), "Why?" + plugin.contextNote(files) + plugin.formattingReminder());
+	const codex = plugin.codexPrompt({ ...request, session: { id: "t", seen: 0 } });
+	assert.ok(codex.startsWith("Why?\n\n[Context for this question: fulltext.md holds the whole text"));
 });
 
 test("antigravity: the full text goes inline within its budget, and the paper cannot close the tags", () => {
@@ -269,15 +268,16 @@ test("ask: the paper's text reaches Claude through fulltext.md, with the page on
 	assert.deepEqual({ ...(await plugin.ask(ctx, "What does Table 2 show?", pendingFor("claude"))) }, {});
 	assert.match(files.get("/d/fulltext.md"), /--- page 18 ---\nPage 18 text/, "the open PDF's text is written for the CLI");
 	const args = plugin.claudeArgs(store.requests[0]);
-	const message = args[args.indexOf("-p") + 1];
+	const message = plugin.questionPrompt(store.requests[0]);
 	assert.match(message, /\[Context for this question: fulltext\.md holds the whole text \(30 pages\); the user is viewing PDF page 18\.\]/);
 	assert.equal(args[args.indexOf("--tools") + 1], "Read,Grep,Glob");
-	assert.match(args[args.indexOf("--append-system-prompt") + 1], /fulltext\.md: the paper's full text/);
+	assert.equal(args[args.indexOf("--append-system-prompt-file") + 1], "/d/system.md");
+	assert.match(plugin.systemPrompt(), /fulltext\.md: the paper's full text/);
 
 	env.prefs[PREFIX + "fullText"] = false;
 	await plugin.ask(ctx, "Again?", pendingFor("claude"));
 	assert.equal(files.has("/d/fulltext.md"), false, "turning the setting off removes the text");
-	assert.match(plugin.claudeArgs(store.requests[1])[1], /turned off sending the full text/);
+	assert.match(plugin.questionPrompt(store.requests[1]), /turned off sending the full text/);
 });
 
 test("ask: a reader in a background tab is not called the page the user is viewing", async () => {
@@ -285,7 +285,9 @@ test("ask: a reader in a background tab is not called the page the user is viewi
 	const { ctx } = openPaper(env, { selectedTab: "zotero-pane" });
 	const store = stubStore(env.plugin);
 	await env.plugin.ask(ctx, "Why?", pendingFor("claude"));
-	assert.doesNotMatch(env.plugin.claudeArgs(store.requests[0])[1], /viewing PDF page/);
+	const message = env.plugin.questionPrompt(store.requests[0]);
+	assert.match(message, /Why\?/);
+	assert.doesNotMatch(message, /viewing PDF page/);
 });
 
 test("ask: Codex and Antigravity sessions from before 1.1, whose prompt withheld the paper, start again", async () => {
