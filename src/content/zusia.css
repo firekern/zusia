@@ -713,6 +713,26 @@
 .zs-math-block math[display="block"] {
 	margin: 0 auto;
 }
+/* A numbered equation keeps its number at the right margin, as in LaTeX. The empty
+   first column mirrors the number's, so the equation stays centred on the line. */
+.zs-math-block[data-labels]:not([data-tag]) {
+	display: grid;
+	grid-template-columns: 1fr minmax(0, auto) 1fr;
+	align-items: center;
+	column-gap: 6px;
+}
+.zs-math-block[data-labels]:not([data-tag]) > .zs-math-scroll {
+	grid-column: 2;
+}
+.zs-eq-num {
+	grid-column: 3;
+	justify-self: end;
+	white-space: nowrap;
+	font-variant-numeric: tabular-nums;
+	/* Upright even in the italic body of a theorem, like LaTeX's equation numbers. */
+	font-style: normal;
+	color: var(--zs-muted);
+}
 .zs-tex-error {
 	font-family: ui-monospace, monospace;
 	font-size: 0.88em;
