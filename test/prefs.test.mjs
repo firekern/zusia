@@ -229,19 +229,20 @@ test("behaviour: defaults, validation and the instructions sent to the assistant
 	assert.equal(b.sendKey, "mod-enter");
 	assert.equal(b.autoScroll, false);
 	const text = plugin.behaviourInstructions();
-	assert.match(text, /Keep answers short/);
-	assert.match(text, /expert/);
-	assert.match(text, /warm, encouraging/);
-	assert.match(text, /The user's own instructions, which override the defaults above: Use SI units\./);
-	assert.match(plugin.systemPrompt(), /Keep answers short/);
+	assert.match(text, /Keep it short/);
+	assert.match(text, /expertise/);
+	assert.match(text, /warm and encouraging/);
+	assert.match(text, /<style_notes>\nUse SI units\.\n<\/style_notes>/);
+	assert.match(text, /user's own words, so they win over the presets/);
+	assert.match(plugin.systemPrompt(), /Keep it short/);
 	assert.match(plugin.buildAntigravityPrompt({ files: { metadata: "# T\n", annotations: "" }, question: "Q", history: [], session: null }), /Use SI units/);
 	prefs[PREFIX + "behaviour"] = JSON.stringify({ length: "epic", custom: "x".repeat(5000) });
 	assert.equal(plugin.getBehaviour().length, "balanced");
-	assert.equal(plugin.getBehaviour().custom.length, 2000);
+	assert.equal(plugin.getBehaviour().custom.length, 4000);
 });
 
-test("behaviour card: tiles, switches and custom instructions are saved", () => {
-	const { container, prefs, window } = pane();
+test("behaviour card: tiles, switches and the system prompt are saved", () => {
+	const { container, prefs, window, plugin } = pane();
 	const behaviour = card(container, "Behaviour");
 	assert.ok(behaviour, "Behaviour card exists");
 	const tile = (label, title) => [...rowControl(behaviour, label).querySelectorAll(".zs-tile")].find(t => t.title === title);
@@ -252,13 +253,20 @@ test("behaviour card: tiles, switches and custom instructions are saved", () => 
 	rowControl(behaviour, "Follow the answer").querySelector(".zs-switch").click();
 	rowControl(behaviour, "Thinking steps").querySelector(".zs-switch").click();
 	rowControl(behaviour, "Quick prompts").querySelector(".zs-switch").click();
-	const custom = rowControl(behaviour, "Your instructions").querySelector("textarea");
+	const custom = rowControl(behaviour, "System prompt").querySelector("textarea");
+	assert.equal(custom.value, plugin.PERSONAS.colleague.text, "shows the default voice it replaces");
+	assert.equal(custom.rows, 6);
+	assert.equal(custom.maxLength, 4000);
+	assert.doesNotMatch(behaviour.textContent, /Added to every question/);
 	custom.value = "Always cite the page.";
 	custom.dispatchEvent(new window.Event("input"));
 	assert.deepEqual(JSON.parse(prefs[PREFIX + "behaviour"]), {
 		length: "detailed", level: "beginner", tone: "formal", custom: "Always cite the page.",
 		sendKey: "mod-enter", autoScroll: false, showSteps: false, showQuick: false,
 	});
+	custom.value = plugin.PERSONAS.colleague.text;
+	custom.dispatchEvent(new window.Event("input"));
+	assert.equal(JSON.parse(prefs[PREFIX + "behaviour"]).custom, "", "the default voice is stored as empty, so it can improve later");
 });
 
 test("settings can start the setup wizard again", () => {

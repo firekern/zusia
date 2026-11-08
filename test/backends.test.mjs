@@ -233,7 +233,7 @@ test("modes: instructions go to the assistant, not into the stored question", as
 	const pending = pendingFor(p);
 	pending.modes = ["latex"];
 	await p.ask(base.ctx, "Prove it", pending);
-	assert.match(seen.question, /^Prove it\n\n\[LaTeX mode: write the answer as rigorous mathematics/);
+	assert.match(seen.question, /^Prove it\n\n\[LaTeX mode: the user wants the maths written out properly/);
 	assert.equal(store.history[0].text, "Prove it");
 	assert.deepEqual([...store.history[0].modes], ["latex"]);
 });
