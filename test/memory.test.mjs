@@ -669,7 +669,7 @@ test("memory sheet: the reading map with read state, where we are, the items and
 	await plugin.openMemory(root);
 	const sheet = root.querySelector(".zs-memory-panel");
 	assert.equal(root.querySelectorAll(".zs-panel").length, 1);
-	assert.match(sheet.querySelector(".zs-memory-where .zs-memory-line").textContent, /^page 42 \(printed 19\), in 2\.3 Convolution, 5 pages read/);
+	assert.match(sheet.querySelector(".zs-memory-where .zs-memory-line").textContent, /^Page 42 \(printed 19\), in 2\.3 Convolution, 5 pages read/);
 	const entries = [...sheet.querySelectorAll(".zs-memory-entry")].map(li => [li.dataset.level, li.querySelector(".zs-memory-mark").textContent, li.querySelector(".zs-memory-entry-title").textContent]);
 	assert.deepEqual(entries.slice(3, 7), [["1", "▶", "2 Discrete-Time Signals"], ["2", "✓", "2.1 Sequences"], ["2", "▶", "2.2 Linear Systems"], ["2", "▶", "2.3 Convolution"]]);
 	assert.ok(sheet.querySelector(".zs-memory-entry.zs-here").textContent.includes("2.3 Convolution"));

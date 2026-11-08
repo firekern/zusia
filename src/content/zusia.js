@@ -3038,8 +3038,10 @@ Zusia = {
 		};
 		let printed = i => ZusiaMap.printedLabel(i, structure) || String(i + 1);
 
+		// The heading already says "Where we are"; the line under it starts a sentence.
+		let where = ZusiaMap.whereWeAre(progress, structure).replace(/^Where we are: /, "");
 		section("Where we are", "zs-memory-where").appendChild(
-			this.el(doc, "div", "zs-memory-line", ZusiaMap.whereWeAre(progress, structure).replace(/^Where we are: /, "")));
+			this.el(doc, "div", "zs-memory-line", where.charAt(0).toUpperCase() + where.slice(1)));
 
 		if (structure && structure.outline.length && structure.outlineMethod !== "chunks") {
 			let states = (progress && progress.sections) || {};
