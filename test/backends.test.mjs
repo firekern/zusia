@@ -13,7 +13,26 @@ test("claude: model and effort flags only when chosen", () => {
 	assert.equal(valueAfter(args, "--model"), "opus");
 	assert.equal(valueAfter(args, "--effort"), "max");
 	assert.equal(valueAfter(args, "--resume"), "s1");
-	assert.equal(valueAfter(args, "--setting-sources"), "");
+	assert.ok(args.includes("--setting-sources="), "no setting sources, as a single argument");
+});
+
+// Windows joins argv into one command line and Mozilla's quoting leaves "" bare,
+// so an empty argument vanishes and the next flag is read as its value (issue #1).
+test("no backend passes an empty argument", () => {
+	const session = { id: "s1", seen: 0 };
+	for (const args of [
+		plugin.claudeArgs(base),
+		plugin.claudeArgs({ ...base, session }),
+		plugin.codexArgs({ ...base, session }),
+		plugin.antigravityArgs({ ...base, session }),
+	]) {
+		assert.ok(!args.includes(""), "empty argument in: " + args.slice(0, 12).join(" | "));
+	}
+});
+
+test("claude: user settings load only when asked for", () => {
+	const env = loadPlugin({ prefs: { "extensions.zusia.useClaudeUserSettings": true } });
+	assert.ok(!env.plugin.claudeArgs(base).some(a => a.startsWith("--setting-sources")));
 });
 
 test("codex: -m and model_reasoning_effort go before resume", () => {

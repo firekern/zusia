@@ -5983,8 +5983,9 @@ Zusia = {
 		}
 		// By default the sidebar ignores ~/.claude settings and CLAUDE.md, whose
 		// instructions (artifacts, diagrams, output styles) do not fit a sidebar.
+		// One "--flag=" argument, never "--flag" "": Windows drops an empty argument (#1).
 		if (!this.getPref("useClaudeUserSettings")) {
-			args.push("--setting-sources", "");
+			args.push("--setting-sources=");
 		}
 		if (session) {
 			args.push("--resume", session.id);
