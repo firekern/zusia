@@ -1070,7 +1070,9 @@ var ZusiaMap = {
 		};
 		let line = (e, fileText) => "  ".repeat(e.level - 1) + "- " + this.entryTitle(e) + " · " + this.rangeName(e.start, e.end, structure) +
 			(fileText ? " · " + fileText : "") + " · " + (states[e.id] || "unread");
-		let lines = [{ text: "Reading map: " + (structure.labels || []).length + " PDF pages, " + tops.length + " parts; text files in " + dir + ".", priority: Infinity }];
+		// A backend without file access is given no files, and no folder to look in.
+		let lines = [{ text: "Reading map: " + (structure.labels || []).length + " PDF pages, " + tops.length + " parts" +
+			(files.length ? "; text files in " + dir : "") + ".", priority: Infinity }];
 		for (let e of outline) {
 			if (e.level === 1) {
 				let k = tops.indexOf(e);

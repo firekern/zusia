@@ -529,6 +529,14 @@
 	gap: 2px;
 	margin-inline-start: -7px;
 }
+/* "/remember" confirmations: part of the chat flow, but not a message. */
+.zs-memo {
+	margin: 4px 0 10px;
+	padding: 6px 10px;
+	border-inline-start: 2px solid var(--zs-accent);
+	font-size: 0.88em;
+	color: var(--zs-muted);
+}
 .zs-notice {
 	padding: 24px 8px;
 	text-align: center;
@@ -1047,6 +1055,21 @@
 	text-overflow: ellipsis;
 	white-space: nowrap;
 	color: var(--zs-text);
+}
+/* Where the user is ("§2.3 · p. 18 · 9/15 read"): secondary to the paper's name, and the
+   first thing to shrink in a narrow pane. */
+.zs-context-reading {
+	flex: 0 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--zs-muted);
+	font-variant-numeric: tabular-nums;
+}
+.zs-context-reading::before {
+	content: "·";
+	margin-inline-end: 5px;
 }
 /* Images attached to the message being written, and to sent messages. */
 .zs-attachments,

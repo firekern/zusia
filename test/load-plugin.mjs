@@ -13,7 +13,19 @@ export function loadPlugin({ prefs = {}, files = new Map() } = {}) {
 	// OS.File and Zotero.File share one in-memory store, returned as `files`.
 	const OS = {
 		Path: { join: (...p) => p.join("/"), dirname: p => p.replace(/[\\/][^\\/]*$/, "") },
-		File: { exists: async p => files.has(p), remove: async (p) => { files.delete(p); } },
+		File: {
+			exists: async p => files.has(p),
+			remove: async (p) => { files.delete(p); },
+			// Real OS.File.move replaces the target, which is what makes writeAtomic atomic.
+			move: async (from, to) => {
+				if (!files.has(from)) {
+					throw new Error("move: no such file " + from);
+				}
+				files.set(to, files.get(from));
+				files.delete(from);
+			},
+			stat: async p => ({ isDir: false, size: String(files.get(p) ?? "").length }),
+		},
 	};
 	// Tests replace its methods (call, pathSearch, getEnvironment) to fake child processes.
 	const Subprocess = {};
@@ -25,16 +37,25 @@ export function loadPlugin({ prefs = {}, files = new Map() } = {}) {
 		Utilities: { Internal: { copyTextToClipboard() {} } },
 		File: {
 			putContentsAsync: async (p, data) => { files.set(p, data); },
+			getContentsAsync: async (p) => {
+				if (!files.has(p)) {
+					throw new Error("getContentsAsync: no such file " + p);
+				}
+				return files.get(p);
+			},
 			createDirectoryIfMissingAsync: async () => {},
 		},
 		getMainWindow: () => window,
+		getMainWindows: () => [window],
 	};
 	window.eval(read("src/content/lib/katex.min.js").replace(/^!function\(e,t\)\{/, "!function(e,t){var exports,module,define;"));
 	window.Services = { scriptloader: { loadSubScript: (url, scope) => { scope.module.exports = window.katex; } } };
+	// bootstrap.js loads the reading map first, into the same scope as zusia.js.
+	window.eval(read("src/content/readingmap.js") + "\nwindow.ZusiaMap = ZusiaMap;");
 	window.eval("var Zusia;\n" + read("src/content/zusia.js") + "\nwindow.Zusia = Zusia;");
 	const plugin = window.Zusia;
 	plugin.rootURI = "./";
-	return { window, document: window.document, plugin, prefs, files, Subprocess };
+	return { window, document: window.document, plugin, map: window.ZusiaMap, prefs, files, Subprocess };
 }
 
 export function fixture(name) {
