@@ -5661,8 +5661,12 @@ Zusia = {
 
 	extraSearchPaths(home) {
 		if (Zotero.isWin) {
+			// The native installers' folders (Claude, Antigravity, Codex) come before npm's,
+			// so their .exe is found before an npm shim.
 			return [
 				OS.Path.join(home, ".local", "bin"),
+				OS.Path.join(home, "AppData", "Local", "agy", "bin"),
+				OS.Path.join(home, "AppData", "Local", "Programs", "OpenAI", "Codex", "bin"),
 				OS.Path.join(home, "AppData", "Roaming", "npm"),
 			];
 		}
@@ -5681,25 +5685,54 @@ Zusia = {
 		let { label, command, pathPref } = this.BACKENDS[backend];
 		let override = this.getPref(pathPref);
 		if (override) {
-			return override;
+			return this.avoidBatchFile(backend, override);
 		}
 
-		let env = Subprocess.getEnvironment();
-		let home = env.HOME || env.USERPROFILE || "";
-		let sep = Zotero.isWin ? ";" : ":";
-		let searchEnv = Object.assign({}, env);
-		searchEnv.PATH = this.extraSearchPaths(home).join(sep) + (env.PATH ? sep + env.PATH : "");
+		let searchEnv = this.buildChildEnvironment();
+		// Windows: Mozilla tries the bare name before PATHEXT, and npm puts an extensionless
+		// sh shim next to its .cmd, which CreateProcess cannot start. So ask for the .exe,
+		// and only then for an npm .cmd shim to resolve.
+		let names = Zotero.isWin ? [command + ".exe", command + ".cmd"] : [command];
+		for (let name of names) {
+			// pathSearch rejects when the name is on none of the paths.
+			let found = await Subprocess.pathSearch(name, searchEnv).catch(() => null);
+			if (found) {
+				return this.avoidBatchFile(backend, found);
+			}
+		}
+		throw new Error(
+			"Could not find the '" + command + "' command. Make sure the " + label + " CLI is " +
+			"installed and on your PATH, or set " + this.PREF_PREFIX + pathPref + " (Zotero " +
+			"Settings → Advanced → Config Editor) to its full path."
+		);
+	},
 
-		try {
-			return await Subprocess.pathSearch(command, searchEnv);
+	// Mozilla runs a .cmd/.bat through cmd.exe, which re-parses the prompt: a newline ends
+	// the command and a quote followed by & runs whatever comes next, and the prompt holds
+	// the paper's text. So an npm shim is swapped for what it launches, and nothing else
+	// batch-like runs at all (Node and Rust refuse them too: CVE-2024-27980, CVE-2024-24576).
+	async avoidBatchFile(backend, path) {
+		if (!/\.(cmd|bat)$/i.test(path)) {
+			return path;
 		}
-		catch (e) {
-			throw new Error(
-				"Could not find the '" + command + "' command. Make sure the " + label + " CLI is " +
-				"installed and on your PATH, or set " + this.PREF_PREFIX + pathPref + " (Zotero " +
-				"Settings → Advanced → Config Editor) to its full path."
-			);
+		// What npm's cmd-shim runs: claude.exe since Claude Code 2.1.113, node codex.js for Codex.
+		let target = {
+			claude: ["node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe"],
+			codex: ["node_modules", "@openai", "codex", "bin", "codex.js"],
+		}[backend];
+		if (/\.cmd$/i.test(path) && target) {
+			let resolved = OS.Path.join(OS.Path.dirname(path), ...target);
+			if (await OS.File.exists(resolved)) {
+				return resolved;
+			}
 		}
+		let { label, pathPref } = this.BACKENDS[backend];
+		throw new Error(
+			"Zusia will not run batch files (.cmd/.bat) such as " + path + ": Windows hands their " +
+			"arguments to cmd.exe, which can cut the prompt short or run commands hidden in it. " +
+			"Install or update the " + label + " CLI so it provides an .exe, or set " +
+			this.PREF_PREFIX + pathPref + " (Zotero Settings → Advanced → Config Editor) to the .exe."
+		);
 	},
 
 	buildChildEnvironment() {
@@ -5844,17 +5877,39 @@ Zusia = {
 		);
 	},
 
-	async runProcess(command, args, workdir, onEvent, onSpawn) {
-		this.log("Spawning: " + command + " " + args.map(a => "'" + a.slice(0, 60) + "'").join(" "));
+	// The prompt travels on stdin, never in argv: Windows caps a command line at 32k
+	// characters, and a prompt starting with "-" would be read as a flag.
+	async runProcess(command, args, workdir, onEvent, onSpawn, stdinText) {
+		let environment = this.buildChildEnvironment();
+		// findBinary resolves npm's codex.cmd to the codex.js it runs with node.
+		if (Zotero.isWin && /\.js$/i.test(command)) {
+			args = [command, ...args];
+			command = await Subprocess.pathSearch("node.exe", environment).catch((e) => {
+				throw new Error("Could not find node.exe, which the npm install of " + args[0] + " needs.", { cause: e });
+			});
+		}
+		this.log("Spawning: " + command + " " + args.map(a => "'" + a.slice(0, 60) + "'").join(" ") +
+			(stdinText ? " with " + stdinText.length + " characters on stdin" : ""));
 		let proc = await Subprocess.call({
 			command,
 			arguments: args,
-			environment: this.buildChildEnvironment(),
+			environment,
 			workdir,
 			stderr: "pipe",
 		});
-		// The prompt travels in argv; close stdin so the CLI never waits for input.
-		proc.stdin.close();
+		// Not awaited before the readers start: a child that writes while we are still
+		// writing a long prompt would otherwise fill its stdout pipe and both would block.
+		// Closing stdin, also when there is nothing to send, keeps the CLI from waiting.
+		let writing = (async () => {
+			if (stdinText) {
+				await proc.stdin.write(stdinText);
+			}
+			await proc.stdin.close();
+		})().catch((e) => {
+			// A CLI that exits early (bad flag, signed out) closes the pipe under us; its
+			// exit code and stderr say why better than this error does.
+			this.logError("writing stdin of " + command, e);
+		});
 		if (onSpawn) {
 			onSpawn(proc);
 		}
@@ -5896,7 +5951,7 @@ Zusia = {
 			return out;
 		})();
 
-		let [stdout, stderr] = await Promise.all([readStdout, readStderr]);
+		let [stdout, stderr] = await Promise.all([readStdout, readStderr, writing]);
 		let { exitCode } = await proc.wait();
 		this.log(command + " exited with code " + exitCode + (stderr ? ("; stderr: " + stderr.slice(0, 2000)) : ""));
 		return { stdout, stderr, exitCode };
@@ -5962,18 +6017,29 @@ Zusia = {
 		return "using " + name;
 	},
 
+	// The text Claude and Codex get on stdin, after Codex's preamble on a new session.
+	questionPrompt({ files, question, history, session }) {
+		return this.transcriptFor(history, session) + question + this.contextNote(files) + this.formattingReminder();
+	},
+
+	claudeSystemPromptPath(ctx) {
+		return OS.Path.join(ctx.dir, "system.md");
+	},
+
 	// Flags shared by every run of a backend: model, effort and anything else
 	// chosen in the composer. Kept separate so tests can check them.
-	claudeArgs({ files, question, history, session, model, effort }) {
+	// "-p" with no positional prompt reads the prompt from stdin; given both, Claude
+	// would send them joined.
+	claudeArgs({ ctx, session, model, effort }) {
 		let args = [
-			"-p", this.transcriptFor(history, session) + question + this.contextNote(files) + this.formattingReminder(),
+			"-p",
 			"--output-format", "stream-json",
 			"--verbose",
 			"--include-partial-messages",
 			"--tools", "Read,Grep,Glob",
 			"--allowedTools", "Read,Grep,Glob",
 			"--strict-mcp-config",
-			"--append-system-prompt", this.systemPrompt(),
+			"--append-system-prompt-file", this.claudeSystemPromptPath(ctx),
 		];
 		if (model) {
 			args.push("--model", model);
@@ -5993,9 +6059,7 @@ Zusia = {
 		return args;
 	},
 
-	codexArgs({ ctx, files, question, history, session, model, effort, images = [] }) {
-		let prompt = (session ? "" : this.systemPrompt() + "\n\n---\n\n") +
-			this.transcriptFor(history, session) + question + this.contextNote(files) + this.formattingReminder();
+	codexArgs({ ctx, session, model, effort, images = [] }) {
 		let args = ["exec", "--json", "--skip-git-repo-check", "--sandbox", "read-only", "-C", ctx.dir];
 		if (model) {
 			args.push("-m", model);
@@ -6010,8 +6074,13 @@ Zusia = {
 		if (session) {
 			args.push("resume", session.id);
 		}
-		args.push(prompt);
+		// "-" reads the prompt from stdin, after "resume <id>" as well.
+		args.push("-");
 		return args;
+	},
+
+	codexPrompt(request) {
+		return (request.session ? "" : this.systemPrompt() + "\n\n---\n\n") + this.questionPrompt(request);
 	},
 
 	antigravityArgs(request) {
@@ -6025,8 +6094,8 @@ Zusia = {
 		if (request.session) {
 			args.push("--conversation", request.session.id);
 		}
-		// "--print=<prompt>" keeps a prompt that starts with "-" from being read as a flag.
-		args.push("--print=" + this.buildAntigravityPrompt(request));
+		// No -p: with a piped stdin agy runs in print mode on it, while a bare -p would take
+		// the next token as the prompt.
 		return args;
 	},
 
@@ -6083,7 +6152,10 @@ Zusia = {
 			}
 		};
 
-		let { stdout, stderr, exitCode } = await this.runProcess(command, args, ctx.dir, onEvent, onSpawn);
+		// Rewritten on every run so an edited system prompt reaches the next new session.
+		await Zotero.File.putContentsAsync(this.claudeSystemPromptPath(ctx), this.systemPrompt());
+		let { stdout, stderr, exitCode } = await this.runProcess(command, args, ctx.dir, onEvent, onSpawn,
+			this.questionPrompt(request));
 		if (exitCode !== 0) {
 			return {
 				text: "",
@@ -6144,7 +6216,8 @@ Zusia = {
 			}
 		};
 
-		let { stdout, stderr, exitCode } = await this.runProcess(command, args, ctx.dir, onEvent, onSpawn);
+		let { stdout, stderr, exitCode } = await this.runProcess(command, args, ctx.dir, onEvent, onSpawn,
+			this.codexPrompt(request));
 		let result = this.parseCodexEvents(this.parseJsonLines(stdout));
 		if (exitCode !== 0 && !result.text) {
 			return {
@@ -6237,7 +6310,8 @@ Zusia = {
 			}
 		};
 
-		let { stdout, stderr, exitCode } = await this.runProcess(command, args, request.ctx.dir, onEvent, onSpawn);
+		let { stdout, stderr, exitCode } = await this.runProcess(command, args, request.ctx.dir, onEvent, onSpawn,
+			this.buildAntigravityPrompt(request));
 		let sessionId = null;
 		let final = null;
 		for (let event of this.parseJsonLines(stdout)) {

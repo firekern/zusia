@@ -12,10 +12,12 @@ export function loadPlugin({ prefs = {}, files = new Map() } = {}) {
 	window.TextEncoder = TextEncoder;
 	// OS.File and Zotero.File share one in-memory store, returned as `files`.
 	const OS = {
-		Path: { join: (...p) => p.join("/") },
+		Path: { join: (...p) => p.join("/"), dirname: p => p.replace(/[\\/][^\\/]*$/, "") },
 		File: { exists: async p => files.has(p), remove: async (p) => { files.delete(p); } },
 	};
-	window.ChromeUtils = { importESModule: () => ({ OS, Subprocess: {} }) };
+	// Tests replace its methods (call, pathSearch, getEnvironment) to fake child processes.
+	const Subprocess = {};
+	window.ChromeUtils = { importESModule: () => ({ OS, Subprocess }) };
 	window.Zotero = {
 		debug() {},
 		Promise: { delay: () => new Promise(() => {}) },
@@ -32,7 +34,7 @@ export function loadPlugin({ prefs = {}, files = new Map() } = {}) {
 	window.eval("var Zusia;\n" + read("src/content/zusia.js") + "\nwindow.Zusia = Zusia;");
 	const plugin = window.Zusia;
 	plugin.rootURI = "./";
-	return { window, document: window.document, plugin, prefs, files };
+	return { window, document: window.document, plugin, prefs, files, Subprocess };
 }
 
 export function fixture(name) {
