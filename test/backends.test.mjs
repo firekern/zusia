@@ -322,6 +322,27 @@ test("runProcess writes stdin, then closes it", async () => {
 	assert.ok(runs[1].closed);
 });
 
+test("runProcess reads the output while it is still writing stdin", async () => {
+	const env = loadPlugin();
+	// Like a real pipe: the write of a long prompt only finishes once the child, which
+	// answers as it reads, has had its stdout drained.
+	let drained;
+	const stdoutDrained = new Promise(resolve => { drained = resolve; });
+	let output = "{\"a\":1}\n";
+	env.Subprocess.getEnvironment = () => ({ HOME: "/home/u", PATH: "/usr/bin" });
+	env.Subprocess.call = async () => ({
+		stdin: { write: () => stdoutDrained, close: async () => {} },
+		stdout: { readString: async () => { const out = output; output = ""; if (!out) drained(); return out; } },
+		stderr: { readString: async () => "" },
+		wait: async () => ({ exitCode: 0 }),
+	});
+	let timer;
+	const deadlock = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("pipe deadlock")), 1000); });
+	const { stdout } = await Promise.race([env.plugin.runProcess("/bin/x", [], "/tmp/p", null, null, "long prompt"), deadlock]);
+	clearTimeout(timer);
+	assert.equal(stdout, "{\"a\":1}\n");
+});
+
 test("claude: the prompt goes on stdin and the system prompt in system.md, never in argv", async () => {
 	const env = loadPlugin();
 	const p = env.plugin;
