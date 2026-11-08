@@ -12,7 +12,7 @@ export function loadPlugin({ prefs = {}, files = new Map() } = {}) {
 	window.TextEncoder = TextEncoder;
 	// OS.File and Zotero.File share one in-memory store, returned as `files`.
 	const OS = {
-		Path: { join: (...p) => p.join("/"), dirname: p => p.replace(/[\\/][^\\/]*$/, "") },
+		Path: { join: (...p) => p.join("/"), dirname: p => p.replace(/[\\/][^\\/]*$/, ""), basename: p => p.replace(/^.*[\\/]/, "") },
 		File: {
 			exists: async p => files.has(p),
 			remove: async (p) => { files.delete(p); },

@@ -108,11 +108,21 @@ Zusia = {
 	CONSOLIDATE_CHARS: 12000,
 	CONSOLIDATE_INPUT_CHARS: 16000,
 	CONSOLIDATE_MESSAGE_CHARS: 3000,
-	// A new session always gets at least this many recent messages verbatim, even when the
-	// memory already covers them: the last exchange is what a follow-up refers to.
-	RECENT_MESSAGES: 6,
+	// A new session always gets at least this many recent questions and their answers
+	// verbatim, even when the memory already covers them: the last exchanges are what a
+	// follow-up refers to. A turn is a question, as in CONSOLIDATE_TURNS.
+	RECENT_TURNS: 6,
+	// The transcript a new session gets while the memory is kept in the background, at
+	// most: the jobs normally keep it far below this, but they can fail or be paused for
+	// hours, and a restored chat starts with nothing covered.
+	MEMORY_TRANSCRIPT_CHARS: 60000,
 	// A gist reads at most this much of its section; agy's inline budget is 60k.
 	GIST_INPUT_CHARS: 40000,
+	// What a background prompt to agy leaves for its turns or section text when its
+	// instructions and memory already fill most of the inline budget (Windows: 12k).
+	JOB_MIN_INPUT_CHARS: 2000,
+	// Room for one turn's "#N Assistant (on PDF page …): " marker in a consolidation.
+	TURN_MARKER_CHARS: 60,
 	// A background call runs alone and in an empty folder; one that hangs is stopped so
 	// the queue moves on. A rate limit pauses every job, 15 minutes doubling up to 2 hours.
 	JOB_TIMEOUT_MS: 300000,
@@ -375,6 +385,10 @@ Zusia = {
 	_jobsStopped: false,
 	// Per paper directory: the chat index after the turns of a consolidation that failed.
 	_memoryFailed: new Map(),
+	// Folds of a put-away chat ("dir\nfile") and gists ("dir\nid\nhash") that failed in
+	// this session: tried again only alongside a consolidation the chat earns, or not at all.
+	_archiveFailed: new Set(),
+	_gistFailed: new Set(),
 	IMAGE_TYPES: { "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp" },
 	MAX_IMAGES: 6,
 	ATTACH_KEY: "I",
@@ -2310,6 +2324,9 @@ Zusia = {
 		if (previous && previous !== ctx.dir) {
 			this.leavePaper(previous);
 		}
+		if (previous !== ctx.dir) {
+			this.resumeMemory(ctx.dir).catch(e => this.logError("resuming memory consolidation", e));
+		}
 		this._shownDirs.set(body, ctx.dir);
 		this._views.set(root, view);
 		let info = this.paperInfo(ctx);
@@ -2447,12 +2464,15 @@ Zusia = {
 	},
 
 	// Keeps a conversation next to the current one (chat-<time>.json) so it can be reopened.
+	// Returns the file's name, or null for an empty chat.
 	async archiveHistory(dir, history) {
 		if (!history.length) {
-			return;
+			return null;
 		}
 		let stamp = new Date(history[history.length - 1].ts || Date.now()).toISOString().replace(/[:.]/g, "-");
-		await Zotero.File.putContentsAsync(OS.Path.join(dir, "chat-" + stamp + ".json"), JSON.stringify(history, null, 2));
+		let name = "chat-" + stamp + ".json";
+		await Zotero.File.putContentsAsync(OS.Path.join(dir, name), JSON.stringify(history, null, 2));
+		return name;
 	},
 
 	async listArchives(dir) {
@@ -2492,10 +2512,10 @@ Zusia = {
 			return;
 		}
 		let history = await this.loadHistory(view.ctx.dir);
-		await this.archiveHistory(view.ctx.dir, history);
+		let archived = await this.archiveHistory(view.ctx.dir, history);
 		await this.saveHistory(view.ctx.dir, []);
 		await this.saveSessions(view.ctx.dir, {});
-		await this.startMemoryEpoch(view.ctx.dir, history);
+		await this.startMemoryEpoch(view.ctx.dir, history, archived);
 		this.renderMessages(view, []);
 		view.input.focus();
 	},
@@ -2507,14 +2527,15 @@ Zusia = {
 		}
 		let restored = JSON.parse(await Zotero.File.getContentsAsync(archive.path));
 		let replaced = await this.loadHistory(view.ctx.dir);
-		await this.archiveHistory(view.ctx.dir, replaced);
+		let archived = await this.archiveHistory(view.ctx.dir, replaced);
 		await this.saveHistory(view.ctx.dir, restored);
 		// The agents' own sessions belong to the chat being replaced; the restored
 		// chat is replayed to them as a transcript on its next question.
 		await this.saveSessions(view.ctx.dir, {});
 		// Whether the memory took in the restored chat before is not known, so it counts
-		// as not covered: replayed whole, and folded in again.
-		await this.startMemoryEpoch(view.ctx.dir, replaced);
+		// as not covered: replayed (up to MEMORY_TRANSCRIPT_CHARS), and folded in again, so
+		// a fold of it still owed is dropped.
+		await this.startMemoryEpoch(view.ctx.dir, replaced, archived, { restored: OS.Path.basename(archive.path) });
 		await OS.File.remove(archive.path);
 		this.renderMessages(view, restored);
 		this.setBusy(view, false);
@@ -3150,10 +3171,15 @@ Zusia = {
 			}
 			reset.classList.remove("zs-confirm");
 			reset.textContent = "Reset memory";
-			// The chat so far counts as covered, or the next update would learn it all again.
+			// The chat so far counts as covered and put-away chats are no longer owed, or the
+			// next update would learn it all again; a new generation drops what a job still
+			// running computed from the memory before.
 			let history = await this.loadHistory(dir);
+			this.forgetMemoryJobs(dir);
 			await change(memory => ({
-				memory: Object.assign({}, memory, { summary: "", items: [], coveredThrough: history.length - 1 }),
+				memory: Object.assign({}, memory, {
+					summary: "", items: [], coveredThrough: history.length - 1, pendingArchives: [], generation: memory.generation + 1,
+				}),
 				rejected: [],
 			}));
 		});
@@ -3837,6 +3863,9 @@ Zusia = {
 			files.progress = this.trackingReading() ? await this.loadProgress(ctx.dir) : null;
 			files.memory = await this.loadMemory(ctx.dir);
 			files.gists = this.gisting() ? await this.loadGists(ctx.dir) : null;
+			if (files.gists && files.structure && this.isPaged(files)) {
+				this.queueMissingGists(ctx.dir, files.structure, files.fullText.pages, files.progress, files.gists);
+			}
 			let history = await this.loadHistory(ctx.dir);
 			let sessions = await this.loadSessions(ctx.dir);
 			let session = sessions[backend] || null;
@@ -7158,8 +7187,12 @@ Zusia = {
 	// `coveredThrough` is the index in chat.json of the last message folded into the memory,
 	// and `epoch` counts the chats (New chat, a restored chat), so a consolidation of the
 	// chat before never moves the new one's `coveredThrough`.
+	// `pendingArchives` ([{file, from}]) are put-away chats not yet folded in, from chat
+	// index `from` on, kept on disk so a quit or a long rate-limit pause loses none, and
+	// `generation` counts resets, so a patch computed before one is dropped.
 	async loadMemory(dir) {
-		return Object.assign(ZusiaMap.emptyMemory(), { turns: [], coveredThrough: -1, epoch: 0 }, await this.readJSON(this.memoryPath(dir), null));
+		return Object.assign(ZusiaMap.emptyMemory(), { turns: [], coveredThrough: -1, epoch: 0, pendingArchives: [], generation: 0 },
+			await this.readJSON(this.memoryPath(dir), null));
 	},
 
 	// `change` gets the stored memory and returns the next one; read and write happen under
@@ -7332,7 +7365,8 @@ Zusia = {
 	},
 
 	// At shutdown nothing new starts and a running call is stopped. What it would have
-	// written is dropped: its turns stay unconsolidated, so nothing is lost.
+	// written is dropped: its turns stay unconsolidated, the chat's after coveredThrough and
+	// a put-away chat's in memory.json's pendingArchives, so the next start takes them up.
 	stopJobs() {
 		this._jobsStopped = true;
 		this._jobs = [];
@@ -7351,13 +7385,21 @@ Zusia = {
 		return /\b429\b|rate[ _-]?limit|usage limit|quota|resource[ _]?exhausted|too many requests/i.test(text || "");
 	},
 
-	// Stateless and with nothing to use: no session kept, no settings, MCP servers or tools.
+	// Stateless and with nothing to use: no session kept, no MCP servers or tools.
 	// "--tools=" is one argument whose empty value Claude reads as no tools at all (an
-	// empty argument of its own would be dropped on Windows, #1).
+	// empty argument of its own would be dropped on Windows, #1). The user's settings are
+	// left out as for the chat, unless the chat uses them: a login or endpoint set there
+	// (apiKeyHelper, ANTHROPIC_BASE_URL) is needed by the jobs too, and tools stay off.
+	// agy has no flag that keeps a conversation from being stored, so each job is one in
+	// its history (not checked yet: whether "agy --continue" elsewhere could resume one).
 	backgroundArgs(backend) {
 		if (backend === "claude") {
-			return ["-p", "--output-format", "stream-json", "--verbose", "--model", "haiku", "--tools=",
-				"--strict-mcp-config", "--setting-sources=", "--no-session-persistence"];
+			let args = ["-p", "--output-format", "stream-json", "--verbose", "--model", "haiku", "--tools=",
+				"--strict-mcp-config", "--no-session-persistence"];
+			if (!this.getPref("useClaudeUserSettings")) {
+				args.push("--setting-sources=");
+			}
+			return args;
 		}
 		return ["--output-format", "stream-json", "--sandbox", "--effort", "low"];
 	},
@@ -7370,9 +7412,17 @@ Zusia = {
 	},
 
 	// One prompt on stdin, no session, in an empty folder. Resolves to {text, error,
-	// rateLimited}; `job`, when given, can stop the call.
+	// rateLimited}; `job`, when given, can stop the call. A CLI that cannot be found or
+	// started is an error like one that answered nothing, so the failure counts apply.
 	async runBackgroundCall(backend, prompt, job = null) {
-		let command = await this.findBinary(backend);
+		let command;
+		try {
+			command = await this.findBinary(backend);
+		}
+		catch (e) {
+			this.logError("starting a memory job", e);
+			return { text: "", error: e.message, rateLimited: false };
+		}
 		let cwd = await this.makeJobDir();
 		let proc = null;
 		let finished = false;
@@ -7384,15 +7434,23 @@ Zusia = {
 			}
 		});
 		try {
-			let { stdout, stderr, exitCode } = await this.runProcess(command, this.backgroundArgs(backend), cwd, null, (p) => {
-				proc = p;
-				if (job) {
-					job.proc = p;
-					if (job.cancelled) {
-						p.kill();
+			let run;
+			try {
+				run = await this.runProcess(command, this.backgroundArgs(backend), cwd, null, (p) => {
+					proc = p;
+					if (job) {
+						job.proc = p;
+						if (job.cancelled) {
+							p.kill();
+						}
 					}
-				}
-			}, prompt);
+				}, prompt);
+			}
+			catch (e) {
+				this.logError("running a memory job", e);
+				return { text: "", error: e.message, rateLimited: false };
+			}
+			let { stdout, stderr, exitCode } = run;
 			let events = this.parseJsonLines(stdout);
 			let text = "";
 			let error = "";
@@ -7420,69 +7478,113 @@ Zusia = {
 			if (job) {
 				job.proc = null;
 			}
-			await OS.File.removeDir(cwd);
+			// A just-stopped CLI can still hold the folder on Windows; the call's outcome
+			// (a rate limit above all) matters more than a leftover empty folder.
+			try {
+				await OS.File.removeDir(cwd);
+			}
+			catch (e) {
+				this.logError("removing a job folder", e);
+			}
 		}
 	},
 
 	// --------------------------------------------------------------- consolidation
 
-	// Queues a consolidation when `reason` calls for one: "turn" after an answer (every
-	// CONSOLIDATE_TURNS questions, or past CONSOLIDATE_CHARS of turns), "chapter" (the
-	// reader moved to another chapter) and "leave" (the sidebar left the paper or closed)
-	// whenever an answered question is not in the memory yet.
+	// Queues what `reason` calls for: "turn" after an answer (every CONSOLIDATE_TURNS
+	// questions, or past CONSOLIDATE_CHARS of turns), "chapter" (the reader moved to another
+	// chapter), "leave" (the sidebar left the paper or closed) and "open" (it showed the
+	// paper: the first chance after a restart) whenever an answered question is not in the
+	// memory yet. A put-away chat still owed goes first, with any consolidation that is
+	// due, and on its own unless its fold already failed in this session.
 	async scheduleConsolidation(dir, reason) {
-		if (this._jobsStopped || !this.memoryJobsAvailable() || !(await this.consolidationDue(dir, reason))) {
+		if (this._jobsStopped || !this.memoryJobsAvailable()) {
 			return false;
 		}
-		return this.queueConsolidation(dir, { reason });
+		let due = await this.consolidationDue(dir, reason);
+		let queued = false;
+		for (let { file } of (await this.loadMemory(dir)).pendingArchives) {
+			if (due || !this._archiveFailed.has(dir + "\n" + file)) {
+				queued = this.queueConsolidation(dir, { archive: file }) || queued;
+			}
+		}
+		return (due && this.queueConsolidation(dir, { reason })) || queued;
 	},
 
-	// After a call that came back without a usable patch, the count starts again from the
-	// turns it was given, so a model that keeps failing costs a call per five questions,
-	// not one per question.
+	// Showing a paper picks up what a quit or a pause left unconsolidated.
+	resumeMemory(dir) {
+		return this.scheduleConsolidation(dir, "open");
+	},
+
+	// After a call that came back without a usable patch, only the turns after the ones it
+	// was given count, whatever the reason: a model that keeps failing costs a call per
+	// five questions, not one per question, paper switch or chapter.
 	async consolidationDue(dir, reason) {
 		let memory = await this.loadMemory(dir);
 		let history = await this.loadHistory(dir);
-		let pending = history.slice(memory.coveredThrough + 1);
-		if (!pending.some(m => m.role === "assistant")) {
+		let counted = history.slice(Math.max(memory.coveredThrough + 1, this._memoryFailed.get(dir) || 0));
+		if (!counted.some(m => m.role === "assistant")) {
 			return false;
 		}
 		if (reason !== "turn") {
 			return true;
 		}
-		let counted = history.slice(Math.max(memory.coveredThrough + 1, this._memoryFailed.get(dir) || 0));
 		let questions = counted.filter(m => m.role === "user").length;
 		let chars = counted.reduce((sum, m) => sum + String(m.text || "").length, 0);
 		return questions >= this.CONSOLIDATE_TURNS || chars > this.CONSOLIDATE_CHARS;
 	},
 
 	// The check runs again when the job starts: a job that waited behind a question may
-	// find the memory already updated. A `snapshot` ({history, from, epoch}) is a chat
-	// that New chat put away, folded in as it was.
-	queueConsolidation(dir, { reason = "leave", snapshot = null } = {}) {
+	// find the memory already updated. An `archive` is the file of a put-away chat listed
+	// in pendingArchives, folded in as it was.
+	queueConsolidation(dir, { reason = "leave", archive = null } = {}) {
 		return this.queueJob({
-			key: "memory:" + dir + (snapshot ? "@" + snapshot.epoch : ""),
+			key: "memory:" + dir + (archive ? "@" + archive : ""),
 			dir,
-			run: async job => (snapshot || (await this.consolidationDue(dir, reason)) ? this.consolidateMemory({ dir }, { job, snapshot }) : null),
+			run: async job => (archive || (await this.consolidationDue(dir, reason)) ? this.consolidateMemory({ dir }, { job, archive }) : null),
 		});
 	},
 
+	// Reset memory: the paper's queued updates go and its failures are forgotten. One
+	// already running is dropped when it writes, by the generation it read.
+	forgetMemoryJobs(dir) {
+		this._jobs = this._jobs.filter(job => !(job.dir === dir && job.key.startsWith("memory:")));
+		this._memoryFailed.delete(dir);
+		for (let key of [...this._archiveFailed].filter(k => k.startsWith(dir + "\n"))) {
+			this._archiveFailed.delete(key);
+		}
+	},
+
+	// How much turns or section text a background prompt may carry beside its `fixed`
+	// part. agy gets the whole prompt inline, so it is held to the inline budget (12k on
+	// Windows, whose stdin is not checked yet; escaped tags lengthen a text slightly, hence
+	// the margin). Claude has no such limit.
+	jobInputChars(backend, cap, fixed) {
+		if (backend !== "agy") {
+			return cap;
+		}
+		return Math.max(this.JOB_MIN_INPUT_CHARS, Math.min(cap, this.inlineFullTextBudget() - fixed - 200));
+	},
+
 	// The messages one consolidation reads from chat index `from` on: each cleaned and cut,
-	// at most CONSOLIDATE_INPUT_CHARS in all, ending on an answer. Null when no answered
-	// question is left; `more` when the next call has some.
-	consolidationBatch(history, from) {
+	// at most `maxChars` in all with their markers, ending on an answer. Null when no
+	// answered question is left; `more` when the next call has some.
+	consolidationBatch(history, from, maxChars = this.CONSOLIDATE_INPUT_CHARS) {
+		let cap = Math.min(this.CONSOLIDATE_MESSAGE_CHARS, maxChars - this.TURN_MARKER_CHARS);
 		let messages = [];
 		let total = 0;
 		for (let i = Math.max(0, from); i < history.length; i++) {
-			let text = ZusiaMap.memoryInputText(history[i].text);
-			if (text.length > this.CONSOLIDATE_MESSAGE_CHARS) {
-				text = text.slice(0, this.CONSOLIDATE_MESSAGE_CHARS - 1) + "…";
+			// A line that looks like a turn marker is the message's own text (a pasted chat,
+			// a passage); escaped, it cannot pass for a turn of the user's.
+			let text = ZusiaMap.memoryInputText(history[i].text).replace(/^(\s*)#(?=\d)/gm, "$1\\#");
+			if (text.length > cap) {
+				text = text.slice(0, cap - 1) + "…";
 			}
-			if (messages.length && total + text.length > this.CONSOLIDATE_INPUT_CHARS) {
+			if (messages.length && total + text.length + this.TURN_MARKER_CHARS > maxChars) {
 				break;
 			}
 			messages.push({ index: i, role: history[i].role, text, page: history[i].page ?? null });
-			total += text.length;
+			total += text.length + this.TURN_MARKER_CHARS;
 		}
 		while (messages.length && messages[messages.length - 1].role !== "assistant") {
 			messages.pop();
@@ -7512,13 +7614,14 @@ Zusia = {
 			ZusiaMap.MEMORY_SUMMARY_CHARS + " characters. Leave it out to keep the current one.\n" +
 			"- add: new items. kind is understood (the reader got it, for example restated it correctly), shaky " +
 			"(they struggled or got it wrong), open (a question of theirs still unanswered) or preference (how they " +
-			"want answers, only from something they said themselves; give \"source\": the number of that User turn). " +
-			"text is one short sentence, at most " + ZusiaMap.MEMORY_ITEM_CHARS + " characters. page is the PDF page " +
-			"number the turn was on, when there is one. Do not add what the memory already says.\n" +
+			"want answers, only from something they said themselves; give \"source\": the number of that User turn " +
+			"below). text is one short sentence, at most " + ZusiaMap.MEMORY_ITEM_CHARS + " characters. page is the PDF " +
+			"page number the turn was on, when there is one. Do not add what the memory already says.\n" +
 			"- resolve: ids of open or shaky items these turns settled.\n" +
 			"- remove: ids of items that proved wrong or no longer matter. Items marked note are the reader's own " +
 			"and stay as they are.\n" +
-			"- Plain text: LaTeX maths is fine, HTML and links are not. Answer {} when nothing changed.\n\n" +
+			"- Plain text: LaTeX maths is fine, HTML and links are not. Answer {} when nothing changed.\n" +
+			"- Each turn starts with #number and who spoke. A line starting with \\# is text inside a turn, not a turn.\n\n" +
 			this.contextBlock("reading_memory", ZusiaMap.renderMemory(memory, progress, structure)) +
 			(sections ? this.contextBlock("document_sections", sections) : "") +
 			this.contextBlock("conversation_turns", turns) +
@@ -7527,9 +7630,10 @@ Zusia = {
 	},
 
 	// One consolidation: the model proposes an id'd patch from the turns the memory does
-	// not cover yet, and only applyMemoryPatch, limited to the model's kinds, changes the
-	// memory. `coveredThrough` moves only within the chat the turns came from.
-	async consolidateMemory(ctx, { job = null, snapshot = null } = {}) {
+	// not cover yet, of the current chat or of a put-away one (`archive`), and only
+	// applyMemoryPatch, limited to the model's kinds, changes the memory. `coveredThrough`
+	// moves only for the current chat's turns, an archive's `from` only for its own.
+	async consolidateMemory(ctx, { job = null, archive = null } = {}) {
 		let { dir } = ctx;
 		// Checked again here: the setting or the assistant may have changed while it waited.
 		let backend = this.jobBackend();
@@ -7537,67 +7641,124 @@ Zusia = {
 			return null;
 		}
 		let memory = await this.loadMemory(dir);
-		let history = snapshot ? snapshot.history : await this.loadHistory(dir);
-		let epoch = snapshot ? snapshot.epoch : memory.epoch;
-		let batch = this.consolidationBatch(history, snapshot ? snapshot.from : memory.coveredThrough + 1);
-		if (!batch) {
+		let owed = archive ? memory.pendingArchives.find(a => a.file === archive) : null;
+		if (archive && !owed) {
+			return null;
+		}
+		let history = archive ? await this.readJSON(OS.Path.join(dir, archive), null) : await this.loadHistory(dir);
+		if (!history) {
+			this.log("The put-away chat " + archive + " is gone; it is no longer folded into the memory");
+			await this.updateMemory(dir, current => Object.assign({}, current, { pendingArchives: current.pendingArchives.filter(a => a.file !== archive) }));
 			return null;
 		}
 		let structure = await this.cachedStructure(dir);
 		let progress = this.trackingReading() ? await this.loadProgress(dir) : null;
+		let fixed = this.consolidationPrompt(memory, progress, structure, { messages: [] }).length;
+		let batch = this.consolidationBatch(history, archive ? owed.from : memory.coveredThrough + 1,
+			this.jobInputChars(backend, this.CONSOLIDATE_INPUT_CHARS, fixed));
+		if (!batch) {
+			if (archive) {
+				await this.updateMemory(dir, current => Object.assign({}, current, { pendingArchives: current.pendingArchives.filter(a => a.file !== archive) }));
+			}
+			return null;
+		}
 		let result = await this.runBackgroundCall(backend, this.consolidationPrompt(memory, progress, structure, batch), job);
 		if (job && job.cancelled) {
 			return { called: true };
 		}
-		if (result.error) {
-			this.log("Memory consolidation got no answer: " + result.error.slice(0, 300));
-			if (!result.rateLimited && !snapshot) {
-				this._memoryFailed.set(dir, batch.through + 1);
+		let patch = result.error ? null : ZusiaMap.parsePatch(result.text);
+		if (!patch) {
+			this.log(result.error
+				? "Memory consolidation got no answer: " + result.error.slice(0, 300)
+				: "Memory consolidation answered without a JSON object: " + result.text.slice(0, 300));
+			if (!result.rateLimited) {
+				if (archive) {
+					this._archiveFailed.add(dir + "\n" + archive);
+				}
+				else {
+					this._memoryFailed.set(dir, batch.through + 1);
+				}
 			}
 			return { called: true, rateLimited: result.rateLimited };
 		}
-		let patch = ZusiaMap.parsePatch(result.text);
-		if (!patch) {
-			this.log("Memory consolidation answered without a JSON object: " + result.text.slice(0, 300));
-			if (!snapshot) {
-				this._memoryFailed.set(dir, batch.through + 1);
-			}
-			return { called: true };
+		if (archive) {
+			this._archiveFailed.delete(dir + "\n" + archive);
 		}
-		this._memoryFailed.delete(dir);
+		else {
+			this._memoryFailed.delete(dir);
+		}
+		// A preference may cite only a user message the model was shown.
+		let shown = [];
+		for (let m of batch.messages) {
+			shown[m.index] = history[m.index];
+		}
+		// What the user edited during the call is theirs: the patch neither removes nor
+		// resolves it.
+		let read = new Map(memory.items.map(item => [item.id, item.text]));
 		let rejected = [];
+		let dropped = false;
 		await this.updateMemory(dir, (current) => {
-			let applied = ZusiaMap.applyMemoryPatch(current, patch, {
-				history,
+			if (current.generation !== memory.generation) {
+				dropped = true;
+				return current;
+			}
+			let untouched = id => current.items.some(item => item.id === id && item.text === read.get(id));
+			let checked = Object.assign({}, patch);
+			for (let key of ["remove", "resolve"]) {
+				if (Array.isArray(patch[key])) {
+					checked[key] = patch[key].filter(untouched);
+					rejected.push(...patch[key].filter(id => !untouched(id)).map(id => ({ id, reason: "edited or gone meanwhile" })));
+				}
+			}
+			let applied = ZusiaMap.applyMemoryPatch(current, checked, {
+				history: shown,
 				pageCount: structure ? structure.pageCount : Infinity,
 				now: Date.now(),
 				kinds: ZusiaMap.MODEL_KINDS,
 			});
-			rejected = applied.rejected;
-			if (current.epoch === epoch && batch.through > current.coveredThrough) {
-				applied.memory.coveredThrough = batch.through;
+			rejected.push(...applied.rejected);
+			let next = applied.memory;
+			if (archive) {
+				next.pendingArchives = batch.more
+					? current.pendingArchives.map(a => (a.file === archive ? Object.assign({}, a, { from: batch.through + 1 }) : a))
+					: current.pendingArchives.filter(a => a.file !== archive);
 			}
-			return applied.memory;
+			else if (current.epoch === memory.epoch && batch.through > current.coveredThrough) {
+				next.coveredThrough = batch.through;
+			}
+			return next;
 		});
+		if (dropped) {
+			this.log("Memory update dropped: the memory was reset while it ran");
+			return { called: true };
+		}
 		if (rejected.length) {
 			this.log("Memory patch applied without " + rejected.length + " parts: " + JSON.stringify(rejected).slice(0, 500));
 		}
 		if (batch.more) {
-			this.queueConsolidation(dir, { snapshot: snapshot && Object.assign({}, snapshot, { from: batch.through + 1 }) });
+			this.queueConsolidation(dir, { archive });
 		}
 		return { called: true };
 	},
 
-	// New chat and a restored chat start a new epoch with nothing covered; the chat put
-	// away is folded into the memory in the background from where the memory had got to.
-	async startMemoryEpoch(dir, history) {
-		let before = null;
+	// New chat and a restored chat start a new epoch with nothing covered. The chat put
+	// away (`archived`, its file) is owed to the memory from where the memory had got to,
+	// noted in memory.json before it is queued; a `restored` chat is the current one again,
+	// so no longer owed. Failures of the chat before no longer hold the counts back.
+	async startMemoryEpoch(dir, history, archived, { restored = null } = {}) {
+		let owe = false;
 		await this.updateMemory(dir, (memory) => {
-			before = memory;
-			return Object.assign({}, memory, { coveredThrough: -1, epoch: memory.epoch + 1 });
+			let from = memory.coveredThrough + 1;
+			let pendingArchives = memory.pendingArchives.filter(a => a.file !== restored && a.file !== archived);
+			owe = !!archived && this.memoryJobsAvailable() && history.slice(from).some(m => m.role === "assistant");
+			if (owe) {
+				pendingArchives.push({ file: archived, from });
+			}
+			return Object.assign({}, memory, { coveredThrough: -1, epoch: memory.epoch + 1, pendingArchives });
 		});
-		if (this.memoryJobsAvailable() && history.slice(before.coveredThrough + 1).some(m => m.role === "assistant")) {
-			this.queueConsolidation(dir, { snapshot: { history, from: before.coveredThrough + 1, epoch: before.epoch } });
+		this._memoryFailed.delete(dir);
+		if (owe) {
+			this.queueConsolidation(dir, { archive: archived });
 		}
 	},
 
@@ -7607,7 +7768,7 @@ Zusia = {
 	},
 
 	// A page turn into another chapter folds the conversation so far into the memory, and a
-	// section turning read gets its gist when gists are on (sections before their part).
+	// section turning read gets its gist when gists are on.
 	async afterPageEvent(dir, structure, before, progress) {
 		let outline = (structure && structure.outline) || [];
 		let from = Number.isInteger(before.current) ? ZusiaMap.chapterOf(outline, before.current) : null;
@@ -7616,9 +7777,7 @@ Zusia = {
 			await this.scheduleConsolidation(dir, "chapter").catch(e => this.logError("scheduling memory consolidation", e));
 		}
 		if (this.gisting() && this.jobBackend()) {
-			outline.filter(e => progress.sections[e.id] === "read" && (before.sections || {})[e.id] !== "read")
-				.sort((a, b) => b.level - a.level)
-				.forEach(e => this.queueGist(dir, e.id));
+			this.queueGists(dir, outline.filter(e => progress.sections[e.id] === "read" && (before.sections || {})[e.id] !== "read"));
 		}
 	},
 
@@ -7642,6 +7801,23 @@ Zusia = {
 
 	queueGist(dir, id) {
 		return this.queueJob({ key: "gist:" + dir + ":" + id, dir, run: job => this.gistSection({ dir }, id, { job }) });
+	},
+
+	// Sections before the part they belong to, which is merged from their gists.
+	queueGists(dir, entries) {
+		[...entries].sort((a, b) => b.level - a.level).forEach(e => this.queueGist(dir, e.id));
+	},
+
+	// Every question checks for read sections whose gist is missing or stale (the text
+	// changed, or gists were off while they were read): page turns only see a section the
+	// moment it turns read. One whose gist failed in this session is not asked for again.
+	queueMissingGists(dir, structure, pages, progress, gists) {
+		if (!this.jobBackend() || !progress) {
+			return;
+		}
+		let fresh = new Set(ZusiaMap.freshGists(gists, structure, pages).map(g => g.entry.id));
+		this.queueGists(dir, structure.outline.filter(e => progress.sections[e.id] === "read" && !fresh.has(e.id) &&
+			!this._gistFailed.has(dir + "\n" + e.id + "\n" + ZusiaMap.sectionHash(pages, e))));
 	},
 
 	// A section the reader finished, summarised from its pages with the gist before it for
@@ -7675,37 +7851,40 @@ Zusia = {
 		else {
 			let previous = structure.outline.filter(e => e.end < entry.start && fresh.has(e.id))
 				.sort((a, b) => a.end - b.end || a.level - b.level).pop();
-			prompt = this.gistPrompt(entry, pages, structure, previous ? fresh.get(previous.id) : null);
+			prompt = this.gistPrompt(entry, pages, structure, previous ? fresh.get(previous.id) : null, backend);
 		}
 		let result = await this.runBackgroundCall(backend, prompt, job);
 		if (job && job.cancelled) {
 			return { called: true };
 		}
+		let failed = dir + "\n" + id + "\n" + hash;
 		if (result.error) {
 			this.log("Gist of " + id + " got no answer: " + result.error.slice(0, 300));
+			if (!result.rateLimited) {
+				this._gistFailed.add(failed);
+			}
 			return { called: true, rateLimited: result.rateLimited };
 		}
 		let gist = ZusiaMap.validateGist(result.text);
 		if (gist.reason) {
 			this.log("Gist of " + id + " not kept: " + gist.reason);
+			this._gistFailed.add(failed);
 			return { called: true };
 		}
+		this._gistFailed.delete(failed);
 		await this.updateGists(dir, g => Object.assign({}, g, {
 			sections: Object.assign({}, g.sections, { [id]: { hash, text: gist.text, ts: Date.now() } }),
 		}));
 		return { called: true };
 	},
 
-	gistPrompt(entry, pages, structure, previous) {
+	gistPrompt(entry, pages, structure, previous, backend = null) {
 		let body = [];
 		for (let i = entry.start; i <= entry.end; i++) {
 			body.push(ZusiaMap.renderPage(i, pages[i], structure));
 		}
 		let text = body.join("\n\n");
-		if (text.length > this.GIST_INPUT_CHARS) {
-			text = text.slice(0, this.GIST_INPUT_CHARS) + "\n[The rest of the section is left out.]";
-		}
-		return (
+		let frame = section => (
 			"You write short summaries of a document's sections for a study assistant, which reads them later to " +
 			"find its way around what the reader has already read. Summarise the section below in at most " +
 			ZusiaMap.GIST_CHARS + " characters of plain prose: what it covers, the ideas, definitions and results it " +
@@ -7713,8 +7892,11 @@ Zusia = {
 			"Say only what the text says. No headings, no HTML, no links, no preamble: answer with the summary alone.\n\n" +
 			(previous ? "The summary of the part before it, for continuity (do not repeat it):\n" + this.contextBlock("previous_summary", previous.text) : "") +
 			"Section " + ZusiaMap.entryTitle(entry) + ", " + ZusiaMap.rangeName(entry.start, entry.end, structure) + ":\n" +
-			this.contextBlock("section_text", text)
+			this.contextBlock("section_text", section)
 		);
+		let cut = "\n[The rest of the section is left out.]";
+		let limit = this.jobInputChars(backend, this.GIST_INPUT_CHARS, frame("").length + cut.length);
+		return frame(text.length > limit ? text.slice(0, limit) + cut : text);
 	},
 
 	gistMergePrompt(entry, parts, structure) {
@@ -8072,16 +8254,20 @@ Zusia = {
 	// Messages the backend's session has not seen yet: for a new session the chat, or
 	// turns answered by another backend since this one last spoke. While the memory is
 	// kept in the background, a new session gets every message the memory does not cover
-	// yet (and never fewer than the last few), uncut: the background job folds them in
-	// before they pile up, and until it has, they are the only record of what was said.
-	// Without background memory the chat is cut to its last 20 messages and 30k chars.
+	// yet (and never fewer than the last RECENT_TURNS questions): the background job folds
+	// them in before they pile up, and until it has, they are the only record of what was
+	// said. Only past MEMORY_TRANSCRIPT_CHARS (jobs failing or paused, a restored chat)
+	// are the oldest left out, and the prompt says so. Without background memory the chat
+	// is cut to its last 20 messages and 30k chars.
 	transcriptFor(history, session, memory = null) {
 		let seen = session ? session.seen || 0 : 0;
-		let kept = this.memoryJobsAvailable();
+		let background = this.memoryJobsAvailable();
 		let unseen;
-		if (kept) {
+		if (background) {
 			let covered = memory ? memory.coveredThrough : -1;
-			let from = Math.min(covered + 1, Math.max(0, history.length - this.RECENT_MESSAGES));
+			let questions = history.map((m, i) => (m.role === "user" ? i : -1)).filter(i => i >= 0);
+			let recent = questions.length > this.RECENT_TURNS ? questions[questions.length - this.RECENT_TURNS] : 0;
+			let from = Math.min(covered + 1, recent);
 			// A resumed session missed the turns another backend answered, but those the
 			// memory covers reach it in <reading_memory>.
 			unseen = history.slice(Math.max(seen, from));
@@ -8095,7 +8281,22 @@ Zusia = {
 		let lines = unseen.map(m => (m.role === "user" ? "User: " : "Assistant: ") + m.text +
 			(m.images && m.images.length ? " [attached " + m.images.length + " image" + (m.images.length > 1 ? "s" : "") + "]" : ""));
 		let transcript = lines.join("\n\n");
-		if (!kept && transcript.length > 30000) {
+		if (background && transcript.length > this.MEMORY_TRANSCRIPT_CHARS) {
+			let kept = [];
+			let total = 0;
+			for (let k = lines.length - 1; k >= 0 && (!kept.length || total + lines[k].length + 2 <= this.MEMORY_TRANSCRIPT_CHARS); k--) {
+				kept.unshift(lines[k]);
+				total += lines[k].length + 2;
+			}
+			let left = lines.length - kept.length;
+			this.log("Transcript cut: " + left + " messages the memory does not cover yet left out");
+			transcript = (left ? "[" + left + " earlier messages are left out: the reading memory has not taken them in yet.]\n\n" : "") +
+				kept.join("\n\n");
+			if (transcript.length > this.MEMORY_TRANSCRIPT_CHARS) {
+				transcript = "…" + transcript.slice(-this.MEMORY_TRANSCRIPT_CHARS);
+			}
+		}
+		else if (!background && transcript.length > 30000) {
 			transcript = "…" + transcript.slice(-30000);
 		}
 		let since = !session && unseen.length < history.length;
