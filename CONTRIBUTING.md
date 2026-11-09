@@ -14,6 +14,12 @@ npm test
 3. Run `npm test` again; all tests must pass before a commit.
 4. For visual changes, check `test/harness.html` in a browser (for example `?scenario=wizard&step=3`) or run `npm run shots`. If the change shows in a README video, re-record them with `npm run videos` (macOS, real Zotero).
 
+## Real Zotero
+
+`npm run test:zotero` starts a separate headless Zotero with a throwaway profile, loads the plugin from `src/` and writes `test/integration/out/results.json`. It uses `/Applications/Zotero.app` on macOS and, on Linux, the binary in `ZOTERO_BIN` if set, Flatpak otherwise.
+
+`npm run test:zotero:linux` runs the same checks in Docker against the official Zotero Linux build for your architecture, so Linux is covered from any machine with Docker. Results go to `test/integration/out-linux/`; set `ZOTERO_VERSION` to test another release. The container has stub `claude`, `codex` and `agy` commands and no logins, so `LIVE=1` does not apply. `bash test/integration/linux/shots.sh` runs `npm run shots` the same way, for machines without Firefox or Pillow.
+
 ## Layout
 
 | Path | What |

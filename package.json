@@ -9,6 +9,7 @@
 		"build": "bash build.sh",
 		"shots": "bash test/screenshots.sh",
 		"test:zotero": "bash test/integration/run.sh",
+		"test:zotero:linux": "bash test/integration/linux/run.sh",
 		"videos": "bash test/videos/zotero/record.sh"
 	},
 	"devDependencies": {
