@@ -462,3 +462,43 @@ test("windows: any other batch file is refused, found or set as the path", async
 		await assert.rejects(env.plugin.findBinary(backend), /will not run batch files.*cmd\.exe/s, backend + " " + JSON.stringify(prefs));
 	}
 });
+
+// Claude writes "Let me check the page…" before a tool call; the eval on the textbook
+// showed that narration landing in stored answers, so only what follows the last
+// tool call is the answer.
+test("claude: narration before a tool call is not part of the answer", async () => {
+	const { plugin: p } = loadPlugin();
+	const text = t => ({ type: "text", text: t });
+	const tool = { type: "tool_use", name: "Grep", input: {} };
+	const parsed = p.parseClaudeEvents([
+		{ type: "assistant", session_id: "s", message: { content: [text("Let me search the section files."), tool] } },
+		{ type: "assistant", message: { content: [text("Let me check the lead-in."), tool] } },
+		{ type: "assistant", message: { content: [text("The book proves it on p. 23.")] } },
+		{ type: "assistant", message: { content: [text("Then it shows the converse.")] } },
+	]);
+	assert.equal(parsed.text, "The book proves it on p. 23.\n\nThen it shows the converse.");
+	assert.equal(p.parseClaudeEvents([{ type: "assistant", message: { content: [text("Only text.")] } }]).text, "Only text.");
+	assert.equal(p.parseClaudeEvents([{ type: "assistant", message: { content: [text("Said before a tool."), tool] } }]).text,
+		"Said before a tool.", "an answer that ends on a tool call keeps its text");
+
+	p.findBinary = async () => "/bin/claude";
+	const ev = e => ({ type: "stream_event", event: e });
+	p.runProcess = async (command, args, dir, onEvent) => {
+		[ev({ type: "content_block_start", index: 0, content_block: { type: "text" } }),
+			ev({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "Let me look." } }),
+			ev({ type: "content_block_stop", index: 0 }),
+			ev({ type: "content_block_start", index: 1, content_block: { type: "tool_use", name: "Read" } }),
+			ev({ type: "content_block_stop", index: 1 }),
+			ev({ type: "content_block_start", index: 2, content_block: { type: "text" } }),
+			ev({ type: "content_block_delta", index: 2, delta: { type: "text_delta", text: "Answer." } })].forEach(onEvent);
+		return { stdout: "", stderr: "", exitCode: 0 };
+	};
+	const shown = [];
+	await p.runClaude({ ...base, onProgress: ({ text }) => { if (text !== undefined) shown.push(text); } });
+	assert.deepEqual(shown, ["Let me look.", "", "Answer."], "the narration disappears from the sidebar once a tool runs");
+});
+
+test("claude: the prompt asks for the search to stay out of the answer", () => {
+	assert.match(plugin.systemPrompt(), /without mentioning files, tools or how you searched/);
+	assert.doesNotMatch(plugin.systemPrompt({ inline: true }), /how you searched/);
+});

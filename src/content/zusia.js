@@ -8173,7 +8173,8 @@ Zusia = {
 				? "The document is included below between tags. You have no files and no tools this time, so work " +
 					"from what's there."
 				: "The document lives in your working directory as the files below. Read and search them with " +
-					"your tools; you only ever need to read, so leave every file as it is.",
+					"your tools; you only ever need to read, so leave every file as it is. Look things up " +
+					"quietly: start your reply with the answer, without mentioning files, tools or how you searched.",
 			"Here's what you have to work with:\n" +
 			"- " + name.meta + ": title, authors, date, venue, DOI and the abstract. The abstract is the " +
 			"authors' pitch, not the content, so lean on the full text whenever you have it.\n" +
@@ -8554,6 +8555,11 @@ Zusia = {
 					text += "\n\n";
 				}
 				if (block.type === "tool_use") {
+					// What was written so far was narration; the answer comes after the tools.
+					if (text) {
+						text = "";
+						onProgress({ text });
+					}
 					onProgress({ status: this.toolStatus(block.name) });
 				}
 				if (block.type === "thinking") {
@@ -8606,6 +8612,7 @@ Zusia = {
 	parseClaudeEvents(events) {
 		let sessionId = null;
 		let textParts = [];
+		let narration = [];
 		let errorText = "";
 
 		for (let event of events) {
@@ -8617,6 +8624,11 @@ Zusia = {
 					if (block.type === "text" && block.text) {
 						textParts.push(block.text);
 					}
+					// Text before a tool call is narration ("Let me check the page"), not the answer.
+					if (block.type === "tool_use" && textParts.length) {
+						narration = narration.concat(textParts);
+						textParts = [];
+					}
 				}
 			}
 			if (event.type === "result" && event.is_error) {
@@ -8624,6 +8636,9 @@ Zusia = {
 			}
 		}
 
+		if (!textParts.length) {
+			textParts = narration;
+		}
 		if (errorText && !textParts.length) {
 			return { text: "", error: errorText, sessionId };
 		}
