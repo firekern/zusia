@@ -30,6 +30,8 @@ user_pref("xpinstall.signatures.required", false);
 user_pref("extensions.zotero.firstRun2", false);
 user_pref("extensions.zotero.httpServer.enabled", false);
 user_pref("extensions.zotero.sync.autoSync", false);
+// The scenes drive the chat in the item pane, where the videos were recorded.
+user_pref("extensions.zusia.placement", "pane");
 user_pref("devtools.debugger.remote-enabled", true);
 user_pref("devtools.chrome.enabled", true);
 user_pref("devtools.debugger.prompt-connection", false);

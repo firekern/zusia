@@ -103,7 +103,7 @@ test("defaults: consolidation on, gists off, in prefs.js and in code", () => {
 	assert.equal(plugin.consolidating(), true);
 	assert.equal(plugin.gisting(), false);
 	const bootstrap = readFileSync(new URL("../src/bootstrap.js", import.meta.url), "utf8");
-	assert.ok(bootstrap.indexOf("Zusia.stopJobs()") > 0 && bootstrap.indexOf("Zusia.stopJobs()") < bootstrap.indexOf("Zusia.unregisterPaneSection()"),
+	assert.ok(bootstrap.indexOf("Zusia.stopJobs()") > 0 && bootstrap.indexOf("Zusia.stopJobs()") < bootstrap.indexOf("Zusia.removePlacement()"),
 		"jobs stop before the pane goes, so closing it queues nothing");
 });
 

@@ -300,28 +300,100 @@
 	border: none;
 	overflow: hidden;
 }
-:root[data-zs-view="chat"] item-details[zs-chat-ready] .zs-root {
+:is(:root[data-zs-view="chat"] item-details[zs-chat-ready], .zs-dock) .zs-root {
 	flex: 1 1 0;
 	min-height: 0;
 }
-:root[data-zs-view="chat"] item-details[zs-chat-ready] .zs-root > :not(.zs-log-wrap):not(.zs-backdrop) {
+:is(:root[data-zs-view="chat"] item-details[zs-chat-ready], .zs-dock) .zs-root > :not(.zs-log-wrap):not(.zs-backdrop) {
 	flex-shrink: 0;
 }
-:root[data-zs-view="chat"] item-details[zs-chat-ready] .zs-log-wrap {
+:is(:root[data-zs-view="chat"] item-details[zs-chat-ready], .zs-dock) .zs-log-wrap {
 	display: flex;
 	flex-direction: column;
 	flex: 1 1 0;
 	min-height: 0;
 }
-:root[data-zs-view="chat"] item-details[zs-chat-ready] .zs-log {
+:is(:root[data-zs-view="chat"] item-details[zs-chat-ready], .zs-dock) .zs-log {
 	flex: 1 1 0;
 	min-height: 0;
 	max-height: none;
 }
-:root[data-zs-view="chat"] item-details[zs-chat-ready] .zs-header-paper {
+:is(:root[data-zs-view="chat"] item-details[zs-chat-ready], .zs-dock) .zs-header-paper {
 	display: block;
 }
 :root[data-zs-view="chat"] item-details[zs-chat-ready] .zs-view-details {
+	display: inline-flex !important;
+}
+
+/* ---- left dock: Zusia as its own column beside the library and the reader ---- */
+
+.zs-dock {
+	position: relative;
+	box-sizing: border-box;
+	display: flex;
+	flex: 0 0 auto;
+	min-width: 0;
+	background: var(--material-sidepane);
+	border-inline-end: var(--material-panedivider);
+	color: var(--fill-primary);
+}
+/* Zotero's panes keep their own minimum widths; without this the dock would push them out of the window. */
+:root[zs-dock] #appcontent {
+	min-width: 0;
+}
+.zs-dock-body {
+	display: flex;
+	flex-direction: column;
+	flex: 1 1 0;
+	min-width: 0;
+	min-height: 0;
+	padding: 6px 8px 8px;
+}
+.zs-dock-rail {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	padding: 6px 4px;
+}
+/* The rail is outside .zs-root, so its button takes Zotero's tokens instead of --zs-*. */
+.zs-dock-rail .zs-icon {
+	appearance: none;
+	margin: 0;
+	width: 28px;
+	height: 28px;
+	border-radius: 5px;
+	color: var(--fill-secondary) !important;
+}
+.zs-dock-rail .zs-icon:hover {
+	color: var(--fill-primary) !important;
+	background: var(--fill-quinary);
+}
+.zs-dock-rail .zs-i {
+	width: 18px;
+	height: 18px;
+}
+.zs-dock [hidden] {
+	display: none !important;
+}
+/* Straddles the dock's edge, so the grip is wider than the 1px divider it sits on. */
+.zs-dock-resizer {
+	position: absolute;
+	inset-block: 0;
+	inset-inline-end: -3px;
+	width: 6px;
+	cursor: ew-resize;
+	z-index: 2;
+}
+.zs-dock-resizer:hover,
+.zs-dock-resizing .zs-dock-resizer {
+	background: color-mix(in srgb, var(--accent-blue) 35%, transparent);
+}
+.zs-dock .zs-header-title,
+.zs-dock .zs-view-chat,
+.zs-root .zs-dock-hide {
+	display: none !important;
+}
+.zs-dock .zs-root .zs-dock-hide {
 	display: inline-flex !important;
 }
 

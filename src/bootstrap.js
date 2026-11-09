@@ -22,7 +22,7 @@ async function startup({ id, version, rootURI }) {
 	// The settings pane runs in the Settings window and reaches the plugin through Zotero.
 	Zotero.Zusia = Zusia;
 	Zusia.addToAllWindows();
-	Zusia.registerPaneSection();
+	Zusia.applyPlacement();
 	// Zotero removes the reader listeners itself when the plugin shuts down.
 	Zusia.registerReaderHooks();
 	Zusia.watchPrefs();
@@ -34,9 +34,13 @@ async function startup({ id, version, rootURI }) {
 
 function onMainWindowLoad({ window }) {
 	Zusia.addToWindow(window);
+	if (Zusia.placement() === "left") {
+		Zusia.addDock(window);
+	}
 }
 
 function onMainWindowUnload({ window }) {
+	Zusia.removeDock(window);
 	Zusia.removeFromWindow(window);
 }
 
@@ -49,7 +53,7 @@ function shutdown() {
 	Zusia.stopJobs();
 	Zusia.unwatchPrefs();
 	Zusia.unwatchReading();
-	Zusia.unregisterPaneSection();
+	Zusia.removePlacement();
 	Zusia.removeFromAllWindows();
 	delete Zotero.Zusia;
 	Zusia = undefined;

@@ -76,7 +76,8 @@ Object.assign(Zusia, {
 			},
 		});
 		let win = reader._window || Zotero.getMainWindow();
-		let pane = win.ZoteroContextPane;
+		// The dock is not in Zotero's context pane, which then stays as the reader left it.
+		let pane = this._docks.has(win) ? null : win.ZoteroContextPane;
 		if (pane && pane.collapsed) {
 			pane.togglePane();
 		}

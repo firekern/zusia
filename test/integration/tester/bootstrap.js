@@ -475,6 +475,81 @@ async function testLive(win, CS) {
 	})());
 }
 
+// The left dock: the chat as its own column beside Zotero's panes, in place of the item pane section.
+async function testDock(win, CS) {
+	let doc = win.document;
+	let shown = el => !!el && el.getClientRects().length > 0 && win.getComputedStyle(el).display !== "none";
+	let paper = (await Zotero.Items.getAll(Zotero.Libraries.userLibraryID))
+		.find(i => i.isRegularItem() && i.getField("title") === "Integration test paper");
+	CS.setPlacement("left");
+	let dock = await waitFor(() => doc.getElementById("zusia-dock"), 5000, "the dock");
+	// The headless items tree lays out no rows and cannot select one, so the selection is
+	// given here and the dock told about it, as the tree's select listener does.
+	let { getSelectedItems } = win.ZoteroPane;
+	win.ZoteroPane.getSelectedItems = () => [paper];
+	await CS.syncDock(win).finally(() => {
+		win.ZoteroPane.getSelectedItems = getSelectedItems;
+	});
+	check("dock: listens to the items tree for the selection", CS._docks.get(win).itemsView === win.ZoteroPane.itemsView);
+	let root = await waitFor(() => [...dock.querySelectorAll(".zs-root")]
+		.find(el => CS._views.get(el)?.ctx.paperItem?.id === paper.id), 20000, "the paper's chat in the dock");
+	await doc.fonts.ready;
+	await Zotero.Promise.delay(800);
+
+	let dockRect = dock.getBoundingClientRect();
+	let browser = doc.getElementById("browser").getBoundingClientRect();
+	let content = doc.getElementById("appcontent").getBoundingClientRect();
+	check("dock: a column at the left edge, from the tab bar to the bottom of the window",
+		dockRect.left <= 1 && Math.abs(dockRect.right - content.left) <= 1 && Math.abs(dockRect.height - browser.height) <= 1 && dockRect.height > 600,
+		{ dock: [Math.round(dockRect.left), Math.round(dockRect.right), Math.round(dockRect.height)], content: Math.round(content.left), browser: Math.round(browser.height) });
+	check("dock: the item pane has no Zusia section any more",
+		!doc.querySelector('#zotero-item-pane [data-pane$="zusia-section"]') && CS.paneID === null);
+	let itemPane = doc.getElementById("zotero-item-pane").getBoundingClientRect();
+	let items = doc.getElementById("zotero-items-pane").getBoundingClientRect();
+	check("dock: Zotero's own panes still fit in the window beside it",
+		itemPane.right <= win.innerWidth + 1 && content.right <= win.innerWidth + 1 && items.width > 250 && items.left >= dockRect.right,
+		{ window: win.innerWidth, itemPaneRight: Math.round(itemPane.right), items: [Math.round(items.left), Math.round(items.width)] });
+	let rootRect = root.getBoundingClientRect();
+	let composer = root.querySelector(".zs-composer").getBoundingClientRect();
+	let log = root.querySelector(".zs-log");
+	check("dock: the chat fills its height with the composer at the bottom",
+		rootRect.top - dockRect.top < 12 && dockRect.bottom - composer.bottom < 24,
+		{ dock: [Math.round(dockRect.top), Math.round(dockRect.bottom)], root: Math.round(rootRect.top), composer: Math.round(composer.bottom) });
+	let body = dock.querySelector(".zs-dock-body");
+	check("dock: only the conversation scrolls, and nothing overflows sideways",
+		body.scrollHeight <= body.clientHeight + 1 && root.scrollWidth <= root.clientWidth + 1 && log.scrollWidth <= log.clientWidth + 1,
+		{ body: [body.scrollHeight, body.clientHeight], root: [root.scrollWidth, root.clientWidth], log: [log.scrollWidth, log.clientWidth] });
+	let title = root.querySelector(".zs-header-paper");
+	check("dock: the header names the paper and offers Hide, not the item pane's view buttons",
+		shown(title) && title.textContent === "Integration test paper" && shown(root.querySelector(".zs-dock-hide"))
+			&& !shown(root.querySelector(".zs-view-chat")) && !shown(root.querySelector(".zs-view-details")), title.textContent);
+	await snapshot(win, "zotero-dock-window");
+	await snapshot(win, "zotero-dock", { x: dockRect.x, y: dockRect.y, width: dockRect.width + 4, height: dockRect.height });
+
+	CS.setDockWidth(520);
+	await Zotero.Promise.delay(300);
+	check("dock: takes the width it is given", Math.round(dock.getBoundingClientRect().width) === 520, dock.getBoundingClientRect().width);
+	CS.setDockWidth(CS.DOCK_WIDTH.initial);
+
+	root.querySelector(".zs-dock-hide").click();
+	await Zotero.Promise.delay(300);
+	let rail = dock.querySelector(".zs-dock-rail");
+	check("dock: Hide leaves a narrow rail with a button to bring it back",
+		dock.getBoundingClientRect().width < 48 && shown(rail.querySelector(".zs-dock-open")) && !shown(dock.querySelector(".zs-root")),
+		dock.getBoundingClientRect().width);
+	await snapshot(win, "zotero-dock-rail");
+	rail.querySelector(".zs-dock-open").click();
+	await Zotero.Promise.delay(300);
+	check("dock: the rail button opens it again on the same chat",
+		Math.round(dock.getBoundingClientRect().width) === CS.DOCK_WIDTH.initial && shown(dock.querySelector(".zs-root .zs-input")));
+
+	CS.setPlacement("pane");
+	await Zotero.Promise.delay(300);
+	check("dock: choosing the item pane takes the dock away and registers the section again",
+		!doc.getElementById("zusia-dock") && !!CS.paneID);
+	CS.setPlacement("left");
+}
+
 async function testPrefs(CS) {
 	check("settings pane registered", Zotero.PreferencePanes.pluginPanes.some(p => p.id === CS.PREFS_PANE_ID));
 	let prefsWin = Zotero.Utilities.Internal.openPreferences(CS.PREFS_PANE_ID);
@@ -537,6 +612,7 @@ async function run() {
 		await testChatView(win, CS);
 		await testPrefs(CS);
 		await testReaderWidth(win, CS);
+		await testDock(win, CS);
 		if (Zotero.Prefs.get("extensions.zusia-tester.live", true)) {
 			await testLive(win, CS);
 		}

@@ -174,6 +174,11 @@ Object.assign(Zusia, {
 	// a click on our side-nav icon does, so Zotero also expands the pane and leaves its notes view.
 	revealChat(win) {
 		let doc = win.document;
+		if (this._docks.has(win)) {
+			this.setDockOpen(true);
+			this.focusVisibleInput(doc);
+			return;
+		}
 		let button = [...doc.querySelectorAll("item-pane-sidenav [data-pane]")]
 			.find(el => el.dataset.pane === this.paneID && el.getClientRects().length);
 		if (button) {

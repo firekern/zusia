@@ -34,6 +34,8 @@ user_pref("extensions.zusia-tester.repo", "$repo");
 user_pref("extensions.zusia-tester.live", $([ "${LIVE:-0}" = 1 ] && echo true || echo false));
 // The setup wizard would cover the screenshots; its steps are tested in jsdom.
 user_pref("extensions.zusia.onboarded", true);
+// The checks start in the item pane; the tester moves the chat to the left dock at the end.
+user_pref("extensions.zusia.placement", "pane");
 user_pref("ui.systemUsesDarkTheme", $([ "${DARK:-0}" = 1 ] && echo 1 || echo 0));
 PREFS
 

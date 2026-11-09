@@ -36,6 +36,7 @@ Object.assign(Zusia, {
 				this.setView(doc, "details");
 				root.closest("item-details")?.scrollToPane?.(this.paneID, "instant");
 			}),
+			this.iconButton(doc, "zs-dock-hide", "Hide Zusia", "dock", () => this.setDockOpen(false)),
 		);
 
 		let log = this.el(doc, "div", "zs-log");
