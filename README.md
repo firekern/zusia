@@ -36,7 +36,7 @@
 
 ## 2. Make it yours
 
-> **Settings → Zusia.** Style, buddy, pattern, accent colour, background image and button labels, all updating live in the sidebar. Glass, corners, font, answer length, level and tone are there too.
+> **Settings → Zusia.** Style, buddy, pattern, accent colour, background image and button labels, all updating live in the sidebar. Glass, corners, font, answer length, level, tone and the system prompt are there too.
 
 <p align="center"><img src="docs/videos/zusia-style.gif" alt="In Zotero Settings, switch glass and flat, buddy and pattern, pick the red accent and a background illustration while the sidebar updates live to red and black" width="100%"></p>
 
@@ -82,7 +82,9 @@
 | 🟣 | **Notes** | Save any answer or drawing as a Zotero note under the paper |
 | 🔵 | **Search** | 🔍 searches the chats of every paper |
 | 🟢 | **Models** | Pick assistant, model and reasoning effort from the message box |
-| ⚫ | **Setup** | A visual wizard on first run |
+| 🟤 | **Memory** | `/remember` a note, `/forget` one; click the paper chip above the message box to see, edit or reset what Zusia keeps |
+| 🟡 | **Printed pages** | Ask about "page 18" and the assistant reads the page printed 18, whatever its PDF number |
+| ⚫ | **Setup** | A visual wizard on first run, including the assistant's voice: a preset or your own system prompt |
 
 ## Install
 
@@ -96,16 +98,19 @@ Updates arrive on their own after that: Zotero checks the release feed.
 ## What the assistant reads
 
 - 📄 **The paper's full text**, as Zotero extracts it from the PDF (split by page), EPUB or web snapshot. Answers cite pages as *(p. N)*.
-- 🎯 **Where you are.** The page on screen and the passage you selected come first. When a paper is too long to send whole, the text is cut around that page and the assistant is told which pages it has.
+- 🎯 **Where you are.** The page on screen and the passage you selected come first, with the pages you have turned to so far. Antigravity, which cannot read files, gets the pages that fit, chosen around that page and the question, and can ask for a few more.
+- 🗺️ **A reading map**: the printed page labels, the outline with page ranges, and where each equation, figure and table is. A book is split into section files, whatever its length.
+- 🧠 **What it remembers about this paper**: what you understood, what is still unclear, how you like answers, your `/remember` notes and a running summary. Every few questions a short call to a cheap model (Claude Haiku, or Antigravity) brings it up to date.
 - 🏷️ **Metadata and your annotations**: title, authors, abstract, highlights and comments.
 - 🚫 **No text, no guessing.** For a scanned PDF with no text layer, the assistant says it cannot read the paper instead of answering from the abstract.
 
 ## Privacy
 
 - 🖥️ The assistants run **on your computer** with your own login. Zusia has no server and needs no API keys.
-- 📄 They get the paper's **full text, metadata and your annotations**, plus any image you attach. The CLI sends them to its provider (Anthropic, OpenAI or Google), as it does with anything you type into it.
-- 🔕 To send only the metadata, abstract and annotations, turn off **Settings → Zusia → Chat → *Send the paper's full text***.
-- 📁 Chats, clarifications and images stay in `zusia/` inside Zotero's data folder.
+- 📄 They get the paper's **full text, metadata and your annotations**, its reading map, your reading progress and its memory, plus any image you attach. The CLI sends them to its provider (Anthropic, OpenAI or Google), as it does with anything you type into it.
+- 🔕 To send only the metadata, abstract and annotations, turn off **Settings → Zusia → Chat → *Send the paper's full text***. *Track reading progress* in the same card stops noting the pages you turn to.
+- 🧠 Keeping the memory takes extra calls to the same CLI, in the background. Turn them off in the Memory sheet (click the paper chip). Antigravity stores each of these calls in your `agy` conversation history.
+- 📁 Chats, clarifications, images, the reading map, your reading progress and the memory stay in `zusia/` inside Zotero's data folder.
 
 <p align="center"><img src="docs/rule.svg" alt="" width="100%"></p>
 
