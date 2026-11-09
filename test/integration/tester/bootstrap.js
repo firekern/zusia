@@ -631,6 +631,9 @@ async function run() {
 		await Zotero.uiReadyPromise;
 		let CS = await waitFor(() => Zotero.Zusia, 30000, "Claude Sidebar startup");
 		check("plugin started", true, CS.version);
+		// The checks start in the item pane, on every platform's profile; testDock moves
+		// the chat to the left dock at the end.
+		CS.setPlacement("pane");
 		// New chat and page turns start memory jobs, which would call the real CLI: no model
 		// runs here, live or not. The real call runs once with a fake process, to check the
 		// folder it gets in a real Zotero.
