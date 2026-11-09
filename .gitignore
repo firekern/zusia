@@ -4,6 +4,7 @@ node_modules/
 test/out/
 test/integration/out/
 test/integration/out-linux/
+test/integration/out-windows/
 test/fixtures.generated.js
 docs/videos/candidates/
 

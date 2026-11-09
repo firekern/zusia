@@ -10,6 +10,7 @@
 		"shots": "bash test/screenshots.sh",
 		"test:zotero": "bash test/integration/run.sh",
 		"test:zotero:linux": "bash test/integration/linux/run.sh",
+		"test:zotero:windows": "bash test/integration/windows/run.sh",
 		"videos": "bash test/videos/zotero/record.sh"
 	},
 	"devDependencies": {
