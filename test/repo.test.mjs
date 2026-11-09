@@ -5,6 +5,8 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 
 const read = path => readFileSync(new URL("../" + path, import.meta.url), "utf8");
 const exists = path => existsSync(new URL("../" + path, import.meta.url));
+const moduleFiles = () => readdirSync(new URL("../src/content/modules/", import.meta.url)).sort();
+const pluginSource = () => [read("src/content/zusia.js"), ...moduleFiles().map(name => read("src/content/modules/" + name))].join("\n");
 
 test("README explains install, build, test and opens with the illustration", () => {
 	const readme = read("README.md");
@@ -47,7 +49,7 @@ test("the extension is called Zusia everywhere a user sees its name", () => {
 	assert.equal(manifest.name, "Zusia");
 	assert.equal(JSON.parse(read("package.json")).name, "zusia");
 	assert.match(read("src/locale/en-US/zusia.ftl"), /\.label = Zusia/);
-	assert.match(read("src/content/zusia.js"), /label: "Zusia"/);
+	assert.match(pluginSource(), /label: "Zusia"/);
 	assert.match(read("build.sh"), /zusia\.xpi/);
 	assert.match(read("README.md"), /Zusia/);
 	assert.equal(manifest.applications.zotero.id, "zusia@firekern.github.io");
@@ -62,7 +64,7 @@ test("nothing but the Claude Code backend itself is named after Claude", () => {
 			.filter(name => /claude/i.test(name));
 		assert.deepEqual(stray, [], "no file under " + path + "/ is named after an assistant");
 	}
-	const sidebar = read("src/content/zusia.js");
+	const sidebar = pluginSource();
 	for (const identity of ["ClaudeSidebar", "claude-sidebar"]) {
 		assert.ok(!sidebar.includes(identity), identity + " is gone from the sidebar");
 	}
@@ -116,4 +118,11 @@ test("the update manifest points at the release the tag will create", async () =
 test("the project is MIT licensed, so a fork is allowed to exist", () => {
 	assert.match(read("LICENSE"), /^MIT License/);
 	assert.match(read("LICENSE"), /Copyright \(c\) \d{4} .+/);
+});
+
+test("every file in src/content/modules is in Zusia.MODULES, and nothing else is", () => {
+	// A module left out of the list is never loaded: its members are silently missing in Zotero.
+	const listed = /MODULES: \[([^\]]*)\]/.exec(read("src/content/zusia.js"))[1].match(/[\w-]+/g);
+	assert.deepEqual([...listed].sort(), moduleFiles().map(name => name.replace(/\.js$/, "")).sort());
+	assert.equal(new Set(listed).size, listed.length, "no module listed twice");
 });

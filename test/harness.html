@@ -44,6 +44,11 @@
 	var Zusia;
 </script>
 <script src="../src/content/zusia.js"></script>
+<script>
+	for (const name of Zusia.MODULES) {
+		document.write('<script src="../src/content/modules/' + name + '.js"><\/script>');
+	}
+</script>
 </head>
 <body class="no-anim">
 <script>

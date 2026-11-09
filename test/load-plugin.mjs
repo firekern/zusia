@@ -54,6 +54,9 @@ export function loadPlugin({ prefs = {}, files = new Map() } = {}) {
 	window.eval(read("src/content/readingmap.js") + "\nwindow.ZusiaMap = ZusiaMap;");
 	window.eval("var Zusia;\n" + read("src/content/zusia.js") + "\nwindow.Zusia = Zusia;");
 	const plugin = window.Zusia;
+	for (const name of plugin.MODULES) {
+		window.eval(read("src/content/modules/" + name + ".js"));
+	}
 	plugin.rootURI = "./";
 	// Memory jobs start on their own after answers, New chat and page turns, so no test
 	// reaches a CLI through them by accident: each call is recorded and gets no answer.

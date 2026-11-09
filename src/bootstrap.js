@@ -15,6 +15,9 @@ async function startup({ id, version, rootURI }) {
 	// The reading map is pure functions that zusia.js calls, so it loads first.
 	Services.scriptloader.loadSubScript(rootURI + "content/readingmap.js");
 	Services.scriptloader.loadSubScript(rootURI + "content/zusia.js");
+	for (let name of Zusia.MODULES) {
+		Services.scriptloader.loadSubScript(rootURI + "content/modules/" + name + ".js");
+	}
 	Zusia.init({ id, version, rootURI });
 	// The settings pane runs in the Settings window and reaches the plugin through Zotero.
 	Zotero.Zusia = Zusia;
