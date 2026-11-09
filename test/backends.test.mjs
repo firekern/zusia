@@ -13,7 +13,28 @@ test("claude: model and effort flags only when chosen", () => {
 	assert.equal(valueAfter(args, "--model"), "opus");
 	assert.equal(valueAfter(args, "--effort"), "max");
 	assert.equal(valueAfter(args, "--resume"), "s1");
-	assert.equal(valueAfter(args, "--setting-sources"), "");
+	assert.ok(args.includes("--setting-sources="), "no setting sources, as a single argument");
+});
+
+// Windows joins argv into one command line and Mozilla's quoting leaves "" bare,
+// so an empty argument vanishes and the next flag is read as its value (issue #1).
+test("no backend passes an empty argument", () => {
+	const session = { id: "s1", seen: 0 };
+	for (const args of [
+		plugin.claudeArgs(base),
+		plugin.claudeArgs({ ...base, session }),
+		plugin.codexArgs({ ...base, session }),
+		plugin.antigravityArgs({ ...base, session }),
+	]) {
+		assert.ok(!args.includes(""), "empty argument in: " + args.slice(0, 12).join(" | "));
+		// The prompt and the system prompt are multi-line, so a newline means one leaked into argv.
+		assert.ok(!args.some(a => a.includes("\n") || a.includes("Why?")), "prompt text in argv: " + args.join(" | "));
+	}
+});
+
+test("claude: user settings load only when asked for", () => {
+	const env = loadPlugin({ prefs: { "extensions.zusia.useClaudeUserSettings": true } });
+	assert.ok(!env.plugin.claudeArgs(base).some(a => a.startsWith("--setting-sources")));
 });
 
 test("codex: -m and model_reasoning_effort go before resume", () => {
@@ -24,11 +45,12 @@ test("codex: -m and model_reasoning_effort go before resume", () => {
 	assert.equal(valueAfter(args, "resume"), "t1");
 });
 
-test("antigravity: --model and --effort precede the prompt", () => {
+test("antigravity: --model and --effort, and no print flag, since the prompt comes on stdin", () => {
 	const args = plugin.antigravityArgs({ ...base, model: "gemini-3.1-pro-high", effort: "low" });
 	assert.equal(valueAfter(args, "--model"), "gemini-3.1-pro-high");
 	assert.equal(valueAfter(args, "--effort"), "low");
-	assert.ok(args[args.length - 1].startsWith("--print="));
+	// agy takes the token after a bare -p as the prompt, even an unknown flag.
+	assert.ok(!args.some(a => a === "-p" || a.startsWith("--print")));
 });
 
 test("every backend offers only efforts its CLI accepts", () => {
@@ -214,7 +236,7 @@ test("modes: instructions go to the assistant, not into the stored question", as
 	const pending = pendingFor(p);
 	pending.modes = ["latex"];
 	await p.ask(base.ctx, "Prove it", pending);
-	assert.match(seen.question, /^Prove it\n\n\[LaTeX mode: write the answer as rigorous mathematics/);
+	assert.match(seen.question, /^Prove it\n\n\[LaTeX mode: the user wants the maths written out properly/);
 	assert.equal(store.history[0].text, "Prove it");
 	assert.deepEqual([...store.history[0].modes], ["latex"]);
 });
@@ -259,4 +281,224 @@ test("clarifications: nothing is saved without a selection or when the request f
 	failing.selection = { text: "x", pageLabel: "1" };
 	await p.ask(base.ctx, "Explain", failing);
 	assert.equal(count, 0);
+});
+
+// A fake Subprocess.call that records argv and what was written to stdin.
+function fakeSpawn(env, stdout = "") {
+	const runs = [];
+	env.Subprocess.getEnvironment = () => ({ HOME: "/home/u", PATH: "/usr/bin" });
+	env.Subprocess.call = async (options) => {
+		const run = { command: options.command, args: [...options.arguments], stdin: [], closed: false };
+		runs.push(run);
+		const pipe = (text) => ({ readString: async () => { const out = text; text = ""; return out; } });
+		return {
+			stdin: {
+				write: async (s) => { assert.ok(!run.closed, "write after close"); run.stdin.push(s); },
+				close: async () => { run.closed = true; },
+			},
+			stdout: pipe(stdout),
+			stderr: pipe(""),
+			wait: async () => ({ exitCode: 0 }),
+		};
+	};
+	return runs;
+}
+// cmd.exe metacharacters, a newline and a leading dash: all must reach the CLI untouched.
+const QUESTION = 'QUESTION-MARKER: is "x" & y > 0? 100%\n- not a flag';
+const noPromptInArgv = (args) => !args.some(a => a.includes("QUESTION-MARKER") || a.includes("You are Zusia"));
+
+test("runProcess writes stdin, then closes it", async () => {
+	const env = loadPlugin();
+	const runs = fakeSpawn(env, "{\"a\":1}\n");
+	const seen = [];
+	const { stdout, exitCode } = await env.plugin.runProcess("/bin/x", ["--flag"], "/tmp/p", e => seen.push(e), null, "hello\nworld");
+	assert.equal(exitCode, 0);
+	assert.equal(stdout, "{\"a\":1}\n");
+	assert.equal(seen.length, 1);
+	assert.deepEqual(runs[0].stdin, ["hello\nworld"]);
+	assert.ok(runs[0].closed);
+	await env.plugin.runProcess("/bin/x", ["models"], "/tmp/p");
+	assert.deepEqual(runs[1].stdin, [], "nothing to send: stdin is only closed");
+	assert.ok(runs[1].closed);
+});
+
+test("runProcess reads the output while it is still writing stdin", async () => {
+	const env = loadPlugin();
+	// Like a real pipe: the write of a long prompt only finishes once the child, which
+	// answers as it reads, has had its stdout drained.
+	let drained;
+	const stdoutDrained = new Promise(resolve => { drained = resolve; });
+	let output = "{\"a\":1}\n";
+	env.Subprocess.getEnvironment = () => ({ HOME: "/home/u", PATH: "/usr/bin" });
+	env.Subprocess.call = async () => ({
+		stdin: { write: () => stdoutDrained, close: async () => {} },
+		stdout: { readString: async () => { const out = output; output = ""; if (!out) drained(); return out; } },
+		stderr: { readString: async () => "" },
+		wait: async () => ({ exitCode: 0 }),
+	});
+	let timer;
+	const deadlock = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("pipe deadlock")), 1000); });
+	const { stdout } = await Promise.race([env.plugin.runProcess("/bin/x", [], "/tmp/p", null, null, "long prompt"), deadlock]);
+	clearTimeout(timer);
+	assert.equal(stdout, "{\"a\":1}\n");
+});
+
+test("claude: the prompt goes on stdin and the system prompt in system.md, never in argv", async () => {
+	const env = loadPlugin();
+	const p = env.plugin;
+	p.findBinary = async () => "/bin/claude";
+	const runs = fakeSpawn(env, JSON.stringify({ type: "assistant", session_id: "s", message: { content: [{ type: "text", text: "ok" }] } }));
+	const result = await p.runClaude({ ...base, question: QUESTION, session: { id: "s1", seen: 0 }, onProgress() {} });
+	assert.equal(result.text, "ok");
+	const [run] = runs;
+	assert.equal(run.args[0], "-p");
+	assert.equal(valueAfter(run.args, "--resume"), "s1");
+	assert.equal(valueAfter(run.args, "--append-system-prompt-file"), "/tmp/p/system.md");
+	assert.ok(!run.args.includes("--append-system-prompt"));
+	assert.equal(env.files.get("/tmp/p/system.md"), p.systemPrompt());
+	assert.ok(noPromptInArgv(run.args), run.args.join(" | "));
+	assert.equal(run.stdin.join(""), QUESTION + p.contextNote(base.files) + p.formattingReminder());
+	assert.ok(run.closed);
+});
+
+test("codex: the prompt goes on stdin through a final -, also after resume", async () => {
+	const env = loadPlugin();
+	const p = env.plugin;
+	p.findBinary = async () => "/bin/codex";
+	const runs = fakeSpawn(env, JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: "ok" } }));
+	await p.runCodex({ ...base, question: QUESTION, onProgress() {} });
+	await p.runCodex({ ...base, question: QUESTION, session: { id: "t1", seen: 0 }, onProgress() {} });
+	const [fresh, resumed] = runs;
+	assert.equal(fresh.args[fresh.args.length - 1], "-");
+	assert.deepEqual(resumed.args.slice(-3), ["resume", "t1", "-"]);
+	for (const run of runs) {
+		assert.ok(noPromptInArgv(run.args), run.args.join(" | "));
+		assert.ok(run.closed);
+	}
+	const tail = QUESTION + p.contextNote(base.files) + p.formattingReminder();
+	assert.equal(fresh.stdin.join(""), p.systemPrompt() + "\n\n---\n\n" + tail, "a new session starts with the instructions");
+	assert.equal(resumed.stdin.join(""), tail);
+});
+
+test("codex: the session id comes from thread.started or the older session_configured", () => {
+	assert.equal(plugin.parseCodexEvents([{ type: "thread.started", thread_id: "th-1" }]).sessionId, "th-1");
+	assert.equal(plugin.parseCodexEvents([{ msg: { type: "session_configured", session_id: "se-1" } }]).sessionId, "se-1");
+});
+
+test("antigravity: the prompt goes on stdin", async () => {
+	const env = loadPlugin();
+	const p = env.plugin;
+	p.findBinary = async () => "/bin/agy";
+	const runs = fakeSpawn(env, JSON.stringify({ event: "result", result: { status: "SUCCESS", response: "ok", conversation_id: "c1" } }));
+	const request = { ...base, question: QUESTION, onProgress() {} };
+	const result = await p.runAntigravity(request);
+	assert.equal(result.text, "ok");
+	assert.ok(noPromptInArgv(runs[0].args), runs[0].args.join(" | "));
+	assert.equal(runs[0].stdin.join(""), p.buildAntigravityPrompt(request));
+	assert.ok(runs[0].closed);
+});
+
+// Windows fixtures. The fake pathSearch behaves like Mozilla's: in each directory it
+// tries the bare name first, then each PATHEXT extension.
+const NPM = "C:/Users/u/AppData/Roaming/npm";
+const CLAUDE_EXE = NPM + "/node_modules/@anthropic-ai/claude-code/bin/claude.exe";
+const CODEX_JS = NPM + "/node_modules/@openai/codex/bin/codex.js";
+function windows(paths, prefs = {}) {
+	const files = new Map(paths.map(path => [path, ""]));
+	const env = loadPlugin({ files, prefs });
+	env.window.Zotero.isWin = true;
+	env.Subprocess.getEnvironment = () => ({ USERPROFILE: "C:/Users/u", PATH: "C:/nodejs" });
+	env.Subprocess.pathSearch = async (name, environment) => {
+		for (const dir of environment.PATH.split(";")) {
+			for (const ext of ["", ".exe", ".cmd", ".bat"]) {
+				if (files.has(dir + "/" + name + ext)) {
+					return dir + "/" + name + ext;
+				}
+			}
+		}
+		throw new Error("not found: " + name);
+	};
+	return env;
+}
+
+test("windows: npm's extensionless sh shim is skipped and claude.cmd resolves to the native exe", async () => {
+	const env = windows([NPM + "/claude", NPM + "/claude.cmd", NPM + "/claude.ps1", CLAUDE_EXE]);
+	assert.equal(await env.plugin.findBinary("claude"), CLAUDE_EXE);
+});
+
+test("windows: a claude.exe anywhere on the path wins over a .cmd", async () => {
+	const env = windows([NPM + "/claude.cmd", CLAUDE_EXE, "C:/nodejs/claude.exe"]);
+	assert.equal(await env.plugin.findBinary("claude"), "C:/nodejs/claude.exe");
+});
+
+test("windows: a claude.cmd path setting resolves like a found one", async () => {
+	const env = windows([CLAUDE_EXE], { "extensions.zusia.claudePath": NPM + "/claude.cmd" });
+	assert.equal(await env.plugin.findBinary("claude"), CLAUDE_EXE);
+});
+
+test("windows: codex.cmd runs as node.exe codex.js, without cmd.exe", async () => {
+	const env = windows([NPM + "/codex", NPM + "/codex.cmd", CODEX_JS, "C:/nodejs/node.exe"]);
+	assert.equal(await env.plugin.findBinary("codex"), CODEX_JS);
+	const runs = fakeSpawn(env, "");
+	env.Subprocess.getEnvironment = () => ({ USERPROFILE: "C:/Users/u", PATH: "C:/nodejs" });
+	await env.plugin.runCodex({ ...base, onProgress() {} });
+	assert.equal(runs[0].command, "C:/nodejs/node.exe");
+	assert.equal(runs[0].args[0], CODEX_JS);
+	assert.equal(runs[0].args[1], "exec");
+});
+
+test("windows: any other batch file is refused, found or set as the path", async () => {
+	for (const [backend, paths, prefs] of [
+		["claude", [], { "extensions.zusia.claudePath": "C:/tools/claude.bat" }],
+		["codex", [], { "extensions.zusia.codexPath": "C:/tools/codex.CMD" }],
+		// Windows drops a trailing dot or space, so these still run through cmd.exe.
+		["claude", [], { "extensions.zusia.claudePath": "C:/tools/claude.bat." }],
+		["codex", [], { "extensions.zusia.codexPath": "C:/tools/codex.cmd " }],
+		["agy", [NPM + "/agy.cmd"], {}],
+		// Claude Code before 2.1.113 ran cli.js behind its shim, not claude.exe.
+		["claude", [NPM + "/claude.cmd"], {}],
+	]) {
+		const env = windows(paths, prefs);
+		await assert.rejects(env.plugin.findBinary(backend), /will not run batch files.*cmd\.exe/s, backend + " " + JSON.stringify(prefs));
+	}
+});
+
+// Claude writes "Let me check the page…" before a tool call; the eval on the textbook
+// showed that narration landing in stored answers, so only what follows the last
+// tool call is the answer.
+test("claude: narration before a tool call is not part of the answer", async () => {
+	const { plugin: p } = loadPlugin();
+	const text = t => ({ type: "text", text: t });
+	const tool = { type: "tool_use", name: "Grep", input: {} };
+	const parsed = p.parseClaudeEvents([
+		{ type: "assistant", session_id: "s", message: { content: [text("Let me search the section files."), tool] } },
+		{ type: "assistant", message: { content: [text("Let me check the lead-in."), tool] } },
+		{ type: "assistant", message: { content: [text("The book proves it on p. 23.")] } },
+		{ type: "assistant", message: { content: [text("Then it shows the converse.")] } },
+	]);
+	assert.equal(parsed.text, "The book proves it on p. 23.\n\nThen it shows the converse.");
+	assert.equal(p.parseClaudeEvents([{ type: "assistant", message: { content: [text("Only text.")] } }]).text, "Only text.");
+	assert.equal(p.parseClaudeEvents([{ type: "assistant", message: { content: [text("Said before a tool."), tool] } }]).text,
+		"Said before a tool.", "an answer that ends on a tool call keeps its text");
+
+	p.findBinary = async () => "/bin/claude";
+	const ev = e => ({ type: "stream_event", event: e });
+	p.runProcess = async (command, args, dir, onEvent) => {
+		[ev({ type: "content_block_start", index: 0, content_block: { type: "text" } }),
+			ev({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "Let me look." } }),
+			ev({ type: "content_block_stop", index: 0 }),
+			ev({ type: "content_block_start", index: 1, content_block: { type: "tool_use", name: "Read" } }),
+			ev({ type: "content_block_stop", index: 1 }),
+			ev({ type: "content_block_start", index: 2, content_block: { type: "text" } }),
+			ev({ type: "content_block_delta", index: 2, delta: { type: "text_delta", text: "Answer." } })].forEach(onEvent);
+		return { stdout: "", stderr: "", exitCode: 0 };
+	};
+	const shown = [];
+	await p.runClaude({ ...base, onProgress: ({ text }) => { if (text !== undefined) shown.push(text); } });
+	assert.deepEqual(shown, ["Let me look.", "", "Answer."], "the narration disappears from the sidebar once a tool runs");
+});
+
+test("claude: the prompt asks for the search to stay out of the answer", () => {
+	assert.match(plugin.systemPrompt(), /without mentioning files, tools or how you searched/);
+	assert.doesNotMatch(plugin.systemPrompt({ inline: true }), /how you searched/);
 });

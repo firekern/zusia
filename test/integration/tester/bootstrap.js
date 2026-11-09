@@ -5,6 +5,8 @@
 var results = { checks: [], errors: [] };
 var outDir;
 var repo;
+// Prompts the memory jobs would have sent; see run().
+var backgroundCalls = [];
 
 function check(name, ok, detail) {
 	results.checks.push({ name, ok: !!ok, detail: detail === undefined ? null : detail });
@@ -116,6 +118,18 @@ async function testSidebar(win, CS) {
 	check("paper chip names the item and says what the assistant reads",
 		!!chip && chip.textContent.includes("Integration test paper") && /full text/.test(chip.title),
 		chip && [chip.textContent, chip.title]);
+	chip.click();
+	let sheet = await waitFor(() => root.querySelector(".zs-memory-panel .zs-memory-settings .zs-switch"), 5000, "memory sheet")
+		.then(() => root.querySelector(".zs-memory-panel"), () => null);
+	let sheetRect = sheet && sheet.getBoundingClientRect();
+	check("memory sheet: the paper chip opens it over the chat, with its two settings and Reset",
+		!!sheet && sheet.querySelectorAll(".zs-memory-settings .zs-switch").length === 2 && !!sheet.querySelector(".zs-memory-reset") &&
+		sheetRect.height > 200, sheet && { height: sheetRect.height, text: sheet.textContent.slice(0, 120) });
+	if (sheet) {
+		await snapshot(win, "zotero-memory-sheet", { x: sheetRect.x, y: sheetRect.y, width: sheetRect.width, height: sheetRect.height });
+		sheet.dispatchEvent(new win.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+	}
+	check("memory sheet: Escape closes it", !root.querySelector(".zs-memory-panel"));
 	// The visible edge of the item pane is where its side navigation starts;
 	// section containers themselves grow with their content, so they are no reference.
 	let visibleRight = () => {
@@ -176,6 +190,13 @@ async function testSidebar(win, CS) {
 	// History: New chat archives the conversation; it can be reopened from the menu.
 	await CS.newChat(root);
 	check("New chat clears the conversation", (await CS.loadHistory(dir)).length === 0 && !!root.querySelector(".zs-empty"));
+	await CS.jobsIdle();
+	check("memory: New chat queues a consolidation of the chat it puts away, run through the job queue",
+		backgroundCalls.length === 1 && backgroundCalls[0].prompt.includes("#0 User: Explain the FFT") &&
+		(await CS.loadMemory(dir)).epoch === 1,
+		backgroundCalls.map(c => c.prompt.length));
+	check("memory: the put-away chat is read back from its file on disk and no longer owed once folded in",
+		(await CS.loadMemory(dir)).pendingArchives.length === 0, (await CS.loadMemory(dir)).pendingArchives);
 	let archives = await CS.listArchives(dir);
 	check("the previous chat is listed in history", archives.length === 1 && archives[0].count === 4 && archives[0].title.startsWith("Explain the FFT"),
 		archives.map(a => ({ title: a.title, count: a.count })));
@@ -272,13 +293,14 @@ async function testReaderWidth(win, CS) {
 	await IOUtils.makeDirectory(dir, { createAncestors: true });
 
 	// Zotero's own PDF worker, file times and paths, which jsdom only stubs.
-	let full = await CS.loadFullText(attachment);
+	let full = await CS.loadFullText(attachment, dir);
 	check("pdf: Zotero extracts the full text", full.status === "ok" && full.paged && full.pages.join("").includes("PELICAN"),
 		{ status: full.status, reason: full.reason, pages: full.pages && full.pages.length });
 	let files = await CS.exportContext({ paperItem: parent, attachmentItem: attachment, dir }, { focus: [0] });
 	let written = await IOUtils.exists(PathUtils.join(dir, "fulltext.md")) ? await IOUtils.readUTF8(PathUtils.join(dir, "fulltext.md")) : "";
 	check("pdf: fulltext.md holds the paper with page markers", /--- page 1 ---\n[^]*PELICAN/.test(written),
 		{ chars: written.length, note: CS.contextNote(files) });
+	await testReadingMap(CS, attachment, dir, full);
 	await IOUtils.writeUTF8(PathUtils.join(dir, "chat.json"), JSON.stringify([
 		{ role: "user", text: "What does the convolution theorem say?" },
 		{ role: "assistant", backend: "claude", model: "opus", text: await readFixture("latex.md"),
@@ -327,6 +349,59 @@ async function testReaderWidth(win, CS) {
 		Math.round(footer.getBoundingClientRect().height));
 
 	await snapshot(win, "zotero-pdf-paper", { x: paneRect.x, y: paneRect.y, width: paneRect.width, height: paneRect.height });
+}
+
+// The reading map in real Zotero: readingmap.js loaded by bootstrap.js, the files it
+// writes, and the page-turn signal it listens for. The reader cannot open headless, so
+// the page change is made the way the reader makes it, with setAttachmentLastPageIndex.
+async function testReadingMap(CS, attachment, dir, full) {
+	let structurePath = PathUtils.join(dir, "cache", "structure.json");
+	let structure = await IOUtils.exists(structurePath) ? JSON.parse(await IOUtils.readUTF8(structurePath)) : null;
+	let pages = full.pages ? full.pages.length : 0;
+	check("reading map: readingmap.js builds structure.json for the PDF",
+		!!structure && structure.pageCount === pages && structure.labels.length === pages && structure.outline.length > 0 &&
+			structure.files.length > 0 && typeof structure.key === "string",
+		structure && { pages: structure.pageCount, labels: structure.labelMethod, confidence: structure.confidence,
+			outline: structure.outlineMethod, entries: structure.outline.length, files: structure.files.length });
+	let cached = await IOUtils.exists(PathUtils.join(dir, "cache", "pages.json"))
+		? JSON.parse(await IOUtils.readUTF8(PathUtils.join(dir, "cache", "pages.json"))) : null;
+	let ignore = PathUtils.join(dir, ".ignore");
+	check("reading map: an .ignore keeps cache/ out of the backends' searches",
+		await IOUtils.exists(ignore) && /^cache\/$/m.test(await IOUtils.readUTF8(ignore)));
+	check("reading map: the page text is kept for the next start, keyed by file time and size",
+		!!cached && cached.pages.length === pages && /^\d+:\d+$/.test(cached.stamp), cached && cached.stamp);
+
+	let seen = [];
+	let observer = Zotero.Notifier.registerObserver({
+		notify: (event, type, ids) => seen.push(...ids.map(id => ({ event, id }))),
+	}, ["setting"], "zusia-tester");
+	let calls = [];
+	let original = CS.onReadingNotify;
+	CS.onReadingNotify = function (event, ids) {
+		calls.push({ event, ids: [...ids] });
+		return original.call(this, event, ids);
+	};
+	try {
+		await attachment.setAttachmentLastPageIndex(pages > 1 ? 1 : 0);
+		await waitFor(() => seen.length && calls.length, 5000, "a setting notification").catch(() => null);
+	}
+	finally {
+		Zotero.Notifier.unregisterObserver(observer);
+		CS.onReadingNotify = original;
+	}
+	let parsed = seen.map(s => CS.parseLastPageSetting(s.id)).filter(Boolean);
+	check("reading progress: a page change fires a lastPageIndex setting event Zusia parses",
+		parsed.some(p => p.key === attachment.key && p.groupID === null), seen);
+	check("reading progress: Zusia's own observer receives it", calls.some(c => c.ids.some(id => id.includes(attachment.key))), calls);
+
+	if (Zotero.SDT) {
+		// Informational: what Zotero 10's structured text gives for this PDF. The map works
+		// without it, so only the reported shape is recorded.
+		// Zusia itself never waits for it; the tester may.
+		let sdt = await Promise.race([CS.readSDT(attachment.id), Zotero.Promise.delay(5000).then(() => null)]);
+		check("reading map (info): Zotero.SDT answered for the test PDF", true,
+			sdt ? { labels: sdt.labels && sdt.labels.slice(0, 5), outline: sdt.outline && sdt.outline.length } : "still building after 5 s");
+	}
 }
 
 // Opt-in (LIVE=1): real Claude Code runs from inside the sandboxed Zotero.
@@ -432,6 +507,28 @@ async function run() {
 		await Zotero.uiReadyPromise;
 		let CS = await waitFor(() => Zotero.Zusia, 30000, "Claude Sidebar startup");
 		check("plugin started", true, CS.version);
+		// New chat and page turns start memory jobs, which would call the real CLI: no model
+		// runs here, live or not. The real call runs once with a fake process, to check the
+		// folder it gets in a real Zotero.
+		let realBackgroundCall = CS.runBackgroundCall;
+		CS.runBackgroundCall = async (backend, prompt) => {
+			backgroundCalls.push({ backend, prompt });
+			return { text: "{}", error: "", rateLimited: false };
+		};
+		let { findBinary, runProcess } = CS;
+		let spawned = null;
+		CS.findBinary = async () => "/nonexistent/claude";
+		CS.runProcess = async (command, args, cwd, onEvent, onSpawn, stdin) => {
+			spawned = { cwd, args, stdin, children: (await IOUtils.getChildren(cwd)).length };
+			return { stdout: JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text: "{}" }] } }) + "\n", stderr: "", exitCode: 0 };
+		};
+		let answered = await realBackgroundCall.call(CS, "claude", "PROMPT").finally(() => {
+			CS.findBinary = findBinary;
+			CS.runProcess = runProcess;
+		});
+		check("memory: a background call runs in a new empty folder under the system temp folder, removed after",
+			answered.text === "{}" && spawned && spawned.cwd.startsWith(PathUtils.tempDir) && spawned.children === 0 &&
+			spawned.stdin === "PROMPT" && !(await IOUtils.exists(spawned.cwd)), spawned);
 		let links = [...Zotero.getMainWindow().document.querySelectorAll("#zusia-stylesheet")];
 		check("one stylesheet link, versioned so updates never reuse a cached copy",
 			links.length === 1 && /zusia\.css\?v=/.test(links[0].href), links.map(l => l.href));

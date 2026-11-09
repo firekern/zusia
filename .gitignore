@@ -7,3 +7,6 @@ test/fixtures.generated.js
 docs/videos/candidates/
 
 updates.json
+
+# Claude Code worktrees and local settings
+.claude/

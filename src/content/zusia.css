@@ -529,6 +529,14 @@
 	gap: 2px;
 	margin-inline-start: -7px;
 }
+/* "/remember" confirmations: part of the chat flow, but not a message. */
+.zs-memo {
+	margin: 4px 0 10px;
+	padding: 6px 10px;
+	border-inline-start: 2px solid var(--zs-accent);
+	font-size: 0.88em;
+	color: var(--zs-muted);
+}
 .zs-notice {
 	padding: 24px 8px;
 	text-align: center;
@@ -712,6 +720,26 @@
 }
 .zs-math-block math[display="block"] {
 	margin: 0 auto;
+}
+/* A numbered equation keeps its number at the right margin, as in LaTeX. The empty
+   first column mirrors the number's, so the equation stays centred on the line. */
+.zs-math-numbered {
+	display: grid;
+	grid-template-columns: 1fr minmax(0, auto) 1fr;
+	align-items: center;
+	column-gap: 6px;
+}
+.zs-math-numbered > .zs-math-scroll {
+	grid-column: 2;
+}
+.zs-eq-num {
+	grid-column: 3;
+	justify-self: end;
+	white-space: nowrap;
+	font-variant-numeric: tabular-nums;
+	/* Upright even in the italic body of a theorem, like LaTeX's equation numbers. */
+	font-style: normal;
+	color: var(--zs-muted);
 }
 .zs-tex-error {
 	font-family: ui-monospace, monospace;
@@ -1027,6 +1055,43 @@
 	text-overflow: ellipsis;
 	white-space: nowrap;
 	color: var(--zs-text);
+}
+/* Where the user is ("§2.3 · p. 18 · 9/15 read"): secondary to the paper's name, and the
+   first thing to shrink in a narrow pane. */
+.zs-context-reading {
+	flex: 0 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--zs-muted);
+	font-variant-numeric: tabular-nums;
+}
+.zs-context-reading::before {
+	content: "·";
+	margin-inline-end: 5px;
+}
+/* The chip opens the Memory sheet. */
+.zs-context-chip[role="button"] {
+	cursor: pointer;
+}
+.zs-context-chip[role="button"]:hover,
+.zs-context-chip[role="button"]:focus-visible {
+	border-color: var(--zs-stroke);
+	color: var(--zs-text);
+}
+/* "Memory: updating" while a background job runs for this paper. */
+.zs-memory-status {
+	align-self: center;
+	font-size: 0.82em;
+	color: var(--zs-muted);
+	animation: zs-pulse 1.6s ease-in-out infinite;
+}
+@keyframes zs-pulse {
+	50% { opacity: 0.45; }
+}
+@media (prefers-reduced-motion: reduce) {
+	.zs-memory-status { animation: none; }
 }
 /* Images attached to the message being written, and to sent messages. */
 .zs-attachments,
@@ -2635,6 +2700,134 @@
 	border-radius: var(--zs-radius-card);
 	background: var(--zs-raised);
 }
+/* Memory sheet: where we are, the reading map, the memory items, the settings. */
+.zs-memory-section {
+	display: flex;
+	flex-direction: column;
+	gap: 5px;
+}
+.zs-memory-heading {
+	font-size: 0.78em;
+	font-weight: 650;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--zs-muted);
+}
+.zs-memory-line {
+	line-height: 1.45;
+}
+.zs-memory-outline {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+	max-height: 240px;
+	overflow-y: auto;
+	scrollbar-width: thin;
+}
+.zs-memory-entry {
+	display: grid;
+	grid-template-columns: 1.2em minmax(0, 1fr) auto;
+	gap: 6px;
+	padding: 2px 4px;
+	border-radius: var(--zs-radius-control);
+	line-height: 1.4;
+}
+.zs-memory-entry[data-level="2"] {
+	padding-inline-start: 18px;
+	font-size: 0.94em;
+}
+.zs-memory-entry[data-state="unread"] .zs-memory-entry-title {
+	color: var(--zs-muted);
+}
+.zs-memory-entry.zs-here {
+	background: var(--zs-accent-soft);
+}
+.zs-memory-mark {
+	color: var(--zs-accent-ink);
+	text-align: center;
+}
+.zs-memory-entry-title {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.zs-memory-entry-pages {
+	font-size: 0.88em;
+	color: var(--zs-muted);
+	font-variant-numeric: tabular-nums;
+}
+.zs-memory-list {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+.zs-memory-item,
+.zs-memory-summary {
+	display: flex;
+	flex-direction: column;
+	gap: 3px;
+	padding: 6px 9px;
+	border: 1px solid var(--zs-border);
+	border-radius: var(--zs-radius-control);
+	background: var(--zs-raised);
+}
+.zs-memory-meta {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	min-height: 22px;
+}
+.zs-memory-kind {
+	font-size: 0.8em;
+	font-weight: 600;
+	color: var(--zs-accent-ink);
+}
+.zs-memory-page {
+	font-size: 0.8em;
+	color: var(--zs-muted);
+}
+.zs-memory-actions {
+	display: inline-flex;
+	gap: 2px;
+	margin-inline-start: auto;
+}
+.zs-memory-delete:hover:not(:disabled) {
+	color: var(--accent-red, #db2c3a) !important;
+}
+.zs-memory-text {
+	line-height: 1.45;
+	overflow-wrap: anywhere;
+}
+.zs-memory-edit {
+	width: 100%;
+	box-sizing: border-box;
+	padding: 4px 6px;
+	border: 1px solid var(--zs-stroke);
+	border-radius: var(--zs-radius-control);
+	font: inherit;
+	color: var(--zs-text);
+	background: var(--zs-field);
+	resize: vertical;
+}
+.zs-memory-empty {
+	font-size: 0.9em;
+	line-height: 1.45;
+	color: var(--zs-muted);
+}
+.zs-memory-reset-row {
+	display: flex;
+	justify-content: flex-end;
+}
+.zs-memory-reset.zs-confirm {
+	border-color: var(--accent-red, #db2c3a);
+	color: var(--accent-red, #db2c3a);
+}
+/* The sheet is narrow: label and switch on one line, the hint under them. */
+.zs-memory-settings .zs-row {
+	grid-template-columns: minmax(0, 1fr) auto;
+	padding: 6px 0;
+}
 @media (prefers-reduced-motion: reduce) {
 	.zs-panel { animation: none; }
 	.zs-clar-item:hover { transform: none; }
@@ -2643,4 +2836,54 @@
 .zs-root:has(> .zs-panel),
 .zs-root:has(> .zs-wizard) {
 	min-height: 520px;
+}
+/* Wizard "Your voice" step: the system prompt editor. It is the one tall step, so the
+   overlay scrolls instead of pushing Next out of a short pane. */
+.zs-wizard {
+	overflow-y: auto;
+}
+.zs-wizard-voice {
+	display: flex;
+	flex-direction: column;
+	gap: 5px;
+	width: 100%;
+}
+.zs-wizard .zs-textarea {
+	width: 100%;
+	min-height: 6em;
+	text-align: start;
+}
+.zs-wizard-voice-foot {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+}
+.zs-wizard-count {
+	font-size: 0.8em;
+	font-variant-numeric: tabular-nums;
+	color: var(--zs-muted);
+}
+.zs-wizard-sent {
+	width: 100%;
+	text-align: start;
+}
+.zs-wizard-sent summary {
+	cursor: pointer;
+	font-size: 0.85em;
+	color: var(--zs-muted);
+}
+.zs-wizard-sent-text {
+	margin: 6px 0 0;
+	max-height: 200px;
+	overflow-y: auto;
+	padding: 8px 10px;
+	border: 1px solid var(--zs-line);
+	border-radius: var(--zs-radius-control);
+	font-family: ui-monospace, "SF Mono", Menlo, monospace;
+	font-size: 0.8em;
+	line-height: 1.45;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	background: var(--zs-hover);
 }

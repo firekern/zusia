@@ -5,8 +5,10 @@ import { loadPlugin, fixture, render, leftoverMarkup } from "./load-plugin.mjs";
 const env = loadPlugin();
 const texErrors = c => [...c.querySelectorAll(".zs-tex-error")].map(n => n.textContent);
 const cellText = (table, row, col) => table.rows[row].cells[col].textContent.trim();
+const eqLabels = block => block.dataset.eqs ? JSON.parse(block.dataset.eqs).flatMap(eq => eq.labels).join(" | ") : "";
+const eqNums = c => [...c.querySelectorAll(".zs-math-block")].map(b => [eqLabels(b), b.querySelector(".zs-eq-num")?.textContent || ""]);
 
-for (const name of ["fft-real.md", "metric-review-real.md", "tables.md", "latex.md", "markdown.md"]) {
+for (const name of ["fft-real.md", "metric-review-real.md", "tables.md", "latex.md", "markdown.md", "moving-average-real.md"]) {
 	test(`${name}: no raw Markdown/LaTeX left in the rendered text`, () => {
 		assert.deepEqual(leftoverMarkup(render(env, fixture(name))), []);
 	});
@@ -234,4 +236,120 @@ test("theorem links: boxes are numbered across the chat, \\ref and [text](#label
 	const note = env.plugin.noteHTML("Q", "\\begin{lemma}\\label{lem:a}\nX\n\\end{lemma}\n\nSee \\ref{lem:a}.");
 	assert.doesNotMatch(note, /zs-ref|\\label/);
 	assert.match(note, /See lem:a\./);
+});
+
+test("equation labels: stripped before KaTeX, inside and outside boxes, numbered in reading order", () => {
+	const c = render(env, [
+		"$$ a = b \\label{eq:a} $$",
+		"", "\\begin{equation}\\label{eq:b}", "c = d", "\\end{equation}",
+		"", "\\[ e = f \\]",
+		"", "\\begin{theorem}[Sum]\\label{thm:sum}", "For all $x$,", "\\begin{equation}", "x + 0 = x \\label{eq:c}", "\\end{equation}", "\\end{theorem}",
+		"", "\\begin{align}", "g &= h \\label{eq:d} \\\\", "i &= j \\label{eq:e}", "\\end{align}",
+		"", "```math", "k = l \\label{eq:f}", "```",
+	].join("\n"));
+	env.plugin.linkTheorems(c);
+	assert.deepEqual(texErrors(c), []);
+	assert.equal(c.querySelector(".zs-env-thm").dataset.label, "thm:sum", "the box keeps its own label");
+	assert.deepEqual(eqNums(c),
+		[["eq:a", "(1)"], ["eq:b", "(2)"], ["", ""], ["eq:c", "(3)"], ["eq:d | eq:e", "(4)–(5)"], ["eq:f", "(6)"]]);
+	assert.doesNotMatch(c.textContent, /\\label/);
+	assert.deepEqual(leftoverMarkup(c), []);
+});
+
+test("equation refs: \\eqref and \\ref chips resolve to (n), a \\tag keeps its own text, refs inside maths render", () => {
+	const c = render(env, [
+		"$$ y = x \\label{eq:id} $$",
+		"", "$$ z = 2 \\tag{2.1} \\label{eq:two_b} $$",
+		"", "By \\eqref{eq:id}, \\ref{eq:two_b} and \\eqref{eq:nope}; inline $\\eqref{eq:id}$ and $a = \\ref{eq:two_b}$.",
+		"", "$$ w = y \\quad \\text{by } \\eqref{eq:id} $$",
+	].join("\n"));
+	env.plugin.linkTheorems(c);
+	assert.deepEqual(texErrors(c), []);
+	assert.deepEqual([...c.querySelectorAll(".zs-ref")].map(r => [r.textContent, r.classList.contains("zs-ref-ok")]),
+		[["(1)", true], ["(2.1)", true], ["eq:nope", false]]);
+	const blocks = c.querySelectorAll(".zs-math-block");
+	assert.deepEqual(JSON.parse(blocks[1].dataset.eqs), [{ labels: ["eq:two_b"], tag: "(2.1)" }]);
+	assert.match(blocks[1].querySelector("math").textContent, /\(2\.1\)/, "KaTeX still draws the tag");
+	assert.equal(blocks[1].querySelector(".zs-eq-num"), null, "a tagged equation takes no number of its own");
+	assert.deepEqual([...c.querySelectorAll("mtext[data-ref]")].map(m => m.textContent), ["(1)", "(2.1)", "(1)"]);
+	assert.match(c.querySelector(".zs-ref-ok").title, /Equation \(1\)/);
+});
+
+test("equation refs: following one scrolls to the equation and flashes it", () => {
+	const c = render(env, "$$ y = x \\label{eq:id} $$\n\nSee \\eqref{eq:id}.");
+	c.classList.add("zs-log");
+	c.scrollTo = () => {};
+	env.plugin.linkTheorems(c);
+	const root = {};
+	const view = { logEl: c, doc: { defaultView: { setTimeout() {} } } };
+	env.plugin._views.set(root, view);
+	env.plugin.followRef(root, c.querySelector(".zs-ref"));
+	assert.equal(view.backStack.length, 1);
+	assert.ok(c.querySelector(".zs-math-block").classList.contains("zs-flash"));
+});
+
+test("equation labels: a note keeps no \\label and no \\eqref inside maths", () => {
+	const note = env.plugin.noteHTML("Q", "$$ y = x \\label{eq:a} $$\n\n\\begin{lemma}\\label{lem:a}\n\\begin{equation}\nz = 1 \\label{eq:b}\n\\end{equation}\n\\end{lemma}\n\nInline $\\eqref{eq:a}$.");
+	assert.doesNotMatch(note, /\\label|\\eqref/);
+	assert.match(note, /<pre class="math">\$\$y = x\$\$<\/pre>/);
+});
+
+test("real moving-average answer: equation labels render and every reference resolves", () => {
+	const c = render(env, fixture("moving-average-real.md"));
+	env.plugin.linkTheorems(c);
+	assert.deepEqual(texErrors(c), []);
+	assert.deepEqual([...c.querySelectorAll(".zs-ref-missing")].map(r => r.dataset.ref), []);
+	assert.deepEqual([...c.querySelectorAll(".zs-ref")].map(r => r.textContent),
+		["Definition 1", "(1)", "(6)", "(7)", "(1)", "Proposition 2", "Proposition 3", "(1)"]);
+	assert.equal(c.querySelector(".zs-env-def").dataset.label, "def:moving-average");
+});
+
+test("equation labels: an escaped \\$ before a box's \\label is text, not the start of maths", () => {
+	const c = render(env, "\\begin{theorem}\nCosts \\$5, see \\label{thm:z} and $x$.\n\\end{theorem}\n\n\\ref{thm:z}");
+	env.plugin.linkTheorems(c);
+	assert.equal(c.querySelector(".zs-env").dataset.label, "thm:z");
+	assert.ok(c.querySelector(".zs-ref").classList.contains("zs-ref-ok"));
+	assert.doesNotMatch(c.textContent, /\\label/);
+});
+
+test("equation refs: following a label shared by a box and an equation goes where the chip points", () => {
+	const c = render(env, "$$ x \\label{dup} $$\n\n\\begin{lemma}\\label{dup}\nHi\n\\end{lemma}\n\n\\ref{dup}");
+	c.classList.add("zs-log");
+	c.scrollTo = () => {};
+	env.plugin.linkTheorems(c);
+	const root = {};
+	env.plugin._views.set(root, { logEl: c, doc: { defaultView: { setTimeout() {} } } });
+	assert.equal(c.querySelector(".zs-ref").textContent, "Lemma 1");
+	env.plugin.followRef(root, c.querySelector(".zs-ref"));
+	assert.ok(c.querySelector(".zs-env").classList.contains("zs-flash"));
+	assert.ok(!c.querySelector(".zs-math-block").classList.contains("zs-flash"));
+});
+
+test("equation labels: a label with a space is one equation", () => {
+	const c = render(env, "$$ a \\label{my eq} $$\n\n$$ b \\label{eq:b} $$\n\nSee \\eqref{my eq} and \\eqref{eq:b}.");
+	env.plugin.linkTheorems(c);
+	assert.deepEqual(eqNums(c), [["my eq", "(1)"], ["eq:b", "(2)"]]);
+	assert.deepEqual([...c.querySelectorAll(".zs-ref")].map(r => [r.textContent, r.classList.contains("zs-ref-ok")]), [["(1)", true], ["(2)", true]]);
+});
+
+test("equation labels: in an align each row has its own \\tag and number, shown beside the block", () => {
+	const c = render(env, [
+		"\\begin{align}", "a &= b \\tag{A} \\label{eq:A}\\\\", "c &= \\begin{cases} 1 \\\\ 2 \\end{cases} \\label{eq:B}", "\\end{align}",
+		"", "$$ e \\label{eq:C} $$",
+		"", "$$ f \\label{eq:D1} \\label{eq:D2} $$",
+		"", "\\eqref{eq:A} \\eqref{eq:B} \\eqref{eq:C} \\eqref{eq:D2}",
+	].join("\n"));
+	env.plugin.linkTheorems(c);
+	assert.deepEqual(texErrors(c), []);
+	assert.deepEqual(eqNums(c), [["eq:A | eq:B", "(A), (1)"], ["eq:C", "(2)"], ["eq:D1 | eq:D2", "(3)"]]);
+	assert.deepEqual([...c.querySelectorAll(".zs-ref")].map(r => r.textContent), ["(A)", "(1)", "(2)", "(3)"]);
+});
+
+test("equation refs: inside maths each reference is found again by a numbered token, not by its rendered text", () => {
+	const c = render(env, "$$ a \\label{eq:1'} $$\n\n$$ x \\label{a^b} $$\n\n$$ y \\label{ab} $$\n\n$$ b = \\eqref{eq:1'} + \\ref{a^b} + \\ref{ab} + \\ref{nope} $$");
+	env.plugin.linkTheorems(c);
+	assert.deepEqual(texErrors(c), []);
+	assert.deepEqual([...c.querySelectorAll("mtext[data-ref]")].map(m => [m.getAttribute("data-ref"), m.textContent]),
+		[["eq:1'", "(1)"], ["a^b", "(2)"], ["ab", "(3)"], ["nope", "(nope)"]]);
+	assert.doesNotMatch(c.querySelector(".zs-math-block:last-child annotation").textContent, /zsref/);
 });
