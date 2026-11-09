@@ -550,6 +550,55 @@ async function testDock(win, CS) {
 	CS.setPlacement("left");
 }
 
+// With a real window only: the dock follows a click in the items tree and the reader tabs.
+async function testDockFollows(win, CS) {
+	let doc = win.document;
+	let all = await Zotero.Items.getAll(Zotero.Libraries.userLibraryID);
+	let first = all.find(i => i.isRegularItem() && i.getField("title") === "Integration test paper");
+	let second = all.find(i => i.isRegularItem() && i.getField("title") === "Loss of Plasticity in Deep Continual Learning");
+	let attachment = Zotero.Items.get(second.getAttachments()[0]);
+	let dock = doc.getElementById("zusia-dock");
+	let shownPaper = () => {
+		let root = dock.querySelector(".zs-root");
+		return CS._views.get(root)?.ctx.paperItem?.id ?? null;
+	};
+	let follows = async (id, label) => {
+		let ok = await waitFor(() => shownPaper() === id, 15000, label).then(() => true, () => false);
+		check("dock follows: " + label, ok, { shown: shownPaper(), wanted: id });
+	};
+
+	await win.ZoteroPane.selectItem(first.id);
+	await follows(first.id, "a paper selected in the items tree");
+	await win.ZoteroPane.selectItem(second.id);
+	await follows(second.id, "the next paper selected");
+
+	await win.ZoteroPane.selectItem(first.id);
+	await follows(first.id, "back on the first paper before opening a reader");
+	let reader = await Zotero.Reader.open(attachment.id);
+	await follows(second.id, "the paper of the reader tab that opens");
+	await reader._initPromise;
+	await Zotero.Promise.delay(1500);
+	let dockRect = dock.getBoundingClientRect();
+	let tab = doc.getElementById(reader.tabID).getBoundingClientRect();
+	check("dock follows: the reader sits beside the dock, not under it", tab.left >= dockRect.right - 1 && tab.width > 400,
+		{ dockRight: Math.round(dockRect.right), reader: [Math.round(tab.left), Math.round(tab.width)] });
+	await snapshot(win, "zotero-dock-reader");
+
+	let closed = win.ZoteroContextPane.collapsed;
+	CS.setDockOpen(false);
+	CS.askAboutSelection(reader, { text: "PELICAN", pageLabel: "1" }, false);
+	let input = await waitFor(() => {
+		let el = dock.querySelector(".zs-root .zs-input");
+		return el && el.value.includes("PELICAN") && el;
+	}, 10000, "the passage in the message box").catch(() => null);
+	check("dock follows: Ask Zusia in the reader opens the dock with the passage, and leaves the context pane as it was",
+		!!input && CS.dockOpen() && win.ZoteroContextPane.collapsed === closed, { input: input?.value.slice(0, 60) });
+
+	win.Zotero_Tabs.select("zotero-pane");
+	await follows(first.id, "the library tab's selection when you go back to it");
+	win.Zotero_Tabs.close(reader.tabID);
+}
+
 async function testPrefs(CS) {
 	check("settings pane registered", Zotero.PreferencePanes.pluginPanes.some(p => p.id === CS.PREFS_PANE_ID));
 	let prefsWin = Zotero.Utilities.Internal.openPreferences(CS.PREFS_PANE_ID);
@@ -608,11 +657,17 @@ async function run() {
 		check("one stylesheet link, versioned so updates never reuse a cached copy",
 			links.length === 1 && /zusia\.css\?v=/.test(links[0].href), links.map(l => l.href));
 		let win = await waitFor(() => Zotero.getMainWindow() && Zotero.getMainWindow().ZoteroPane && Zotero.getMainWindow(), 30000, "main window");
+		// An item saved while Zotero is still loading the library breaks that load, and the
+		// items tree then stays on "Loading items…" for the whole run.
+		await Zotero.Libraries.userLibrary.waitForDataLoad("item");
 		await testSidebar(win, CS);
 		await testChatView(win, CS);
 		await testPrefs(CS);
 		await testReaderWidth(win, CS);
 		await testDock(win, CS);
+		if (!Services.env.exists("MOZ_HEADLESS")) {
+			await testDockFollows(win, CS);
+		}
 		if (Zotero.Prefs.get("extensions.zusia-tester.live", true)) {
 			await testLive(win, CS);
 		}

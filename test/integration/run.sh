@@ -5,6 +5,7 @@
 # and runs tester/bootstrap.js. Your normal Zotero profile and library are never
 # touched, and a Zotero you have open keeps running: -no-remote keeps them apart.
 # Results: test/integration/out/results.json and zotero-*.png, or $OUT if set
+#   HEADED=1 bash test/integration/run.sh   # macOS, with a window: also the reader checks
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 repo="$(cd "$here/../.." && pwd)"
@@ -42,8 +43,12 @@ PREFS
 # KEYRING=1 lets this test instance (only) reach the Secret Service keyring,
 # which Antigravity needs for its login inside the Flatpak sandbox.
 if [ "$(uname)" = Darwin ]; then
+	# HEADED=1 opens a real window: the reader and the items tree only work with one,
+	# so the tester then also checks that the dock follows them.
+	headless=(MOZ_HEADLESS=1 MOZ_HEADLESS_WIDTH=1500 MOZ_HEADLESS_HEIGHT=1400)
+	[ "${HEADED:-0}" = 1 ] && headless=(MOZ_HEADED=1)
 	# macOS has no timeout(1): a watchdog kills this instance, and only this one, by its pid.
-	MOZ_HEADLESS=1 MOZ_HEADLESS_WIDTH=1500 MOZ_HEADLESS_HEIGHT=1400 \
+	env "${headless[@]}" \
 		"${ZOTERO_APP:-/Applications/Zotero.app}/Contents/MacOS/zotero" -profile "$base/profile" -no-remote -ZoteroDebugText \
 		> "$out/zotero-debug.log" 2>&1 &
 	pid=$!
