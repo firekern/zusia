@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.2.0
 
 - 🗺️ **A reading map for every paper and book.** Zusia works out the printed page labels (*PDF 41 = printed 18*), the outline with page ranges, and where each equation, figure and table is. "Page 18" in a question means the printed page. Books from 150 pages on are split into section files, with no cap on their length. Antigravity, which cannot read files, gets pages chosen around the question, with the page on screen last, and can ask for up to three more pages. **Settings → Zusia → Troubleshooting → *Rebuild reading map*** works it out again.
 - 📍 **Reading progress.** The pages you turn to in Zotero's reader are noted, so the assistant knows where you are and what you have read. Turn it off in **Settings → Zusia → Chat → *Track reading progress***.
