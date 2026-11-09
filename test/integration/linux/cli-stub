@@ -1,0 +1,18 @@
+#!/bin/bash
+# Installed in the image as agy and the other two assistant CLIs: the checks
+# need all three found on PATH and `agy models` answered, as on a machine with
+# them. Not named after them in the repo, which test/repo.test.mjs forbids.
+# Any real call fails loudly, since the container runs no assistant.
+set -euo pipefail
+# Exiting before Zusia closes our stdin makes that close fail, which Zusia logs
+# as an error; the real CLIs start too slowly to hit that race.
+cat > /dev/null
+case "$(basename "$0") ${1:-}" in
+	"agy models")
+		printf 'gemini-3-pro\tGemini 3 Pro\ngemini-3-flash\tGemini 3 Flash\n'
+		;;
+	*)
+		echo "$(basename "$0") stub: no assistant runs in the container (args: $*)" >&2
+		exit 1
+		;;
+esac

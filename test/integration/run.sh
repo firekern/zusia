@@ -1,18 +1,21 @@
 #!/bin/bash
-# Starts a separate, headless Zotero (Flatpak on Linux, /Applications/Zotero.app
-# on macOS) with a throwaway profile and library, loads Zusia straight from src/,
+# Starts a separate, headless Zotero (/Applications/Zotero.app on macOS; on Linux
+# the binary in $ZOTERO_BIN if set, Flatpak otherwise) with a throwaway profile
+# and library, loads Zusia straight from src/,
 # and runs tester/bootstrap.js. Your normal Zotero profile and library are never
 # touched, and a Zotero you have open keeps running: -no-remote keeps them apart.
-# Results: test/integration/out/results.json and zotero-*.png
+# Results: test/integration/out/results.json and zotero-*.png, or $OUT if set
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 repo="$(cd "$here/../.." && pwd)"
 # Must live under $HOME: the Flatpak sandbox cannot see the host's /tmp.
 base="$HOME/.cache/zusia-integration"
-out="$here/out"
+out="${OUT:-$here/out}"
 
-rm -rf "$base" "$out"
+rm -rf "$base"
+# Emptied rather than removed, since $OUT may be a container bind mount.
 mkdir -p "$base/profile/extensions" "$base/data" "$out"
+find "$out" -mindepth 1 -delete
 echo "$repo/src" > "$base/profile/extensions/zusia@firekern.github.io"
 echo "$here/tester" > "$base/profile/extensions/zusia-tester@firekern.github.io"
 cat > "$base/profile/user.js" <<PREFS
@@ -46,6 +49,10 @@ if [ "$(uname)" = Darwin ]; then
 	watchdog=$!
 	wait "$pid" || true
 	kill "$watchdog" 2>/dev/null || true
+elif [ -n "${ZOTERO_BIN:-}" ]; then
+	MOZ_HEADLESS=1 MOZ_HEADLESS_WIDTH=1500 MOZ_HEADLESS_HEIGHT=1400 \
+		timeout "${TIMEOUT:-420}" "$ZOTERO_BIN" -profile "$base/profile" -no-remote -ZoteroDebugText \
+		> "$out/zotero-debug.log" 2>&1 || true
 else
 	keyring=()
 	[ "${KEYRING:-0}" = 1 ] && keyring=(--talk-name=org.freedesktop.secrets)
