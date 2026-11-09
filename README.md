@@ -17,7 +17,7 @@
 
 **TL;DR**
 
-- 💬 A chat **next to the PDF** that reads the **whole paper** and fills Zotero's side pane.
+- 💬 A chat **next to the PDF** that reads the **whole paper**, in its own panel on the left of the window.
 - ✏️ Answers with **LaTeX**, **drawings** and numbered **theorem boxes**.
 - 🔑 Uses **Claude Code, Codex or Antigravity** with your own login. No API keys.
 - ⏱️ Install in 2 minutes: [jump to Install](#install).
@@ -91,7 +91,7 @@
 1. **Install one assistant CLI** and sign in: [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex](https://github.com/openai/codex) or Antigravity (`agy`).
 2. **Download `zusia.xpi`** from the [latest release](https://github.com/firekern/zusia/releases/latest).
 3. **In Zotero:** Tools → Plugins → ⚙ → *Install Plugin From File…* → pick the `.xpi`. Restart if asked.
-4. **Open a paper.** Zusia appears in the side pane and starts the setup wizard.
+4. **Open a paper.** Zusia appears in a panel on the left and starts the setup wizard. To have it in Zotero's item pane instead, choose **Settings → Zusia → Chat → *Where the chat is***.
 
 Updates arrive on their own after that: Zotero checks the release feed.
 

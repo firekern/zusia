@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- ⬅️ **The chat has its own panel on the left.** Zusia is now a column at the left edge of the window, beside the library and the reader, and no longer a section among Zotero's item details. It follows the paper you select or open and stays on it while nothing is selected. Drag its edge to resize it (double-click to reset), hide it with the button in its header and bring it back from the rail it leaves. **Settings → Zusia → Chat → *Where the chat is*** puts it back in the item pane.
+
 ## 1.2.0
 
 - 🗺️ **A reading map for every paper and book.** Zusia works out the printed page labels (*PDF 41 = printed 18*), the outline with page ranges, and where each equation, figure and table is. "Page 18" in a question means the printed page. Books from 150 pages on are split into section files, with no cap on their length. Antigravity, which cannot read files, gets pages chosen around the question, with the page on screen last, and can ask for up to three more pages. **Settings → Zusia → Troubleshooting → *Rebuild reading map*** works it out again.
