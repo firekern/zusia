@@ -275,6 +275,39 @@ async function testChatView(win, CS) {
 	await Zotero.Promise.delay(300);
 }
 
+// The four layouts in Zotero's item pane, which is narrower than the dock and whose header
+// holds one button more.
+async function testPaneLayouts(win, CS) {
+	let details = win.document.getElementById("zotero-item-details");
+	let root = details.querySelector(".zs-root");
+	let pane = win.document.getElementById("zotero-item-pane");
+	let before = CS.getAppearance();
+	let misfits = [];
+	for (let layout of Object.keys(CS.LAYOUTS)) {
+		CS.saveAppearance(CS.layoutLook(layout, before));
+		await waitFor(() => root.dataset.layout === layout, 5000, "the " + layout + " layout in the item pane");
+		await Zotero.Promise.delay(400);
+		let header = root.querySelector(".zs-header");
+		let buttons = [...header.querySelectorAll(".zs-icon")].filter(b => b.getClientRects().length);
+		// By their middles: the named button is a little taller than the icon ones beside it.
+		let middles = buttons.map((b) => {
+			let r = b.getBoundingClientRect();
+			return r.top + r.height / 2;
+		});
+		let rows = Math.max(...middles) - Math.min(...middles) > 12 ? 2 : 1;
+		let composer = root.querySelector(".zs-composer").getBoundingClientRect();
+		let paneRight = pane.getBoundingClientRect().right;
+		if (rows !== 1 || root.scrollWidth > root.clientWidth + 1 || composer.right > paneRight) {
+			misfits.push({ layout, rows, width: [root.scrollWidth, root.clientWidth], composerRight: Math.round(composer.right), paneRight: Math.round(paneRight) });
+		}
+		let rect = root.getBoundingClientRect();
+		await snapshot(win, "zotero-pane-layout-" + layout, { x: rect.x - 8, y: rect.y - 8, width: rect.width + 16, height: Math.min(rect.height + 16, 900) });
+	}
+	CS.saveAppearance(before);
+	await waitFor(() => root.dataset.layout === before.layout, 5000, "the layout put back");
+	check("layouts in the item pane: every header is one row, and nothing is wider than the pane", misfits.length === 0, misfits);
+}
+
 // A paper with a real PDF attachment. Zotero's reader cannot open headless and the
 // pane width cannot be forced here, so reader widths are covered by the harness.
 async function testReaderWidth(win, CS) {
@@ -791,6 +824,7 @@ async function run() {
 		await Zotero.Libraries.userLibrary.waitForDataLoad("item");
 		await testSidebar(win, CS);
 		await testChatView(win, CS);
+		await testPaneLayouts(win, CS);
 		await testPrefs(CS);
 		await testReaderWidth(win, CS);
 		await testDock(win, CS);
