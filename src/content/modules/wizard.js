@@ -135,23 +135,11 @@ Object.assign(Zusia, {
 					}
 				}));
 			section("palette", "Style", styles);
-			let swatches = this.el(doc, "div", "zs-swatches");
-			swatches.setAttribute("role", "radiogroup");
-			let current = appearance().accent;
-			for (let accent of this.ACCENTS) {
-				let swatch = this.el(doc, "button", "zs-swatch");
-				swatch.type = "button";
-				swatch.setAttribute("role", "radio");
-				swatch.setAttribute("aria-label", accent.name);
-				swatch.title = accent.name;
-				swatch.setAttribute("aria-checked", String(accent.color === current));
-				swatch.style.background = accent.color || "var(--accent-blue, " + this.ZOTERO_ACCENT + ")";
-				swatch.addEventListener("click", () => {
-					swatches.querySelectorAll(".zs-swatch").forEach(s => s.setAttribute("aria-checked", String(s === swatch)));
-					setAppearance({ accent: accent.color });
-				});
-				swatches.appendChild(swatch);
-			}
+			let swatches = this.accentSwatches(doc, (accent) => {
+				setAppearance({ accent });
+				this.markAccent(swatches, accent);
+			});
+			this.markAccent(swatches, appearance().accent);
 			section("sparkle", "Colour", swatches);
 		}
 		else if (name === "buddy") {

@@ -13,25 +13,7 @@ Object.assign(Zusia, {
 		}
 		let doc = root.ownerDocument;
 		let dir = view.ctx.dir;
-		root.querySelector(".zs-panel")?.remove();
-		let panel = this.el(doc, "div", "zs-panel zs-memory-panel");
-		panel.setAttribute("role", "dialog");
-		panel.setAttribute("aria-label", "Reading memory");
-		let head = this.el(doc, "div", "zs-panel-head");
-		let title = this.el(doc, "div", "zs-panel-title");
-		title.append(this.svgIcon(doc, "memory"), this.el(doc, "span", null, "Reading memory"));
-		let close = this.iconButton(doc, "zs-small zs-panel-close", "Close", "remove", () => panel.remove());
-		head.append(title, close);
-		let body = this.el(doc, "div", "zs-panel-body");
-		panel.append(head, body);
-		panel.addEventListener("keydown", (event) => {
-			if (event.key === "Escape") {
-				event.preventDefault();
-				event.stopPropagation();
-				panel.remove();
-			}
-		});
-		root.appendChild(panel);
+		let { panel, body } = this.openPanel(root, { label: "Reading memory", icon: "memory", className: "zs-memory-panel" });
 
 		let structure = await this.cachedStructure(dir);
 		let progress = this.trackingReading() ? await this.loadProgress(dir) : null;

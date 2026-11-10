@@ -47,16 +47,7 @@ Object.assign(Zusia, {
 
 		let paperCard = this.el(doc, "div", "zs-paper-card");
 		paperCard.hidden = true;
-		paperCard.setAttribute("role", "button");
-		paperCard.tabIndex = 0;
-		let openMemory = () => this.openMemory(root).catch(e => this.logError("openMemory", e));
-		paperCard.addEventListener("click", openMemory);
-		paperCard.addEventListener("keydown", (event) => {
-			if (event.key === "Enter" || event.key === " ") {
-				event.preventDefault();
-				openMemory();
-			}
-		});
+		this.asButton(paperCard, () => this.openMemory(root).catch(e => this.logError("openMemory", e)));
 
 		let log = this.el(doc, "div", "zs-log");
 		log.appendChild(this.el(doc, "div", "zs-notice", "Loading…"));

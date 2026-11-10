@@ -67,6 +67,77 @@ Object.assign(Zusia, {
 		return this._iconCache.get(url);
 	},
 
+	// Every chat on screen, in every main window.
+	*allRoots() {
+		for (let win of Zotero.getMainWindows()) {
+			yield* win.document.querySelectorAll(".zs-root");
+		}
+	},
+
+	// For an element that is not a <button> but acts as one: a click, Enter and Space run it.
+	asButton(node, run) {
+		node.setAttribute("role", "button");
+		node.tabIndex = 0;
+		node.addEventListener("click", run);
+		node.addEventListener("keydown", (event) => {
+			if (event.key === "Enter" || event.key === " ") {
+				event.preventDefault();
+				run();
+			}
+		});
+	},
+
+	// A sheet over the chat (Clarifications, Reading memory): one at a time, closed by its
+	// button or Escape. The caller fills `body` and may add to `head`.
+	openPanel(root, { label, icon, className = "" }) {
+		let doc = root.ownerDocument;
+		root.querySelector(".zs-panel")?.remove();
+		let panel = this.el(doc, "div", ("zs-panel " + className).trim());
+		panel.setAttribute("role", "dialog");
+		panel.setAttribute("aria-label", label);
+		let head = this.el(doc, "div", "zs-panel-head");
+		let title = this.el(doc, "div", "zs-panel-title");
+		title.append(this.svgIcon(doc, icon), this.el(doc, "span", null, label));
+		head.append(title, this.iconButton(doc, "zs-small zs-panel-close", "Close", "remove", () => panel.remove()));
+		let body = this.el(doc, "div", "zs-panel-body");
+		panel.append(head, body);
+		panel.addEventListener("keydown", (event) => {
+			if (event.key === "Escape") {
+				event.preventDefault();
+				event.stopPropagation();
+				panel.remove();
+			}
+		});
+		root.appendChild(panel);
+		return { panel, head, body };
+	},
+
+	// The accent colours as radio swatches; markAccent() says which one is chosen.
+	accentSwatches(doc, onPick) {
+		let group = this.el(doc, "div", "zs-swatches");
+		group.setAttribute("role", "radiogroup");
+		for (let accent of this.ACCENTS) {
+			let swatch = this.el(doc, "button", "zs-swatch");
+			swatch.type = "button";
+			swatch.setAttribute("role", "radio");
+			swatch.dataset.color = accent.color;
+			swatch.title = accent.name;
+			swatch.setAttribute("aria-label", accent.name);
+			swatch.style.background = accent.color || "var(--accent-blue, " + this.ZOTERO_ACCENT + ")";
+			swatch.addEventListener("click", () => onPick(accent.color));
+			group.appendChild(swatch);
+		}
+		return group;
+	},
+
+	// A swatch with no colour of its own (the custom one in Settings) stands for every other colour.
+	markAccent(group, accent) {
+		let preset = this.ACCENTS.some(a => a.color === accent);
+		for (let swatch of group.querySelectorAll(".zs-swatch")) {
+			swatch.setAttribute("aria-checked", String(swatch.dataset.color !== undefined ? swatch.dataset.color === accent : !preset));
+		}
+	},
+
 	iconButton(doc, className, title, icon, onClick) {
 		let button = this.el(doc, "button", "zs-icon " + (className || ""));
 		button.type = "button";

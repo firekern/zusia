@@ -32,16 +32,7 @@ Object.assign(Zusia, {
 		}
 		// The chip opens the Memory sheet: what Zusia keeps about this paper.
 		chip.title += "\nClick to see the reading map and what Zusia remembers";
-		chip.setAttribute("role", "button");
-		chip.tabIndex = 0;
-		let open = () => this.openMemory(root).catch(e => this.logError("openMemory", e));
-		chip.addEventListener("click", open);
-		chip.addEventListener("keydown", (event) => {
-			if (event.key === "Enter" || event.key === " ") {
-				event.preventDefault();
-				open();
-			}
-		});
+		this.asButton(chip, () => this.openMemory(root).catch(e => this.logError("openMemory", e)));
 		holder.appendChild(chip);
 		let status = this.memoryStatus(this._views.get(root)?.ctx.dir);
 		if (status) {

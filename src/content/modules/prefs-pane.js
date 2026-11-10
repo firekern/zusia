@@ -348,13 +348,7 @@ Object.assign(Zusia, {
 			appearance = Object.assign({}, appearance, changes);
 			this.saveAppearance(appearance);
 			this.applyAppearance(prefsRoot, appearance);
-			let isPreset = this.ACCENTS.some(a => a.color === appearance.accent);
-			swatches.querySelectorAll(".zs-swatch").forEach((swatch) => {
-				let checked = swatch.dataset.color !== undefined
-					? swatch.dataset.color === appearance.accent
-					: !isPreset;
-				swatch.setAttribute("aria-checked", String(checked));
-			});
+			this.markAccent(swatches, appearance.accent);
 			glassRows.forEach(row => (row.hidden = appearance.style !== "glass"));
 			glowRows.forEach(row => (row.hidden = appearance.style !== "glass" || !appearance.glow));
 			imageRows.forEach(row => (row.hidden = !appearance.background));
@@ -367,19 +361,7 @@ Object.assign(Zusia, {
 				String(["square", "rounded", "round"][i] === prefsRoot.dataset.corners)));
 		};
 
-		let swatches = this.el(doc, "div", "zs-swatches");
-		swatches.setAttribute("role", "radiogroup");
-		for (let accent of this.ACCENTS) {
-			let swatch = this.el(doc, "button", "zs-swatch");
-			swatch.type = "button";
-			swatch.setAttribute("role", "radio");
-			swatch.dataset.color = accent.color;
-			swatch.title = accent.name;
-			swatch.setAttribute("aria-label", accent.name);
-			swatch.style.background = accent.color || "var(--accent-blue, " + this.ZOTERO_ACCENT + ")";
-			swatch.addEventListener("click", () => update({ accent: accent.color }));
-			swatches.appendChild(swatch);
-		}
+		let swatches = this.accentSwatches(doc, accent => update({ accent }));
 		let custom = this.el(doc, "label", "zs-swatch zs-swatch-custom");
 		custom.title = "Custom colour";
 		let picker = doc.createElement("input");

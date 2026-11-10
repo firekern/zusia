@@ -436,10 +436,8 @@ Object.assign(Zusia, {
 	},
 
 	refreshAllSidebars() {
-		for (let win of Zotero.getMainWindows()) {
-			for (let root of win.document.querySelectorAll(".zs-root")) {
-				this.refreshRoot(root);
-			}
+		for (let root of this.allRoots()) {
+			this.refreshRoot(root);
 		}
 	},
 

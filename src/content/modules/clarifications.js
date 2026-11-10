@@ -37,27 +37,10 @@ Object.assign(Zusia, {
 			return;
 		}
 		let doc = root.ownerDocument;
-		root.querySelector(".zs-panel")?.remove();
-		let panel = this.el(doc, "div", "zs-panel");
-		panel.setAttribute("role", "dialog");
-		panel.setAttribute("aria-label", "Clarifications");
-		let head = this.el(doc, "div", "zs-panel-head");
+		let { panel, head, body } = this.openPanel(root, { label: "Clarifications", icon: "clarifications" });
 		let back = this.iconButton(doc, "zs-small zs-panel-back", "All clarifications", "previous", () => showList());
-		let title = this.el(doc, "div", "zs-panel-title");
-		title.append(this.svgIcon(doc, "clarifications"), this.el(doc, "span", null, "Clarifications"));
-		let close = this.iconButton(doc, "zs-small zs-panel-close", "Close", "remove", () => closePanel());
-		head.append(back, title, close);
-		let body = this.el(doc, "div", "zs-panel-body");
-		panel.append(head, body);
+		head.prepend(back);
 		let closePanel = () => panel.remove();
-		panel.addEventListener("keydown", (event) => {
-			if (event.key === "Escape") {
-				event.preventDefault();
-				event.stopPropagation();
-				closePanel();
-			}
-		});
-		root.appendChild(panel);
 
 		let list = (await this.loadClarifications(view.ctx.dir)).sort((a, b) => (b.ts || 0) - (a.ts || 0));
 
