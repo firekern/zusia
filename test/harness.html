@@ -111,8 +111,11 @@
 		if (!params.get("dock")) root.querySelector(".zs-log").style.maxHeight = "none";
 		CS._views.set(root, view);
 		// &reading=1 adds where you are in the paper, as the reader reports it.
-		CS.renderPaperChip(root, Object.assign({ label: "Dohare et al., 2024", title: "Loss of plasticity in deep continual learning" },
-			params.get("reading") ? { reading: "§3 · p. 12 · 4/9 read", readFraction: 0.42 } : {}));
+		const info = Object.assign({ label: "Dohare et al., 2024", title: "Loss of plasticity in deep continual learning" },
+			params.get("reading") ? { reading: "§3 · p. 12 · 4/9 read", readFraction: 0.42 } : {});
+		CS.renderPaperChip(root, info);
+		// The header names the paper where the chat fills its column, as renderContent does.
+		CS.renderPaperTitle(root, info);
 		return view;
 	}
 	CS._agyModels = [

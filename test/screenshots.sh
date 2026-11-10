@@ -43,7 +43,7 @@ user_pref("browser.shell.checkDefaultBrowser", false);
 user_pref("datareporting.policy.dataSubmissionEnabled", false);
 PREFS
 	for scenario in "${SCENARIOS[@]}"; do
-		name=$(echo "$scenario" | sed -E 's/fixture=//; s/\.md//; s/&(zoom|width)=[0-9.]+//g; s/&(model|effort)=[a-z]+//g; s/[^a-zA-Z0-9]+/-/g')
+		name=$(echo "$scenario" | sed -E 's/fixture=//; s/\.md//; s/&zoom=[0-9.]+//g; s/&(model|effort)=[a-z]+//g; s/[^a-zA-Z0-9]+/-/g')
 		out="$PWD/out/$scheme-$name.png"
 		timeout 60 firefox --headless --no-remote --profile "$profile" \
 			--window-size=${WIDTH:-940},4000 --screenshot "$out" \
