@@ -238,6 +238,11 @@ Object.assign(Zusia, {
 		else if (name === "done") {
 			hero(mascotIcon(), "Ready!");
 			step.appendChild(this.el(doc, "div", "zs-wizard-sub", "Change anything later in Settings."));
+			// The one thing about the panel nothing on screen says.
+			if (root.closest(".zs-dock")) {
+				step.appendChild(this.el(doc, "div", "zs-wizard-sub zs-wizard-tip",
+					this.shortcutLabel(this.DOCK_KEY) + " shows and hides this panel."));
+			}
 		}
 		return step;
 	},

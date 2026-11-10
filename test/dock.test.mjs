@@ -225,3 +225,14 @@ test("the rail wears the buddy and the accent chosen in Settings", () => {
 	assert.equal(dock().querySelectorAll(".zs-dock-open").length, 1);
 	assert.equal(dock().style.getPropertyValue("--zs-accent"), "#6d4fd6");
 });
+
+test("setup wizard: its last step says how to show and hide the panel, only where there is one", () => {
+	const { plugin, dock, document } = mainWindow();
+	plugin.applyPlacement();
+	const step = plugin.wizardStep(dock().querySelector(".zs-root"), "done");
+	assert.equal(step.querySelector(".zs-wizard-tip").textContent, "Alt+Z shows and hides this panel.");
+	const body = document.createElement("div");
+	document.body.appendChild(body);
+	plugin.renderSkeleton(document, body);
+	assert.equal(plugin.wizardStep(body.querySelector(".zs-root"), "done").querySelector(".zs-wizard-tip"), null);
+});
