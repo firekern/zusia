@@ -528,6 +528,36 @@ async function testDock(win, CS) {
 	await snapshot(win, "zotero-dock-window");
 	await snapshot(win, "zotero-dock", { x: dockRect.x, y: dockRect.y, width: dockRect.width + 4, height: dockRect.height });
 
+	// A 13-inch laptop: the dock and Zotero's three columns have to share the width.
+	win.resizeTo(1180, 800);
+	await Zotero.Promise.delay(900);
+	let small = {
+		window: win.innerWidth,
+		dock: Math.round(dock.getBoundingClientRect().width),
+		collections: Math.round(doc.getElementById("zotero-collections-pane").getBoundingClientRect().width),
+		items: Math.round(doc.getElementById("zotero-items-pane").getBoundingClientRect().width),
+		itemPaneRight: Math.round(doc.getElementById("zotero-item-pane").getBoundingClientRect().right),
+		itemPane: Math.round(doc.getElementById("zotero-item-pane").getBoundingClientRect().width),
+		layout: Zotero.Prefs.get("layout"),
+	};
+	small.drawer = dock.classList.contains("zs-dock-drawer");
+	check("dock: on a window too narrow for it, it lies over the library and Zotero's panes stay inside the window",
+		small.drawer && small.itemPaneRight <= small.window + 1 && small.items >= 250, small);
+	await snapshot(win, "zotero-dock-laptop");
+	win.resizeTo(1300, 800);
+	await Zotero.Promise.delay(900);
+	let medium = {
+		window: win.innerWidth,
+		dock: Math.round(dock.getBoundingClientRect().width),
+		drawer: dock.classList.contains("zs-dock-drawer"),
+		itemPaneRight: Math.round(doc.getElementById("zotero-item-pane").getBoundingClientRect().right),
+		items: Math.round(doc.getElementById("zotero-items-pane").getBoundingClientRect().width),
+	};
+	check("dock: on a 13-inch window it narrows to the room there is, beside Zotero's panes",
+		!medium.drawer && medium.dock >= 280 && medium.dock < 380 && medium.itemPaneRight <= medium.window + 1 && medium.items >= 250, medium);
+	win.resizeTo(1500, 1400);
+	await Zotero.Promise.delay(900);
+
 	CS.setDockWidth(520);
 	await Zotero.Promise.delay(300);
 	check("dock: takes the width it is given", Math.round(dock.getBoundingClientRect().width) === 520, dock.getBoundingClientRect().width);

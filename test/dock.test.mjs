@@ -152,13 +152,13 @@ test("dragging the dock's edge resizes it within its limits and remembers the wi
 	pointer("pointermove", 100);
 	assert.equal(dock().style.width, "280px", "never narrower than the composer needs");
 	pointer("pointermove", 2000);
-	assert.equal(dock().style.width, "800px", "Zotero's own panes keep 600px of a 1400px window");
-	pointer("pointermove", 620);
-	pointer("pointerup", 620);
-	assert.equal(prefs[PREFIX + "dockWidth"], 500);
-	assert.equal(dock().style.width, "500px");
+	assert.equal(dock().style.width, "473px", "the library's panes keep the 927px they need of a 1400px window");
+	pointer("pointermove", 560);
+	pointer("pointerup", 560);
+	assert.equal(prefs[PREFIX + "dockWidth"], 440);
+	assert.equal(dock().style.width, "440px");
 	pointer("pointermove", 900);
-	assert.equal(dock().style.width, "500px", "the drag ended with the release");
+	assert.equal(dock().style.width, "440px", "the drag ended with the release");
 	resizer.dispatchEvent(new window.MouseEvent("dblclick", { bubbles: true }));
 	assert.equal(prefs[PREFIX + "dockWidth"], 380, "a double click puts the width back");
 });
@@ -235,4 +235,43 @@ test("setup wizard: its last step says how to show and hide the panel, only wher
 	document.body.appendChild(body);
 	plugin.renderSkeleton(document, body);
 	assert.equal(plugin.wizardStep(body.querySelector(".zs-root"), "done").querySelector(".zs-wizard-tip"), null);
+});
+
+test("the dock never pushes Zotero's panes out of the window: it narrows, then becomes a drawer over them", () => {
+	const { plugin, window, document, dock, state, prefs } = mainWindow();
+	const resizeTo = (width) => {
+		Object.defineProperty(window, "innerWidth", { value: width, configurable: true });
+		window.dispatchEvent(new window.Event("resize"));
+	};
+	plugin.applyPlacement();
+	assert.equal(dock().style.width, "380px");
+	assert.equal(dock().classList.contains("zs-dock-drawer"), false);
+
+	resizeTo(1280);
+	assert.equal(dock().style.width, "353px", "a 13-inch laptop: the room left beside collections, items and item pane");
+	assert.equal(prefs[PREFIX + "dockWidth"], undefined, "the width you chose is kept for a wider window");
+	assert.equal(dock().classList.contains("zs-dock-drawer"), false);
+
+	resizeTo(1180);
+	assert.equal(dock().classList.contains("zs-dock-drawer"), true, "not even 280px of room: it lies over the library");
+	assert.equal(dock().style.width, "380px");
+
+	// Zotero says what its fixed panes take; with the item pane collapsed that is less.
+	document.documentElement.style.setProperty("--width-of-fixed-components", "237px");
+	resizeTo(1180);
+	assert.equal(dock().classList.contains("zs-dock-drawer"), false);
+	assert.equal(dock().style.width, "380px");
+	document.documentElement.style.removeProperty("--width-of-fixed-components");
+
+	state.tab = "tab-2";
+	resizeTo(960);
+	assert.equal(dock().classList.contains("zs-dock-drawer"), false, "a reader shrinks further than the library");
+	assert.equal(dock().style.width, "360px");
+
+	resizeTo(700);
+	assert.equal(dock().classList.contains("zs-dock-drawer"), true);
+	plugin.setDockOpen(false);
+	assert.equal(dock().classList.contains("zs-dock-drawer"), false, "the rail is never a drawer");
+	plugin.removePlacement();
+	resizeTo(1400);
 });

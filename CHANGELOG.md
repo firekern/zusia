@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 💻 **The left panel no longer pushes Zotero's item pane off a laptop screen.** On a window about 1300px wide or less, the panel at its usual width left the library less room than its three columns need, and the item pane and its side rail slid past the right edge. The panel now narrows to the room there is; when even its narrowest does not fit, it lies over the library as a drawer (⌥Z / Alt+Z puts it away). The width you chose comes back on a wider window.
 - 🐱 *Visual*: a ring breathes around your buddy's face while it is writing an answer.
 - ⬇️ The scroll-to-latest button sits at the end of the row, off the text being read. In a short window *Rich* keeps its prompts to one row once the chat has started.
 

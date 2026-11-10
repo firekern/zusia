@@ -5,8 +5,12 @@ Object.assign(Zusia, {
 	// it is the same panel in the library and in every reader tab. The other placement is
 	// the section in Zotero's item pane (window.js).
 	DOCK_WIDTH: { min: 280, initial: 380 },
-	// Room the dock always leaves to Zotero's own panes when it is resized.
-	DOCK_KEEPS_FREE: 600,
+	// What Zotero's own panes need beside the dock. In the library that is its items list
+	// (370px, $min-width-items-pane) plus the panes Zotero itself counts as fixed, which it
+	// publishes on the root element; elsewhere the reader, which shrinks further.
+	ZOTERO_NEEDS: { items: 370, fixed: 557, reader: 600 },
+	// As a drawer, the dock leaves at least this much of the window uncovered.
+	DOCK_DRAWER_GAP: 120,
 	// With Alt, like the chat's own shortcuts: shows or hides the dock from anywhere in the window.
 	DOCK_KEY: "Z",
 	// What addDock gave each main window, taken back by removeDock.
@@ -89,6 +93,9 @@ Object.assign(Zusia, {
 		};
 		// Capturing, so it works whichever of Zotero's panes has the focus.
 		win.addEventListener("keydown", dock.onKey, true);
+		// The room beside Zotero's panes changes with the window.
+		dock.onResize = () => this.updateDock(win);
+		win.addEventListener("resize", dock.onResize);
 		this._docks.set(win, dock);
 		// The chat view of the item pane would hide Zotero's sections around a section that is gone.
 		doc.documentElement.setAttribute(this.VIEW_ATTR, "details");
@@ -106,6 +113,7 @@ Object.assign(Zusia, {
 		}
 		win.clearTimeout(dock.timer);
 		win.removeEventListener("keydown", dock.onKey, true);
+		win.removeEventListener("resize", dock.onResize);
 		dock.itemsView?.onSelect.removeListener(dock.onSelect);
 		// As when an item pane section goes: what was said about the paper is folded into its memory.
 		let dir = this._shownDirs.get(dock.body);
@@ -160,10 +168,23 @@ Object.assign(Zusia, {
 		this.updateDocks();
 	},
 
+	// How wide the dock may be in this window. When Zotero's panes would not keep what
+	// they need even beside the narrowest dock, it lies over them as a drawer instead of
+	// pushing them out of the window.
+	dockLimits(win) {
+		let needs = this.ZOTERO_NEEDS.reader;
+		if (win.Zotero_Tabs.selectedType === "library") {
+			let fixed = parseFloat(win.document.documentElement.style.getPropertyValue("--width-of-fixed-components"));
+			needs = this.ZOTERO_NEEDS.items + (Number.isFinite(fixed) ? fixed : this.ZOTERO_NEEDS.fixed);
+		}
+		let room = win.innerWidth - needs;
+		let drawer = room < this.DOCK_WIDTH.min;
+		return { drawer, max: Math.max(this.DOCK_WIDTH.min, drawer ? win.innerWidth - this.DOCK_DRAWER_GAP : room) };
+	},
+
 	dockWidth(win) {
-		let most = Math.max(this.DOCK_WIDTH.min, win.innerWidth - this.DOCK_KEEPS_FREE);
 		let wanted = this.getPref("dockWidth") || this.DOCK_WIDTH.initial;
-		return Math.round(Math.min(most, Math.max(this.DOCK_WIDTH.min, wanted)));
+		return Math.round(Math.min(this.dockLimits(win).max, Math.max(this.DOCK_WIDTH.min, wanted)));
 	},
 
 	setDockWidth(width) {
@@ -194,6 +215,7 @@ Object.assign(Zusia, {
 		dock.body.hidden = !open;
 		dock.resizer.hidden = !open;
 		dock.box.style.width = open ? this.dockWidth(win) + "px" : "";
+		dock.box.classList.toggle("zs-dock-drawer", open && this.dockLimits(win).drawer);
 		if (open) {
 			this.syncDock(win).catch(e => this.logError("syncDock", e));
 		}
@@ -211,8 +233,7 @@ Object.assign(Zusia, {
 		let move = (e) => {
 			width = startWidth + towardsEnd * (e.screenX - startX);
 			// The pref is written once, on release; meanwhile only this window follows the pointer.
-			let most = Math.max(this.DOCK_WIDTH.min, win.innerWidth - this.DOCK_KEEPS_FREE);
-			box.style.width = Math.min(most, Math.max(this.DOCK_WIDTH.min, width)) + "px";
+			box.style.width = Math.min(this.dockLimits(win).max, Math.max(this.DOCK_WIDTH.min, width)) + "px";
 		};
 		let end = () => {
 			resizer.removeEventListener("pointermove", move);

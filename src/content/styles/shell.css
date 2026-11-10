@@ -121,6 +121,19 @@
 :root[zs-dock] #appcontent {
 	min-width: 0;
 }
+/* A window too narrow for the dock beside Zotero's panes: it lies over them instead. */
+:root[zs-dock] #browser {
+	position: relative;
+}
+.zs-dock.zs-dock-drawer {
+	position: absolute;
+	inset-block: 0;
+	inset-inline-start: 0;
+	z-index: 10;
+	/* Over other panes it has to be opaque, which the pane material is not on every platform. */
+	background: var(--color-sidepane, var(--material-sidepane));
+	box-shadow: 4px 0 18px rgba(0, 0, 0, 0.22);
+}
 .zs-dock-body {
 	display: flex;
 	flex-direction: column;
