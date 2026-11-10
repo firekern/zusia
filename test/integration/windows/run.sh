@@ -20,8 +20,10 @@ docker build -q --platform linux/amd64 -t "$image" "$here" > /dev/null
 # Gecko's software compositor sometimes dies under Wine on emulated x86 before the
 # tester has finished, which says nothing about the plugin: such a run is repeated.
 for attempt in 1 2 3; do
-	rm -rf "$out"
+	# Emptied, not removed: Docker Desktop can mount a folder that was just deleted and
+	# made again as the deleted one, and the container then has no /out to write to.
 	mkdir -p "$out"
+	find "$out" -mindepth 1 -delete
 	docker run --rm --platform linux/amd64 \
 		-e TIMEOUT="${TIMEOUT:-900}" \
 		-v "$repo:/repo:ro" -v "$out:/out" -v "$here/entry.sh:/entry.sh:ro" \
