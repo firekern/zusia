@@ -4,12 +4,12 @@
 	position: relative;
 	min-width: 0;
 }
-/* Beaver's scroll-to-latest: a small floating round button over the log. */
-/* At the end of the row, where lines of text seldom reach: in the middle it sat on the words being read. */
+/* Beaver's scroll-to-latest: a small floating round button over the log. In the middle,
+   over lines the rule below has already faded out, so it never sits on words being read. */
 .zs-jump {
 	position: absolute;
-	inset-inline-end: 12px;
-	bottom: 10px;
+	inset-inline-start: calc(50% - 14px);
+	bottom: 8px;
 	z-index: 5;
 	width: 28px !important;
 	height: 28px !important;
@@ -18,6 +18,10 @@
 	background: var(--zs-overlay) !important;
 	box-shadow: var(--zs-shadow);
 	animation: zs-fade-in 0.15s ease-out;
+}
+/* More conversation below: its last lines fade out instead of being cut mid-letter. */
+.zs-log-wrap.zs-more-below > .zs-log {
+	mask-image: linear-gradient(to bottom, #000 calc(100% - 56px), transparent calc(100% - 4px));
 }
 .zs-jump .zs-i {
 	width: 14px !important;

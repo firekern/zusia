@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- ➡️ **The panel is on the right, and you choose the side.** Zusia's panel now sits at the right edge of the window. **Settings → Zusia → Chat → *Where the chat is*** has three choices: Left, Right, or the item pane. Changing sides keeps the conversation as it is.
+- 🪟 **The panel fills its column.** The chat was drawn as a rounded card inside a gutter of the pane's colour, one frame inside another; its background now runs from edge to edge.
+- ⬇️ While there is more conversation below, its last lines fade out instead of being cut mid-letter, and the *Scroll to latest* button sits in the middle of that fade, no longer on words you are reading.
+
 ## 1.6.4
 
 - 🐛 Zotero 7: a sheet (Clarifications, Reading memory) or the setup wizard opened over a short chat in the item pane was squeezed to the chat's height. It now gets the room it needs, as on newer Zotero.

@@ -202,3 +202,24 @@ test("a sheet or the wizard over the chat marks it, so it gets room without :has
 		}
 	}
 });
+
+test("while there is more below, the conversation is marked so its last lines fade under the jump button", () => {
+	const { root, plugin } = sidebar();
+	const log = root.querySelector(".zs-log");
+	const wrap = root.querySelector(".zs-log-wrap");
+	const jump = root.querySelector(".zs-jump");
+	const scrolledTo = (top) => {
+		Object.defineProperties(log, {
+			scrollHeight: { value: 2000, configurable: true },
+			clientHeight: { value: 600, configurable: true },
+			scrollTop: { value: top, configurable: true, writable: true },
+		});
+		plugin.updateJump(root);
+	};
+	scrolledTo(1400);
+	assert.deepEqual([wrap.classList.contains("zs-more-below"), jump.hidden], [false, true], "at the end");
+	scrolledTo(1340);
+	assert.deepEqual([wrap.classList.contains("zs-more-below"), jump.hidden], [true, true], "a little above: the fade, no button yet");
+	scrolledTo(900);
+	assert.deepEqual([wrap.classList.contains("zs-more-below"), jump.hidden], [true, false]);
+});

@@ -278,7 +278,11 @@ Object.assign(Zusia, {
 		let log = root.querySelector(".zs-log");
 		let jump = root.querySelector(".zs-jump");
 		if (log && jump) {
-			jump.hidden = log.scrollHeight - log.scrollTop - log.clientHeight < 120;
+			let below = log.scrollHeight - log.scrollTop - log.clientHeight;
+			jump.hidden = below < 120;
+			// The stylesheet fades the last lines out, so text is never cut mid-line at the
+			// edge nor legible under the button.
+			log.parentNode.classList.toggle("zs-more-below", below > 8);
 		}
 	},
 
