@@ -215,6 +215,8 @@ Object.assign(Zusia, {
 		}
 		root.style.setProperty("--zs-glass-pct", appearance.glassOpacity + "%");
 		root.style.setProperty("--zs-glass-strong-pct", Math.min(97, appearance.glassOpacity + 30) + "%");
+		// Menus and sheets lie over the chat's text, so they never go as clear as the cards can.
+		root.style.setProperty("--zs-overlay-pct", Math.max(94, Math.min(97, appearance.glassOpacity + 30)) + "%");
 		root.style.setProperty("--zs-blur", appearance.glassBlur + "px");
 		// The glow sits on top of the background image, so fade it as the image is
 		// turned up; at full visibility only the image shows.

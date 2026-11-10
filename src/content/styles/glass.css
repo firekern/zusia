@@ -18,7 +18,9 @@
 	--zs-glass-shadow: 0 10px 28px -12px rgba(25, 35, 70, 0.28), 0 1px 3px rgba(25, 35, 70, 0.07);
 
 	--zs-raised: var(--zs-glass);
-	--zs-overlay: var(--zs-glass-strong);
+	/* Menus, sheets and the wizard hold text over the chat's text: whatever the opacity
+	   chosen in Settings, and wherever the blur behind them is not drawn, they must read. */
+	--zs-overlay: color-mix(in srgb, var(--zs-glass-strong-tint) var(--zs-overlay-pct, 94%), transparent);
 	--zs-border: var(--zs-glass-line);
 	--zs-border-strong: color-mix(in srgb, var(--zs-accent) 35%, var(--zs-glass-line));
 	--zs-shadow: var(--zs-glass-shadow);
@@ -148,7 +150,7 @@
 .zs-root[data-style="glass"] .zs-menu {
 	padding: 5px;
 	border-radius: var(--zs-radius-card);
-	background: var(--zs-glass-strong);
+	background: var(--zs-overlay);
 	backdrop-filter: blur(calc(var(--zs-blur, 18px) * 1.5)) saturate(180%);
 }
 .zs-root[data-style="glass"] .zs-menu-item {

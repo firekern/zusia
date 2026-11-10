@@ -3,6 +3,7 @@
 ## Unreleased
 
 - ⌨️ **Alt+Z** (⌥Z on macOS) shows and hides the left panel from anywhere in the window; opening it puts the cursor in the message box. The rail the hidden panel leaves now wears your buddy and accent colour.
+- 🪟 **Menus, sheets and the setup wizard read clearly over the chat.** In the glass style they were clear enough for the conversation behind them to show through their own text; they now stay nearly opaque whatever the glass opacity, and the wizard dims the chat behind it more.
 
 ## 1.4.0
 

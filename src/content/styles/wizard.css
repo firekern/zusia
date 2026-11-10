@@ -9,7 +9,8 @@
 	justify-content: center;
 	padding: 10px 8px;
 	border-radius: inherit;
-	background: color-mix(in srgb, var(--zs-ground) 55%, transparent);
+	/* Setup comes before anything else: the chat behind it is only a hint of what follows. */
+	background: color-mix(in srgb, var(--zs-ground) 78%, transparent);
 	backdrop-filter: blur(10px) saturate(140%);
 	animation: zs-fade-in 0.2s ease-out;
 }

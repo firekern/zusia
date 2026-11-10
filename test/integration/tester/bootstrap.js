@@ -126,6 +126,8 @@ async function testSidebar(win, CS) {
 		!!sheet && sheet.querySelectorAll(".zs-memory-settings .zs-switch").length === 2 && !!sheet.querySelector(".zs-memory-reset") &&
 		sheetRect.height > 200, sheet && { height: sheetRect.height, text: sheet.textContent.slice(0, 120) });
 	if (sheet) {
+		// Past its fade-in, or the shot shows the chat through a half-opaque sheet.
+		await Zotero.Promise.delay(350);
 		await snapshot(win, "zotero-memory-sheet", { x: sheetRect.x, y: sheetRect.y, width: sheetRect.width, height: sheetRect.height });
 		sheet.dispatchEvent(new win.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
 	}
@@ -600,6 +602,32 @@ async function testLayouts(win, CS) {
 		Object.values(parts).every(p => p.fits), Object.fromEntries(Object.entries(parts).map(([k, p]) => [k, p.fits])));
 }
 
+// The first-run wizard in the left dock: every step has to fit, with its buttons in reach.
+async function testWizard(win, CS) {
+	let doc = win.document;
+	let dock = doc.getElementById("zusia-dock");
+	let root = dock.querySelector(".zs-root");
+	let wizard = CS.showWizard(root);
+	let misfits = [];
+	for (let name of CS.WIZARD_STEPS) {
+		await waitFor(() => wizard.dataset.step === name, 5000, "wizard step " + name);
+		await Zotero.Promise.delay(450);
+		let rootRect = root.getBoundingClientRect();
+		let panel = wizard.querySelector(".zs-wizard-panel").getBoundingClientRect();
+		let next = wizard.querySelector(".zs-wizard-next").getBoundingClientRect();
+		let stage = wizard.querySelector(".zs-wizard-stage");
+		let wide = [...stage.querySelectorAll("*")].filter(el => el.getBoundingClientRect().right > panel.right + 1).length;
+		if (panel.bottom > rootRect.bottom + 1 || next.bottom > rootRect.bottom || wide || stage.scrollWidth > stage.clientWidth + 1) {
+			misfits.push({ name, panelBottom: Math.round(panel.bottom), rootBottom: Math.round(rootRect.bottom), wide });
+		}
+		let rect = dock.getBoundingClientRect();
+		await snapshot(win, "zotero-wizard-" + name, { x: rect.x, y: rect.y, width: rect.width + 4, height: rect.height });
+		wizard.querySelector(".zs-wizard-next").click();
+	}
+	check("wizard: every step fits the dock, with Next in reach and nothing cut off sideways", misfits.length === 0, misfits);
+	check("wizard: finishing it closes it and marks setup as done", !root.querySelector(".zs-wizard") && CS.getPref("onboarded") === true);
+}
+
 // With a real window only: the dock follows a click in the items tree and the reader tabs.
 async function testDockFollows(win, CS) {
 	let doc = win.document;
@@ -719,6 +747,7 @@ async function run() {
 		await testReaderWidth(win, CS);
 		await testDock(win, CS);
 		await testLayouts(win, CS);
+		await testWizard(win, CS);
 		if (!Services.env.exists("MOZ_HEADLESS")) {
 			await testDockFollows(win, CS);
 		}
