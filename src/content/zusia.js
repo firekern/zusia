@@ -10,7 +10,7 @@ Zusia = {
 		"settings", "window", "dom", "sidebar", "attachments", "chat", "history", "reader",
 		"theorems", "clarifications", "memory-sheet", "wizard", "search", "ask", "prefs-pane",
 		"notes", "markdown", "drawings", "math", "context", "reading", "progress", "memory",
-		"jobs", "consolidation", "backends", "dock", "layouts",
+		"jobs", "consolidation", "binaries", "prompts", "backends", "dock", "layouts",
 	],
 	// The stylesheets in src/content/styles, in cascade order: a later file overrides an earlier one.
 	STYLES: [
