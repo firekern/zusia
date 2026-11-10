@@ -217,6 +217,18 @@
 	min-width: 0;
 	max-width: none;
 }
+/* In a short window the card, the grid and the two-row message box would leave the
+   conversation a few lines: once it has started, the prompts go back to one row. */
+@media (max-height: 780px) {
+	.zs-root[data-layout="rich"][data-chatting="true"] .zs-quick {
+		display: flex;
+		flex-wrap: nowrap;
+		overflow-x: auto;
+	}
+	.zs-root[data-layout="rich"][data-chatting="true"] .zs-pill {
+		flex: none;
+	}
+}
 .zs-root[data-layout="rich"][data-chatting="true"] .zs-pill {
 	min-height: 24px;
 	padding: 1px 8px;

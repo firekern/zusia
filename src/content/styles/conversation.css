@@ -5,14 +5,14 @@
 	min-width: 0;
 }
 /* Beaver's scroll-to-latest: a small floating round button over the log. */
+/* At the end of the row, where lines of text seldom reach: in the middle it sat on the words being read. */
 .zs-jump {
 	position: absolute;
-	left: 50%;
+	inset-inline-end: 12px;
 	bottom: 10px;
 	z-index: 5;
 	width: 28px !important;
 	height: 28px !important;
-	margin-left: -14px;
 	border: 1px solid var(--zs-border-strong) !important;
 	border-radius: 999px !important;
 	background: var(--zs-overlay) !important;
