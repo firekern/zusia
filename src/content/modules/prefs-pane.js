@@ -434,7 +434,18 @@ Object.assign(Zusia, {
 		);
 		glowRows.push(row("Glow intensity", slider("glowStrength", 0, 100, "%")));
 
+		let layouts = this.tiles(doc, Object.entries(this.LAYOUTS).map(([value, l]) => ({ value, label: l.label, icon: l.icon })),
+			appearance.layout, (v) => {
+				update(this.layoutLook(v, appearance));
+				// A layout sets several of the rows below, which only show the new values when drawn again.
+				card.replaceWith(this.buildAppearanceCard(doc, prefsRoot));
+			});
+		for (let tile of layouts.querySelectorAll(".zs-tile")) {
+			tile.title = this.LAYOUTS[tile.dataset.value].hint;
+		}
 		card.body.append(
+			row("Layout", layouts, "How much the chat shows around the conversation. Choosing one also sets the style, " +
+				"buddy, pattern, spacing and labels below, which you can then change one by one.", { stack: true }),
 			row("Style", this.segmented(doc, [["glass", "Glass"], ["flat", "Flat"]], appearance.style, v => update({ style: v }))),
 			row("Buddy", this.tiles(doc, Object.entries(this.MASCOTS).map(([value, m]) => ({ value, label: m.label, icon: m.icon || "none" })),
 				appearance.mascot, v => update({ mascot: v })), null, { stack: true }),

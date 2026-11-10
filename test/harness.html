@@ -39,6 +39,14 @@
 		Utilities: { Internal: { copyTextToClipboard() {}, openPreferences() {} } },
 		getMainWindow: () => window,
 	};
+	// Firefox takes the screenshot at the load event, which does not wait for fetch():
+	// read the icons synchronously, so every shot has them.
+	window.fetch = (url) => {
+		const request = new XMLHttpRequest();
+		request.open("GET", url, false);
+		request.send();
+		return Promise.resolve({ text: () => Promise.resolve(request.responseText) });
+	};
 	var Services = { scriptloader: { loadSubScript: (u, scope) => { scope.module.exports = window.katex; } } };
 	var Zusia;
 </script>
@@ -63,6 +71,8 @@
 	if (params.get("theme")) prefs["extensions.zusia.theme"] = params.get("theme");
 	// &appearance=<json> sets the Appearance pref; &bg=<url> stands in for the copied background image.
 	if (params.get("appearance")) prefs["extensions.zusia.appearance"] = params.get("appearance");
+	// &layout=<id> is a layout with the look it sets.
+	if (params.get("layout")) prefs["extensions.zusia.appearance"] = JSON.stringify(CS.layoutLook(params.get("layout")));
 	// Setup is done unless the scenario is the wizard (&step=<n> opens that step).
 	prefs["extensions.zusia.onboarded"] = params.get("scenario") !== "wizard";
 	if (params.get("bg")) CS.backgroundURL = () => params.get("bg");
@@ -77,6 +87,15 @@
 		wrap.innerHTML = '<div class="pane-head"></div><div class="pane-body"></div>';
 		wrap.querySelector(".pane-head").textContent = title;
 		document.body.appendChild(wrap);
+		// &dock=1 is the left panel: a column of fixed height that the chat fills (&height=<px>).
+		if (params.get("dock")) {
+			wrap.className = "zs-dock";
+			wrap.style.width = "var(--pane-width, 380px)";
+			wrap.style.height = (params.get("height") || 760) + "px";
+			wrap.querySelector(".pane-head").remove();
+			wrap.querySelector(".pane-body").className = "zs-dock-body";
+			return wrap.querySelector(".zs-dock-body");
+		}
 		return wrap.querySelector(".pane-body");
 	}
 	function sidebar(body) {
@@ -89,9 +108,11 @@
 			input: root.querySelector(".zs-input"),
 			send() {},
 		};
-		root.querySelector(".zs-log").style.maxHeight = "none";
+		if (!params.get("dock")) root.querySelector(".zs-log").style.maxHeight = "none";
 		CS._views.set(root, view);
-		CS.renderPaperChip(root, { label: "Dohare et al., 2024", title: "Loss of plasticity in deep continual learning" });
+		// &reading=1 adds where you are in the paper, as the reader reports it.
+		CS.renderPaperChip(root, Object.assign({ label: "Dohare et al., 2024", title: "Loss of plasticity in deep continual learning" },
+			params.get("reading") ? { reading: "§3 · p. 12 · 4/9 read", readFraction: 0.42 } : {}));
 		return view;
 	}
 	CS._agyModels = [

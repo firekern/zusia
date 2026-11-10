@@ -76,7 +76,7 @@ test("accent, style, message style, text size, corners, spacing and font are sav
 	assert.deepEqual(JSON.parse(prefs[PREFIX + "appearance"]), {
 		accent: "#6d4fd6", style: "flat", bubble: "accent", size: "large", corners: "square", density: "compact", font: "serif",
 		background: "", imageVisibility: 55, imageBlur: 0, glassOpacity: 55, glassBlur: 18, glow: true, glowStrength: 60,
-		mascot: "cat", pattern: "none", labels: "icons",
+		mascot: "cat", pattern: "none", labels: "icons", layout: "standard",
 	});
 	assert.equal(appearance.querySelector('.zs-swatch[aria-label="Violet"]').getAttribute("aria-checked"), "true");
 	assert.equal(appearance.querySelector('.zs-swatch[aria-label="Zotero"]').getAttribute("aria-checked"), "false");

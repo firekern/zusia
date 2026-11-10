@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- 🎛️ **Four layouts.** **Settings → Zusia → Appearance → *Layout***, also in the setup wizard's look step. *Minimal*: the conversation and the message box, the tools in one menu. *Standard*: as before. *Rich*: a card with the paper, your reading progress and a progress bar, tools with their names, every prompt in view. *Visual*: your buddy beside each answer, your messages as bubbles on the right, prompts as cards and more colour. Choosing one also sets the style, buddy, spacing and labels it starts from; each stays changeable on its own.
+
 ## 1.3.0
 
 - ⬅️ **The chat has its own panel on the left.** Zusia is now a column at the left edge of the window, beside the library and the reader, and no longer a section among Zotero's item details. It follows the paper you select or open and stays on it while nothing is selected. Drag its edge to resize it (double-click to reset), hide it with the button in its header and bring it back from the rail it leaves. **Settings → Zusia → Chat → *Where the chat is*** puts it back in the item pane.

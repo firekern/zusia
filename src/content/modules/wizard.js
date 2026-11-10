@@ -121,10 +121,20 @@ Object.assign(Zusia, {
 		}
 		else if (name === "look") {
 			hero("palette", "Your look");
-			section("palette", "Style", this.tiles(doc, [
+			let styles = this.tiles(doc, [
 				{ value: "glass", label: "Glass", icon: "styleGlass" },
 				{ value: "flat", label: "Flat", icon: "styleFlat" },
-			], appearance().style, v => setAppearance({ style: v })));
+			], appearance().style, v => setAppearance({ style: v }));
+			section("prompt", "Layout", this.tiles(doc,
+				Object.entries(this.LAYOUTS).map(([value, l]) => ({ value, label: l.label, icon: l.icon })),
+				appearance().layout, (v) => {
+					setAppearance(this.layoutLook(v));
+					// A layout brings its own style, which the tiles below must show.
+					for (let tile of styles.querySelectorAll(".zs-tile")) {
+						tile.setAttribute("aria-checked", String(tile.dataset.value === appearance().style));
+					}
+				}));
+			section("palette", "Style", styles);
 			let swatches = this.el(doc, "div", "zs-swatches");
 			swatches.setAttribute("role", "radiogroup");
 			let current = appearance().accent;

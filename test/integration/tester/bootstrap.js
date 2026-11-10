@@ -550,6 +550,45 @@ async function testDock(win, CS) {
 	CS.setPlacement("left");
 }
 
+// The four layouts, in the left dock: each shows its own parts, and none of them overflows.
+async function testLayouts(win, CS) {
+	let doc = win.document;
+	let dock = doc.getElementById("zusia-dock");
+	let root = dock.querySelector(".zs-root");
+	let shown = el => !!el && el.getClientRects().length > 0 && win.getComputedStyle(el).display !== "none";
+	let before = CS.getAppearance();
+	let parts = {};
+	for (let layout of Object.keys(CS.LAYOUTS)) {
+		CS.saveAppearance(CS.layoutLook(layout, before));
+		await waitFor(() => root.dataset.layout === layout, 5000, "the " + layout + " layout on the open chat");
+		await Zotero.Promise.delay(400);
+		let rect = dock.getBoundingClientRect();
+		let composer = root.querySelector(".zs-composer").getBoundingClientRect();
+		parts[layout] = {
+			more: shown(root.querySelector(".zs-header-more")),
+			search: shown(root.querySelector(".zs-search")),
+			card: shown(root.querySelector(".zs-paper-card")),
+			chip: shown(root.querySelector(".zs-context-chip")),
+			label: win.getComputedStyle(root.querySelector(".zs-new-chat"), "::after").content,
+			avatar: win.getComputedStyle(root.querySelector(".zs-turn"), "::after").maskImage !== "none",
+			fits: root.scrollWidth <= root.clientWidth + 1 && rect.bottom - composer.bottom < 24 && composer.right <= rect.right,
+		};
+		await snapshot(win, "zotero-layout-" + layout, { x: rect.x, y: rect.y, width: rect.width + 4, height: rect.height });
+	}
+	CS.saveAppearance(before);
+	let { minimal, standard, rich, visual } = parts;
+	check("layouts: Minimal keeps New chat and a menu in the header, and the paper chip",
+		minimal.more && !minimal.search && !minimal.card && minimal.chip, minimal);
+	check("layouts: Standard shows its tools as icons and no paper card",
+		!standard.more && standard.search && !standard.card && standard.chip && standard.label === "none", standard);
+	check("layouts: Rich names its tools and shows the paper card in place of the chip",
+		rich.search && rich.card && !rich.chip && rich.label !== "none", rich);
+	check("layouts: Visual shows the paper card and the buddy beside each answer",
+		visual.card && !visual.chip && visual.avatar && !standard.avatar, visual);
+	check("layouts: every layout fits the dock, with the composer at its bottom",
+		Object.values(parts).every(p => p.fits), Object.fromEntries(Object.entries(parts).map(([k, p]) => [k, p.fits])));
+}
+
 // With a real window only: the dock follows a click in the items tree and the reader tabs.
 async function testDockFollows(win, CS) {
 	let doc = win.document;
@@ -668,6 +707,7 @@ async function run() {
 		await testPrefs(CS);
 		await testReaderWidth(win, CS);
 		await testDock(win, CS);
+		await testLayouts(win, CS);
 		if (!Services.env.exists("MOZ_HEADLESS")) {
 			await testDockFollows(win, CS);
 		}

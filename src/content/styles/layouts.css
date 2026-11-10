@@ -1,0 +1,253 @@
+/* ---- layouts (Settings → Appearance → Layout) ----
+   The skeleton holds every part; each layout shows and arranges its own. This file
+   comes last, so a layout can restyle what the other files set. */
+
+/* Parts only some layouts use. */
+.zs-header-more,
+.zs-paper-card {
+	display: none;
+}
+
+/* ---- Minimal: the conversation and the message box, nothing asking for attention ---- */
+
+.zs-root[data-layout="minimal"] .zs-header-icon,
+.zs-root[data-layout="minimal"] .zs-clarifications,
+.zs-root[data-layout="minimal"] .zs-search,
+.zs-root[data-layout="minimal"] .zs-history,
+.zs-root[data-layout="minimal"] .zs-open-settings,
+.zs-dock .zs-root[data-layout="minimal"] .zs-dock-hide {
+	display: none !important;
+}
+.zs-root[data-layout="minimal"] .zs-header-more {
+	display: inline-flex;
+}
+/* The header icon is gone, so the paper's title starts at the text's left edge. */
+.zs-root[data-layout="minimal"] .zs-header {
+	padding-inline-start: 4px;
+}
+.zs-root[data-layout="minimal"] .zs-header-paper {
+	font-weight: 500;
+	color: var(--zs-muted);
+}
+/* The prompts are a way to start; once the chat is going they would only take a row. */
+.zs-root[data-layout="minimal"][data-chatting="true"] .zs-quick {
+	display: none;
+}
+.zs-root[data-layout="minimal"] .zs-empty {
+	min-height: 96px;
+}
+.zs-root[data-layout="minimal"] .zs-empty-title {
+	font-size: 1.05em;
+	font-weight: 500;
+	color: var(--zs-muted);
+}
+.zs-root[data-layout="minimal"] .zs-empty-sub {
+	display: none;
+}
+.zs-root[data-layout="minimal"] .zs-user {
+	border-color: transparent;
+	background: var(--zs-hover);
+}
+.zs-root[data-layout="minimal"] .zs-pill {
+	border-color: transparent !important;
+	background: var(--zs-hover);
+}
+.zs-root[data-layout="minimal"] .zs-composer {
+	padding: 8px 9px 4px;
+	box-shadow: none;
+	background: transparent;
+	border-color: var(--zs-border-strong);
+}
+.zs-root[data-layout="minimal"] .zs-composer:focus-within {
+	border-color: var(--zs-accent-line);
+}
+/* Quiet until the pointer or the keyboard is in the message box. */
+.zs-root[data-layout="minimal"] .zs-composer:not(:hover):not(:focus-within) .zs-controls > :not(.zs-send) {
+	opacity: 0.45;
+}
+.zs-root[data-layout="minimal"] .zs-controls > * {
+	transition: opacity 0.15s ease;
+}
+
+/* ---- the paper card of Rich and Visual ---- */
+
+.zs-root:is([data-layout="rich"], [data-layout="visual"]) .zs-paper-card {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr);
+	column-gap: 9px;
+	row-gap: 7px;
+	align-items: start;
+	padding: 9px 11px;
+	border: 1px solid var(--zs-border);
+	border-radius: var(--zs-radius-card);
+	background: var(--zs-raised);
+	cursor: pointer;
+	transition: border-color 0.15s ease;
+}
+.zs-root:is([data-layout="rich"], [data-layout="visual"]) .zs-paper-card:hover,
+.zs-root:is([data-layout="rich"], [data-layout="visual"]) .zs-paper-card:focus-visible {
+	border-color: var(--zs-accent-line);
+	outline: none;
+}
+.zs-paper-card-icon {
+	width: 18px;
+	height: 18px;
+	margin-top: 1px;
+	color: var(--zs-accent-ink);
+}
+.zs-paper-card-text {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0;
+}
+.zs-paper-card-title {
+	font-weight: 600;
+	line-height: 1.3;
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 2;
+	overflow: hidden;
+}
+.zs-paper-card-byline,
+.zs-paper-card-reading,
+.zs-paper-card-status {
+	font-size: 0.9em;
+	color: var(--zs-muted);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.zs-paper-card-reading {
+	color: var(--zs-accent-ink);
+}
+.zs-paper-card-progress {
+	grid-column: 1 / -1;
+	height: 3px;
+	border-radius: 2px;
+	background: linear-gradient(to right, var(--zs-accent) var(--zs-read, 0%), var(--zs-line) var(--zs-read, 0%));
+}
+/* The card says what the chip in the message box says, and the header's title too. */
+.zs-root:is([data-layout="rich"], [data-layout="visual"]) .zs-context,
+.zs-root:is([data-layout="rich"], [data-layout="visual"]) .zs-header-paper {
+	display: none !important;
+}
+/* ---- Rich: the tools named, the prompts all in view ---- */
+
+.zs-root[data-layout="rich"] .zs-header {
+	flex-wrap: wrap;
+	row-gap: 2px;
+}
+.zs-root[data-layout="rich"] .zs-header > .zs-icon[data-label] {
+	width: auto;
+	gap: 4px;
+	padding: 0 7px;
+}
+.zs-root[data-layout="rich"] .zs-header > .zs-icon[data-label]::after {
+	content: attr(data-label);
+	font-size: 0.88em;
+	white-space: nowrap;
+}
+/* The paper card names the paper, so the header is a row of tools, the last two at its end. */
+.zs-root[data-layout="rich"] .zs-header-title {
+	display: none !important;
+}
+.zs-root[data-layout="rich"] .zs-open-settings {
+	margin-inline-start: auto;
+}
+.zs-root[data-layout="rich"][data-chatting="true"] .zs-quick {
+	flex-wrap: wrap;
+	overflow: visible;
+}
+/* Who answered, with which model: shown without hovering. */
+.zs-root[data-layout="rich"] .zs-footer {
+	opacity: 1;
+}
+.zs-root[data-layout="rich"] .zs-by {
+	display: inline !important;
+}
+
+/* ---- Visual: the buddy in the conversation, colour behind it, prompts as cards ---- */
+
+.zs-root[data-layout="visual"] .zs-paper-card {
+	border-color: color-mix(in srgb, var(--zs-accent) 28%, transparent);
+	background: linear-gradient(135deg,
+		color-mix(in srgb, var(--zs-accent) 16%, var(--zs-raised)),
+		color-mix(in srgb, var(--accent-teal, #59adc4) 12%, var(--zs-raised)));
+}
+.zs-root[data-layout="visual"] .zs-paper-card-icon {
+	width: 30px;
+	height: 30px;
+	padding: 6px;
+	border-radius: 9px;
+	color: var(--zs-accent-text);
+	background: var(--zs-accent);
+}
+.zs-root[data-layout="visual"] .zs-paper-card-icon .zs-duo {
+	fill: currentColor;
+}
+.zs-root[data-layout="visual"] .zs-paper-card-progress {
+	height: 5px;
+	border-radius: 3px;
+}
+/* The buddy answers: its face beside each answer, in the accent colour. */
+.zs-root[data-layout="visual"] .zs-turn {
+	position: relative;
+	padding-inline-start: 32px;
+}
+.zs-root[data-layout="visual"] .zs-turn::before,
+.zs-root[data-layout="visual"] .zs-turn::after {
+	content: "";
+	position: absolute;
+	inset-inline-start: 0;
+	top: 0;
+	width: 24px;
+	height: 24px;
+}
+.zs-root[data-layout="visual"] .zs-turn::before {
+	border-radius: 50%;
+	background: var(--zs-accent-soft);
+}
+.zs-root[data-layout="visual"] .zs-turn::after {
+	background: var(--zs-accent);
+	mask: url("../icons/sparkle.svg") center / 15px no-repeat;
+}
+.zs-root[data-layout="visual"][data-mascot="cat"] .zs-turn::after { mask-image: url("../icons/cat.svg"); }
+.zs-root[data-layout="visual"][data-mascot="owl"] .zs-turn::after { mask-image: url("../icons/bird.svg"); }
+.zs-root[data-layout="visual"][data-mascot="robot"] .zs-turn::after { mask-image: url("../icons/robot.svg"); }
+/* Your side of the chat: a bubble on the right. */
+.zs-root[data-layout="visual"] .zs-user {
+	align-self: flex-end;
+	max-width: 88%;
+	border-end-end-radius: 4px;
+}
+.zs-root[data-layout="visual"] .zs-mascot {
+	width: 104px;
+	height: 104px;
+}
+.zs-root[data-layout="visual"] .zs-empty {
+	min-height: 220px;
+}
+/* Before the first question the prompts are cards to pick from. */
+.zs-root[data-layout="visual"]:not([data-chatting="true"]) .zs-quick {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 8px;
+}
+.zs-root[data-layout="visual"]:not([data-chatting="true"]) .zs-pill {
+	justify-content: flex-start;
+	min-height: 44px;
+	padding: 8px 12px;
+	border-radius: var(--zs-radius-card);
+	font-weight: 500;
+	white-space: normal;
+	text-align: start;
+	background: color-mix(in srgb, var(--zs-accent) 7%, var(--zs-raised));
+}
+/* More colour behind the glass than the other layouts ask for. */
+.zs-root[data-layout="visual"][data-style="glass"]:not([data-bg="image"]) > .zs-backdrop {
+	background:
+		radial-gradient(120% 60% at 0% 0%, color-mix(in srgb, var(--zs-accent) 26%, transparent), transparent 70%),
+		radial-gradient(90% 50% at 100% 30%, color-mix(in srgb, var(--accent-teal, #59adc4) 22%, transparent), transparent 70%),
+		radial-gradient(110% 55% at 30% 100%, color-mix(in srgb, var(--tag-purple, #a28ae5) 24%, transparent), transparent 70%);
+}

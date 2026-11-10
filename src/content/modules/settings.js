@@ -128,6 +128,7 @@ Object.assign(Zusia, {
 			mascot: oneOf(saved.mascot, Object.keys(this.MASCOTS), "cat"),
 			pattern: oneOf(saved.pattern, Object.keys(this.PATTERNS), "none"),
 			labels: oneOf(saved.labels, ["icons", "text"], "icons"),
+			layout: oneOf(saved.layout, Object.keys(this.LAYOUTS), "standard"),
 		};
 	},
 
@@ -205,6 +206,7 @@ Object.assign(Zusia, {
 		root.dataset.mascot = appearance.mascot;
 		root.dataset.pattern = appearance.pattern;
 		root.dataset.labels = appearance.labels;
+		root.dataset.layout = appearance.layout;
 		this.applyBehaviour(root);
 		let headerIcon = root.querySelector(":scope > .zs-header > .zs-header-icon");
 		let wanted = this.MASCOTS[appearance.mascot].header;

@@ -9,6 +9,7 @@ Object.assign(Zusia, {
 	},
 
 	renderPaperChip(root, info) {
+		this.renderPaperCard(root, info);
 		let holder = root.querySelector(".zs-context");
 		if (!holder) {
 			return;

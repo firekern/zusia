@@ -196,11 +196,13 @@ Object.assign(Zusia, {
 		let cached = this._structures.get(dir);
 		let state = this.trackingReading() ? this._progress.get(dir) : null;
 		let reading = this.readingLine(cached && cached.structure, state && state.progress);
+		let pages = cached && cached.structure ? cached.structure.pageCount : 0;
+		let readFraction = state && pages ? Math.min(1, (state.progress.read || []).length / pages) : NaN;
 		for (let win of Zotero.getMainWindows()) {
 			for (let root of win.document.querySelectorAll(".zs-root")) {
 				let view = this._views.get(root);
 				if (view && view.ctx.dir === dir && view.info) {
-					this.renderPaperChip(root, Object.assign({}, view.info, { reading }));
+					this.renderPaperChip(root, Object.assign({}, view.info, { reading, readFraction }));
 				}
 			}
 		}

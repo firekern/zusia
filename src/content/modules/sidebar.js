@@ -17,6 +17,7 @@ Object.assign(Zusia, {
 		this.applyAppearance(root);
 
 		let header = this.el(doc, "div", "zs-header");
+		let moreButton = this.iconButton(doc, "zs-header-more", "More", "more", () => this.openHeaderMenu(root, moreButton));
 		header.append(
 			this.svgIcon(doc, this.MASCOTS[this.getAppearance().mascot].header, "zs-header-icon"),
 			this.el(doc, "span", "zs-header-title", "Paper chat"),
@@ -37,7 +38,25 @@ Object.assign(Zusia, {
 				root.closest("item-details")?.scrollToPane?.(this.paneID, "instant");
 			}),
 			this.iconButton(doc, "zs-dock-hide", "Hide Zusia", "dock", () => this.setDockOpen(false)),
+			moreButton,
 		);
+		// The Rich layout writes these beside the icons.
+		for (let [name, label] of Object.entries({ search: "Search", history: "History", "new-chat": "New chat" })) {
+			header.querySelector(".zs-" + name).dataset.label = label;
+		}
+
+		let paperCard = this.el(doc, "div", "zs-paper-card");
+		paperCard.hidden = true;
+		paperCard.setAttribute("role", "button");
+		paperCard.tabIndex = 0;
+		let openMemory = () => this.openMemory(root).catch(e => this.logError("openMemory", e));
+		paperCard.addEventListener("click", openMemory);
+		paperCard.addEventListener("keydown", (event) => {
+			if (event.key === "Enter" || event.key === " ") {
+				event.preventDefault();
+				openMemory();
+			}
+		});
 
 		let log = this.el(doc, "div", "zs-log");
 		log.appendChild(this.el(doc, "div", "zs-notice", "Loading…"));
@@ -116,7 +135,7 @@ Object.assign(Zusia, {
 		let attachments = this.el(doc, "div", "zs-attachments");
 		attachments.hidden = true;
 		composer.append(context, attachments, input, controls);
-		root.append(header, logWrap, quick, composer);
+		root.append(header, paperCard, logWrap, quick, composer);
 		root.addEventListener("keydown", event => this.handleShortcut(root, event));
 		body.appendChild(root);
 
