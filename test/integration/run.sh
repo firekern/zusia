@@ -6,6 +6,7 @@
 # touched, and a Zotero you have open keeps running: -no-remote keeps them apart.
 # Results: test/integration/out/results.json and zotero-*.png, or $OUT if set
 #   HEADED=1 bash test/integration/run.sh   # macOS, with a window: also the reader checks
+#   XPI=1 bash test/integration/run.sh      # the packaged zusia.xpi, after npm run build
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 repo="$(cd "$here/../.." && pwd)"
@@ -17,7 +18,12 @@ rm -rf "$base"
 # Emptied rather than removed, since $OUT may be a container bind mount.
 mkdir -p "$base/profile/extensions" "$base/data" "$out"
 find "$out" -mindepth 1 -delete
-echo "$repo/src" > "$base/profile/extensions/zusia@firekern.github.io"
+# XPI=1 installs the built zusia.xpi, as a user's Zotero has it, instead of pointing at src/.
+if [ "${XPI:-0}" = 1 ]; then
+	cp "$repo/zusia.xpi" "$base/profile/extensions/zusia@firekern.github.io.xpi"
+else
+	echo "$repo/src" > "$base/profile/extensions/zusia@firekern.github.io"
+fi
 echo "$here/tester" > "$base/profile/extensions/zusia-tester@firekern.github.io"
 cat > "$base/profile/user.js" <<PREFS
 user_pref("extensions.zotero.dataDir", "$base/data");
