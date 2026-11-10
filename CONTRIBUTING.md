@@ -20,7 +20,7 @@ npm test
 
 `npm run test:zotero:linux` runs the same checks in Docker against the official Zotero Linux build for your architecture, so Linux is covered from any machine with Docker. Results go to `test/integration/out-linux/`; set `ZOTERO_VERSION` to test another release. The container has stub `claude`, `codex` and `agy` commands and no logins, so `LIVE=1` does not apply. `bash test/integration/linux/shots.sh` runs `npm run shots` the same way, for machines without Firefox or Pillow.
 
-`npm run test:zotero:windows` runs them in the official Windows build of Zotero under Wine, in a `linux/amd64` container, so the plugin's Windows branches run in a real Gecko without a Windows machine. Results go to `test/integration/out-windows/`. No assistant CLI exists there, so the check on `agy models` fails by design. `test/windows.test.mjs` covers what Wine cannot show (Windows spelling the variable `Path`) on a path model that the same run compares with the real `PathUtils`.
+`npm run test:zotero:windows` runs them in the official Windows build of Zotero under Wine, in a `linux/amd64` container, so the plugin's Windows branches run in a real Gecko without a Windows machine. Results go to `test/integration/out-windows/`. No child process can be started there (the x86 emulator dies at the spawn), so the one check that needs `agy models` answered is reported as not runnable and does not fail the run. `test/windows.test.mjs` covers what Wine cannot show (Windows spelling the variable `Path`) on a path model that the same run compares with the real `PathUtils`.
 
 `HEADED=1 npm run test:zotero` (macOS) opens a real window and adds the checks that need one: the left panel following a click in the items tree and the reader tabs.
 
