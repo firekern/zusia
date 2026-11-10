@@ -7,6 +7,8 @@ Object.assign(Zusia, {
 	DOCK_WIDTH: { min: 280, initial: 380 },
 	// Room the dock always leaves to Zotero's own panes when it is resized.
 	DOCK_KEEPS_FREE: 600,
+	// With Alt, like the chat's own shortcuts: shows or hides the dock from anywhere in the window.
+	DOCK_KEY: "Z",
 	// What addDock gave each main window, taken back by removeDock.
 	_docks: new Map(),
 	_tabObserver: null,
@@ -63,8 +65,6 @@ Object.assign(Zusia, {
 		box.id = "zusia-dock";
 		let body = this.el(doc, "div", "zs-dock-body");
 		let rail = this.el(doc, "div", "zs-dock-rail");
-		rail.appendChild(this.iconButton(doc, "zs-dock-open", "Show Zusia", this.MASCOTS[this.getAppearance().mascot].header,
-			() => this.setDockOpen(true)));
 		let resizer = this.el(doc, "div", "zs-dock-resizer");
 		resizer.addEventListener("pointerdown", event => this.startDockResize(win, event));
 		// A double click puts the width back, as Zotero's own splitters do.
@@ -75,6 +75,20 @@ Object.assign(Zusia, {
 
 		let dock = { box, body, rail, resizer, paperID: null, rendered: false, itemsView: null, timer: null };
 		dock.onSelect = () => this.syncDock(win).catch(e => this.logError("syncDock", e));
+		dock.onKey = (event) => {
+			if (event.code !== "Key" + this.DOCK_KEY || !event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
+				return;
+			}
+			// Also keeps macOS from typing the Option character into a focused field.
+			event.preventDefault();
+			event.stopPropagation();
+			this.setDockOpen(!this.dockOpen());
+			if (this.dockOpen()) {
+				this.focusVisibleInput(doc);
+			}
+		};
+		// Capturing, so it works whichever of Zotero's panes has the focus.
+		win.addEventListener("keydown", dock.onKey, true);
 		this._docks.set(win, dock);
 		// The chat view of the item pane would hide Zotero's sections around a section that is gone.
 		doc.documentElement.setAttribute(this.VIEW_ATTR, "details");
@@ -91,6 +105,7 @@ Object.assign(Zusia, {
 			return;
 		}
 		win.clearTimeout(dock.timer);
+		win.removeEventListener("keydown", dock.onKey, true);
 		dock.itemsView?.onSelect.removeListener(dock.onSelect);
 		// As when an item pane section goes: what was said about the paper is folded into its memory.
 		let dir = this._shownDirs.get(dock.body);
@@ -166,6 +181,15 @@ Object.assign(Zusia, {
 		let dock = this._docks.get(win);
 		let open = this.dockOpen();
 		win.document.documentElement.setAttribute("zs-dock", open ? "open" : "closed");
+		// The rail wears the buddy and the accent chosen in Settings, which may have changed.
+		let appearance = this.getAppearance();
+		let icon = this.MASCOTS[appearance.mascot].header;
+		if (dock.rail.firstChild?.firstChild.dataset.icon !== icon) {
+			dock.rail.textContent = "";
+			dock.rail.appendChild(this.iconButton(win.document, "zs-dock-open",
+				"Show Zusia (" + this.shortcutLabel(this.DOCK_KEY) + ")", icon, () => this.setDockOpen(true)));
+		}
+		dock.box.style.setProperty("--zs-accent", appearance.accent || "var(--accent-blue)");
 		dock.rail.hidden = open;
 		dock.body.hidden = !open;
 		dock.resizer.hidden = !open;

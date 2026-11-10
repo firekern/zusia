@@ -188,3 +188,40 @@ test("closing a window or shutting down takes the dock away and folds the chat i
 	assert.equal(state.listeners.size, 0);
 	assert.equal(plugin._docks.has(window), false);
 });
+
+test("Alt+Z shows and hides the dock from anywhere in the window, and nothing else does", () => {
+	const { plugin, window, document, dock, prefs } = mainWindow();
+	plugin.applyPlacement();
+	const press = (init) => {
+		const event = new window.KeyboardEvent("keydown", { code: "KeyZ", key: "z", altKey: true, bubbles: true, cancelable: true, ...init });
+		document.body.dispatchEvent(event);
+		return event;
+	};
+	assert.equal(press().defaultPrevented, true, "so macOS does not type the Option character");
+	assert.equal(prefs[PREFIX + "dockOpen"], false);
+	assert.equal(dock().querySelector(".zs-dock-body").hidden, true);
+	press();
+	assert.equal(prefs[PREFIX + "dockOpen"], true);
+	for (const other of [{ altKey: false }, { ctrlKey: true }, { metaKey: true }, { shiftKey: true }, { code: "KeyX" }]) {
+		assert.equal(press(other).defaultPrevented, false, JSON.stringify(other));
+	}
+	assert.equal(prefs[PREFIX + "dockOpen"], true);
+	assert.match(dock().querySelector(".zs-dock-hide").title, /^Hide Zusia \(Alt\+Z\)$/);
+	assert.match(dock().querySelector(".zs-dock-open").title, /^Show Zusia \(Alt\+Z\)$/);
+	plugin.removePlacement();
+	press();
+	assert.equal(prefs[PREFIX + "dockOpen"], true, "the shortcut goes with the dock");
+});
+
+test("the rail wears the buddy and the accent chosen in Settings", () => {
+	const { plugin, dock } = mainWindow();
+	plugin.applyPlacement();
+	const icon = () => dock().querySelector(".zs-dock-open .zs-i").dataset.icon;
+	assert.equal(icon(), "cat");
+	assert.equal(dock().style.getPropertyValue("--zs-accent"), "var(--accent-blue)");
+	plugin.saveAppearance({ ...plugin.getAppearance(), mascot: "robot", accent: "#6d4fd6" });
+	plugin.refreshAllSidebars();
+	assert.equal(icon(), "robot");
+	assert.equal(dock().querySelectorAll(".zs-dock-open").length, 1);
+	assert.equal(dock().style.getPropertyValue("--zs-accent"), "#6d4fd6");
+});

@@ -439,6 +439,7 @@ Object.assign(Zusia, {
 		for (let root of this.allRoots()) {
 			this.refreshRoot(root);
 		}
+		this.updateDocks();
 	},
 
 	refreshRoot(root) {

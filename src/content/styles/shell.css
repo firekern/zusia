@@ -129,18 +129,17 @@
 	align-items: center;
 	padding: 6px 4px;
 }
-/* The rail is outside .zs-root, so its button takes Zotero's tokens instead of --zs-*. */
+/* The rail is outside .zs-root: of the --zs-* variables only the accent reaches it, set on the dock. */
 .zs-dock-rail .zs-icon {
 	appearance: none;
 	margin: 0;
 	width: 28px;
 	height: 28px;
 	border-radius: 5px;
-	color: var(--fill-secondary) !important;
+	color: var(--zs-accent) !important;
 }
 .zs-dock-rail .zs-icon:hover {
-	color: var(--fill-primary) !important;
-	background: var(--fill-quinary);
+	background: color-mix(in srgb, var(--zs-accent) 14%, transparent);
 }
 .zs-dock-rail .zs-i {
 	width: 18px;

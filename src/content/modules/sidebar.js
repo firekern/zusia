@@ -37,7 +37,7 @@ Object.assign(Zusia, {
 				this.setView(doc, "details");
 				root.closest("item-details")?.scrollToPane?.(this.paneID, "instant");
 			}),
-			this.iconButton(doc, "zs-dock-hide", "Hide Zusia", "dock", () => this.setDockOpen(false)),
+			this.iconButton(doc, "zs-dock-hide", "Hide Zusia (" + this.shortcutLabel(this.DOCK_KEY) + ")", "dock", () => this.setDockOpen(false)),
 			moreButton,
 		);
 		// The Rich layout writes these beside the icons.

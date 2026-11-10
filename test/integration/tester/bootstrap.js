@@ -543,6 +543,17 @@ async function testDock(win, CS) {
 	check("dock: the rail button opens it again on the same chat",
 		Math.round(dock.getBoundingClientRect().width) === CS.DOCK_WIDTH.initial && shown(dock.querySelector(".zs-root .zs-input")));
 
+	let altZ = () => doc.getElementById("zotero-items-tree").dispatchEvent(
+		new win.KeyboardEvent("keydown", { code: "KeyZ", key: "z", altKey: true, bubbles: true, cancelable: true }));
+	altZ();
+	await Zotero.Promise.delay(300);
+	let hiddenByKey = dock.getBoundingClientRect().width < 48;
+	altZ();
+	await Zotero.Promise.delay(500);
+	check("dock: Alt+Z, pressed while another pane has the focus, hides it and brings it back with the message box focused",
+		hiddenByKey && shown(dock.querySelector(".zs-root .zs-input")) && doc.activeElement === dock.querySelector(".zs-root .zs-input"),
+		{ hiddenByKey, active: doc.activeElement?.className });
+
 	CS.setPlacement("pane");
 	await Zotero.Promise.delay(300);
 	check("dock: choosing the item pane takes the dock away and registers the section again",
