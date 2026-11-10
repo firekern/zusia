@@ -6,6 +6,7 @@ pref("extensions.zusia.placement", "right");
 pref("extensions.zusia.dockOpen", true);
 pref("extensions.zusia.dockWidth", 380);
 pref("extensions.zusia.dockTipSeen", false);
+pref("extensions.zusia.sideTipSeen", false);
 pref("extensions.zusia.trackReading", true);
 pref("extensions.zusia.memory.consolidate", true);
 pref("extensions.zusia.memory.gists", false);

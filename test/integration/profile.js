@@ -13,3 +13,4 @@ user_pref("extensions.zotero.sync.autoSync", false);
 user_pref("extensions.zusia.onboarded", true);
 // The note for people who update sits above the chat; the tester shows it on its own.
 user_pref("extensions.zusia.dockTipSeen", true);
+user_pref("extensions.zusia.sideTipSeen", true);

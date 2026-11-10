@@ -639,6 +639,19 @@ async function testDock(win, CS) {
 	tip.querySelector("button").click();
 	await Zotero.Promise.delay(200);
 	check("dock: Got it puts the note away for good", !dock.querySelector(".zs-dock-tip") && CS.getPref("dockTipSeen") === true);
+	// The second note: for someone whose panel the new default moved to the right.
+	CS.setPref("sideTipSeen", false);
+	CS.updateDocks();
+	await Zotero.Promise.delay(300);
+	let sideTip = dock.querySelector(".zs-dock-tip");
+	check("dock: someone whose panel moved to the right is told so, with a way back",
+		shown(sideTip) && /on the right/.test(sideTip.textContent) && sideTip.querySelectorAll("button")[1]?.textContent === "Back to the left",
+		sideTip?.textContent);
+	let sideNow = dock.getBoundingClientRect();
+	await snapshot(win, "zotero-dock-tip-side", { x: sideNow.x, y: sideNow.y, width: sideNow.width + 4, height: 420 });
+	sideTip.querySelector("button").click();
+	await Zotero.Promise.delay(200);
+	check("dock: answering it puts it away", !dock.querySelector(".zs-dock-tip") && CS.getPref("sideTipSeen") === true);
 
 	let altZ = () => doc.getElementById("zotero-items-tree").dispatchEvent(
 		new win.KeyboardEvent("keydown", { code: "KeyZ", key: "z", altKey: true, bubbles: true, cancelable: true }));

@@ -360,6 +360,39 @@ test("someone who updates is told once where the chat went, and can send it back
 	assert.equal(state.sections, 1);
 });
 
+test("someone who had the panel on the left is told once that it is on the right now, and can send it back", () => {
+	const { plugin, dock, prefs } = mainWindow({ [PREFIX + "dockTipSeen"]: true });
+	plugin.applyPlacement();
+	const tip = () => dock().querySelector(".zs-dock-tip");
+	assert.match(tip().textContent, /now on the right/);
+	tip().querySelector("button").click();
+	assert.equal(prefs[PREFIX + "sideTipSeen"], true);
+	assert.equal(tip(), null);
+
+	prefs[PREFIX + "sideTipSeen"] = false;
+	plugin.updateDocks();
+	const back = tip().querySelectorAll("button")[1];
+	assert.equal(back.textContent, "Back to the left");
+	back.click();
+	assert.equal(prefs[PREFIX + "placement"], "left");
+	assert.equal(dock().dataset.side, "left");
+	assert.equal(tip(), null);
+	assert.equal(prefs[PREFIX + "sideTipSeen"], true);
+});
+
+test("whoever chose the left never hears that the panel moved, and one note follows the other at most once", () => {
+	const chosen = mainWindow({ [PREFIX + "dockTipSeen"]: true, [PREFIX + "placement"]: "left" });
+	chosen.plugin.applyPlacement();
+	assert.equal(chosen.dock().querySelector(".zs-dock-tip"), null);
+
+	// Coming from the item pane: the first note says where the panel is, so the second is not owed.
+	const { plugin, dock, prefs } = mainWindow();
+	plugin.applyPlacement();
+	dock().querySelector(".zs-dock-tip button").click();
+	assert.deepEqual([prefs[PREFIX + "dockTipSeen"], prefs[PREFIX + "sideTipSeen"]], [true, true]);
+	assert.equal(dock().querySelector(".zs-dock-tip"), null);
+});
+
 test("a new user gets the setup wizard, not the note, and finishing it counts as having read it", () => {
 	const { plugin, dock, prefs } = mainWindow({ [PREFIX + "onboarded"]: false });
 	plugin.applyPlacement();

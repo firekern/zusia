@@ -3,6 +3,7 @@
 ## Unreleased
 
 - ➡️ **The panel is on the right, and you choose the side.** Zusia's panel now sits at the right edge of the window. **Settings → Zusia → Chat → *Where the chat is*** has three choices: Left, Right, or the item pane. Changing sides keeps the conversation as it is.
+- 👋 If your panel was on the left, a note above the chat says once that it is now on the right, with a **Back to the left** button.
 - 🪟 **The panel fills its column.** The chat was drawn as a rounded card inside a gutter of the pane's colour, one frame inside another; its background now runs from edge to edge.
 - ⬇️ Where the conversation goes on past the top or the bottom of the panel, the lines at that edge fade out instead of being cut mid-letter, and the *Scroll to latest* button sits in the middle of that fade, no longer on words you are reading.
 - 🪟 **Glass style: menus, sheets and the setup wizard no longer let the conversation show through.** Lines of the chat were faintly readable behind the Reading memory sheet and the model menu; they are opaque now, whatever *Glass opacity* is set to.

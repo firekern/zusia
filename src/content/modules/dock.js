@@ -261,37 +261,70 @@ Object.assign(Zusia, {
 		}
 	},
 
-	// For someone who updates: the chat used to be a section of Zotero's item pane, and
-	// nothing else says where it went or how to put it back. Shown until it is answered;
-	// a new user reads the same in the setup wizard instead.
+	// The one-time notes for someone who updates, since nothing else says where the chat
+	// went or how to put it back: that it left Zotero's item pane for a panel of its own
+	// and, for whoever already knew that, that the panel is now at the right. A new user
+	// reads the same in the setup wizard instead.
+	DOCK_TIPS: {
+		moved: {
+			text: key => "Zusia now has its own panel here, beside your library and the PDF. " + key + " hides it and brings it back.",
+			back: "Back to the item pane", placement: "pane",
+		},
+		side: {
+			text: () => "Zusia's panel is now on the right of the window. Settings → Zusia → Chat chooses its side.",
+			back: "Back to the left", placement: "left",
+		},
+	},
+
+	dockTipOwed() {
+		if (!this.dockOpen() || this.getPref("onboarded") !== true) {
+			return null;
+		}
+		if (this.getPref("dockTipSeen") !== true) {
+			return "moved";
+		}
+		// Only where the new default put it: whoever chose a side was not moved.
+		return this.getPref("sideTipSeen") !== true && this.placement() === "right" ? "side" : null;
+	},
+
+	// Whichever note was shown, both are answered: the first one says where the panel is.
+	dockTipsSeen() {
+		this.setPref("dockTipSeen", true);
+		this.setPref("sideTipSeen", true);
+	},
+
 	renderDockTip(win, dock) {
-		let wanted = this.dockOpen() && this.getPref("onboarded") === true && this.getPref("dockTipSeen") !== true;
-		if (!wanted) {
-			dock.tip?.remove();
-			dock.tip = null;
+		let owed = this.dockTipOwed();
+		if (dock.tip?.dataset.tip === owed) {
 			return;
 		}
-		if (dock.tip) {
+		dock.tip?.remove();
+		dock.tip = null;
+		if (!owed) {
 			return;
 		}
 		let doc = win.document;
+		let { text, back, placement } = this.DOCK_TIPS[owed];
 		let tip = this.el(doc, "div", "zs-dock-tip");
+		tip.dataset.tip = owed;
 		tip.setAttribute("role", "note");
-		tip.appendChild(this.el(doc, "div", "zs-dock-tip-text",
-			"Zusia now has its own panel here, beside your library and the PDF. " +
-			this.shortcutLabel(this.DOCK_KEY) + " hides it and brings it back."));
+		tip.appendChild(this.el(doc, "div", "zs-dock-tip-text", text(this.shortcutLabel(this.DOCK_KEY))));
 		let actions = this.el(doc, "div", "zs-dock-tip-actions");
 		let action = (label, run) => {
 			let button = this.el(doc, "button", "zs-dock-tip-button", label);
 			button.type = "button";
 			button.addEventListener("click", () => {
-				this.setPref("dockTipSeen", true);
+				this.dockTipsSeen();
 				run();
 			});
 			actions.appendChild(button);
 		};
 		action("Got it", () => this.updateDocks());
-		action("Back to the item pane", () => this.setPlacement("pane"));
+		action(back, () => {
+			this.setPlacement(placement);
+			// A panel that only changes sides stays, and still shows the note just answered.
+			this.updateDocks();
+		});
 		tip.appendChild(actions);
 		dock.box.insertBefore(tip, dock.body);
 		dock.tip = tip;
