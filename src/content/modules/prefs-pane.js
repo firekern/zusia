@@ -423,11 +423,13 @@ Object.assign(Zusia, {
 				card.replaceWith(this.buildAppearanceCard(doc, prefsRoot));
 			});
 		for (let tile of layouts.querySelectorAll(".zs-tile")) {
-			tile.title = this.LAYOUTS[tile.dataset.value].hint;
+			let { label, hint } = this.LAYOUTS[tile.dataset.value];
+			tile.title = label + ": " + hint;
 		}
 		card.body.append(
-			row("Layout", layouts, "How much the chat shows around the conversation. Choosing one also sets the style, " +
-				"buddy, pattern, spacing and labels below, which you can then change one by one.", { stack: true }),
+			row("Layout", layouts, this.LAYOUTS[appearance.layout].label + ": " + this.LAYOUTS[appearance.layout].hint +
+				" Choosing a layout also sets the style, buddy, pattern, spacing and labels below, which you can then change one by one.",
+			{ stack: true }),
 			row("Style", this.segmented(doc, [["glass", "Glass"], ["flat", "Flat"]], appearance.style, v => update({ style: v }))),
 			row("Buddy", this.tiles(doc, Object.entries(this.MASCOTS).map(([value, m]) => ({ value, label: m.label, icon: m.icon || "none" })),
 				appearance.mascot, v => update({ mascot: v })), null, { stack: true }),

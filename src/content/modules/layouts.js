@@ -7,19 +7,19 @@ Object.assign(Zusia, {
 	// and every part of it stays changeable on its own afterwards.
 	LAYOUTS: {
 		minimal: {
-			label: "Minimal", icon: "toneNeutral", hint: "Only the conversation and the message box.",
+			label: "Minimal", icon: "toneNeutral", hint: "only the conversation and the message box, the tools in one menu.",
 			look: { style: "flat", mascot: "none", pattern: "none", glow: false, labels: "icons", density: "compact", bubble: "neutral" },
 		},
 		standard: {
-			label: "Standard", icon: "prompt", hint: "The chat, with its tools one click away.",
+			label: "Standard", icon: "prompt", hint: "the chat, with its tools as icons one click away.",
 			look: { style: "glass", pattern: "none", glow: true, labels: "icons", density: "comfortable", bubble: "neutral" },
 		},
 		rich: {
-			label: "Rich", icon: "lengthDetailed", hint: "A paper card, your reading progress and labelled tools.",
+			label: "Rich", icon: "lengthDetailed", hint: "a card for the paper with your reading progress, and the tools by name.",
 			look: { style: "glass", pattern: "none", glow: true, labels: "text", density: "comfortable", bubble: "neutral" },
 		},
 		visual: {
-			label: "Visual", icon: "palette", hint: "Your buddy, artwork and prompt cards.",
+			label: "Visual", icon: "palette", hint: "your buddy beside each answer, bubbles, prompt cards and colour.",
 			look: { style: "glass", pattern: "none", glow: true, labels: "icons", density: "roomy", bubble: "accent" },
 		},
 	},

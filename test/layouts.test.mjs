@@ -119,6 +119,7 @@ test("Settings: choosing a layout saves its look and redraws the rows it changed
 	const saved = JSON.parse(env.prefs[PREFIX + "appearance"]);
 	assert.deepEqual([saved.layout, saved.style, saved.mascot], ["minimal", "flat", "none"]);
 	assert.equal(checked("Layout"), "Minimal");
+	assert.match(row("Layout").querySelector(".zs-row-hint").textContent, /^Minimal: only the conversation/, "the row says what the chosen layout is");
 	assert.equal(checked("Style"), "Flat", "the Style row shows what the layout set");
 	assert.equal(checked("Spacing"), "Compact");
 	assert.equal(container.querySelector(".zs-prefs").dataset.layout, "minimal");

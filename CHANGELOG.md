@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- 🎛️ **Settings → Appearance → *Layout*** now says in words what the layout you picked is.
+
 ## 1.6.1
 
 - 🧰 *Rich* in Zotero's item pane: the header stays on one row. The button that gives the chat the whole pane used to wrap onto a row of its own.
