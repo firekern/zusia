@@ -96,6 +96,17 @@
 		content: none;
 	}
 }
+/* In Zotero's item pane the header also holds the button that gives the chat the whole
+   pane, which the dock has no use for: the two names go sooner, or it wraps to a row of its own. */
+@container zs-rich-head (max-width: 350px) {
+	:root:not([zs-dock]) .zs-root[data-layout="rich"]:not([data-labels="icons"]) .zs-header > :is(.zs-search, .zs-history)[data-label] {
+		width: 26px;
+		padding: 0;
+	}
+	:root:not([zs-dock]) .zs-root[data-layout="rich"]:not([data-labels="icons"]) .zs-header > :is(.zs-search, .zs-history)[data-label]::after {
+		content: none;
+	}
+}
 
 /* ---- the paper card ----
    Icon tile, then one text column that the reading line and the bar share, so

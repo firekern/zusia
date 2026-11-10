@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- 🧰 *Rich* in Zotero's item pane: the header stays on one row. The button that gives the chat the whole pane used to wrap onto a row of its own.
+
 ## 1.6.0
 
 - 👋 **A note for people who update.** The first time the left panel shows after an update, a note above the chat says that Zusia moved there and that ⌥Z / Alt+Z hides it, with a button to put the chat back in Zotero's item pane. It shows once. A new install gets the setup wizard, which says the same.
