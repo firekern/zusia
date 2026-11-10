@@ -31,7 +31,8 @@ Object.assign(Zusia, {
 		let { label, command, pathPref } = this.BACKENDS[backend];
 		let override = this.getPref(pathPref);
 		if (override) {
-			return this.avoidBatchFile(backend, override);
+			// Windows itself takes C:/…, but Gecko's path functions refuse a forward slash.
+			return this.avoidBatchFile(backend, Zotero.isWin ? override.replace(/\//g, "\\") : override);
 		}
 
 		let searchEnv = this.buildChildEnvironment();
@@ -89,9 +90,28 @@ Object.assign(Zusia, {
 		delete env.ANTHROPIC_AUTH_TOKEN;
 		delete env.OPENAI_API_KEY;
 
-		let home = env.HOME || env.USERPROFILE || "";
-		let sep = Zotero.isWin ? ";" : ":";
-		env.PATH = this.extraSearchPaths(home).join(sep) + (env.PATH ? sep + env.PATH : "");
+		if (!Zotero.isWin) {
+			let home = env.HOME || env.USERPROFILE || "";
+			env.PATH = this.extraSearchPaths(home).join(":") + (env.PATH ? ":" + env.PATH : "");
+			return env;
+		}
+		// Windows spells the variable "Path", while Mozilla's pathSearch reads only PATH and
+		// getEnvironment keeps the name as it finds it. Left alone, only our own folders
+		// would be searched and the child would get the variable twice.
+		let own = "";
+		for (let name of Object.keys(env)) {
+			if (name.toUpperCase() === "PATH") {
+				own = own || env[name];
+				delete env[name];
+			}
+		}
+		// A HOME from Git Bash or MSYS (/c/Users/…) is not a path Windows programs can use.
+		let home = env.USERPROFILE || env.HOME || "";
+		// pathSearch gives up on the first folder Gecko refuses, so only native absolute ones stay.
+		env.PATH = [...this.extraSearchPaths(home), ...own.split(";")]
+			.map(dir => dir.replace(/\//g, "\\"))
+			.filter(dir => /^([A-Za-z]:\\|\\\\)/.test(dir))
+			.join(";");
 		return env;
 	},
 

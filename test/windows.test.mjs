@@ -1,7 +1,5 @@
 // The plugin as it runs on Windows, through windows-env.mjs: native backslash paths,
 // Zotero's OS.Path fallback, Mozilla's pathSearch and Windows' own spelling of Path.
-// backends.test.mjs covers the same branches with POSIX-style paths ("C:/Users/u")
-// and PATH in capitals; these tests are about what that leaves out.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { loadPlugin } from "./load-plugin.mjs";
@@ -16,7 +14,7 @@ const base = { ctx: { dir: PAPER }, question: "Why?", history: [], session: null
 const valueAfter = (args, flag) => args[args.indexOf(flag) + 1];
 // Values made inside jsdom have its prototypes, which strict deepEqual rejects.
 const plain = value => JSON.parse(JSON.stringify(value));
-// The variable spelled the way backends.test.mjs has it, which Wine also uses.
+// The variable in capitals, as Wine and some shells spell it.
 const upperPath = (Path = NODE_DIR) => ({ USERPROFILE: HOME, PATH: Path, PATHEXT });
 const claudeAnswer = JSON.stringify({ type: "assistant", session_id: "s", message: { content: [{ type: "text", text: "ok" }] } }) + "\n";
 
@@ -75,6 +73,24 @@ test("windows: an npm .cmd whose target is missing is refused, never run", async
 	}
 });
 
+test("windows: a claude.exe anywhere on the user's path wins over npm's .cmd", async () => {
+	const { plugin } = loadWindowsPlugin({ executables: [NPM + "\\claude.cmd", CLAUDE_NPM_EXE, "C:\\tools\\claude.exe"],
+		environment: { USERPROFILE: HOME, Path: "C:\\tools", PATHEXT } });
+	assert.equal(await plugin.findBinary("claude"), "C:\\tools\\claude.exe");
+});
+
+test("windows: a batch file set as the path is refused, also with the trailing dot or space Windows drops", async () => {
+	for (const [backend, path] of [
+		["claude", "C:\\tools\\claude.bat"],
+		["codex", "C:\\tools\\codex.CMD"],
+		["claude", "C:\\tools\\claude.bat."],
+		["codex", "C:\\tools\\codex.cmd "],
+	]) {
+		const { plugin } = loadWindowsPlugin({ prefs: { [PREFIX + backend + "Path"]: path } });
+		await assert.rejects(plugin.findBinary(backend), /will not run batch files.*cmd\.exe/s, path);
+	}
+});
+
 test("windows: npm's codex.cmd runs as node.exe codex.js, with node.exe found on PATH", async () => {
 	const env = loadWindowsPlugin({ executables: [NPM + "\\codex.cmd", CODEX_JS, NODE_EXE], environment: upperPath() });
 	env.cli.stdout = JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: "ok" } }) + "\n";
@@ -89,13 +105,12 @@ test("windows: npm's codex.cmd runs as node.exe codex.js, with node.exe found on
 });
 
 // Windows names the variable "Path" (cmd's `set` shows Path=...), and
-// Subprocess.getEnvironment() keeps that spelling, while buildChildEnvironment
-// (src/content/zusia.js:8102) reads and writes env.PATH and Mozilla's pathSearch
-// reads environment.PATH only. So the search covers the four extra folders and
-// nothing on the user's Path: node.exe in C:\Program Files\nodejs is never found, and
-// neither is a CLI installed anywhere else (winget, scoop, a custom folder). The Wine
-// run cannot show it: Wine spells the variable PATH.
-test("windows: a CLI on the user's Path is found when Windows spells it Path", { todo: "bug: buildChildEnvironment ignores Path, zusia.js:8102" }, async () => {
+// Subprocess.getEnvironment() keeps that spelling, while Mozilla's pathSearch reads
+// environment.PATH only. Unless buildChildEnvironment folds the two, node.exe in
+// C:\Program Files\nodejs and a CLI installed anywhere but the four extra folders
+// (winget, scoop, a custom folder) are never found. The Wine run cannot show it:
+// Wine spells the variable PATH.
+test("windows: a CLI on the user's Path is found when Windows spells it Path", async () => {
 	const env = loadWindowsPlugin({ executables: [NPM + "\\codex.cmd", CODEX_JS, NODE_EXE, "C:\\tools\\agy.exe"],
 		environment: { USERPROFILE: HOME, Path: "C:\\tools;" + NODE_DIR, PATHEXT } });
 	assert.equal(await env.plugin.findBinary("agy"), "C:\\tools\\agy.exe");
@@ -107,17 +122,16 @@ test("windows: a CLI on the user's Path is found when Windows spells it Path", {
 
 // Mozilla's pathSearch does not skip a PATH entry PathUtils refuses: it throws, and
 // findBinary reads that as "not found". The extra folders come first and are built
-// from HOME before USERPROFILE (zusia.js:8100), so a HOME that is not a Windows path,
-// as an MSYS-style /c/Users/u, ends every search before the user's own Path.
-test("windows: a HOME that is not a Windows path does not hide claude.exe on PATH", { todo: "bug: HOME wins over USERPROFILE on Windows, zusia.js:8100" }, async () => {
+// from the home folder, so an MSYS-style HOME (/c/Users/u) would end every search
+// before the user's own Path.
+test("windows: a HOME that is not a Windows path does not hide claude.exe on PATH", async () => {
 	const { plugin } = loadWindowsPlugin({ executables: ["C:\\tools\\claude.exe"], environment: { ...upperPath("C:\\tools"), HOME: "/c/Users/u" } });
 	assert.equal(await plugin.findBinary("claude"), "C:\\tools\\claude.exe");
 });
 
-// avoidBatchFile takes OS.Path.dirname of the setting, and PathUtils.parent refuses
-// "C:/..." on Windows, so the user sees Gecko's NS_ERROR_FILE_UNRECOGNIZED_PATH
-// instead of the npm target or the batch-file message (zusia.js:8079).
-test("windows: a path setting written with forward slashes still resolves npm's claude.cmd", { todo: "bug: claudePath is not normalised before OS.Path.dirname, zusia.js:8079" }, async () => {
+// PathUtils.parent refuses "C:/..." on Windows, which a person may well type, so the
+// setting is turned into a native path before anything reads it.
+test("windows: a path setting written with forward slashes still resolves npm's claude.cmd", async () => {
 	const { plugin } = loadWindowsPlugin({ executables: [CLAUDE_NPM_EXE], prefs: { [PREFIX + "claudePath"]: "C:/Users/u/AppData/Roaming/npm/claude.cmd" } });
 	assert.equal(await plugin.findBinary("claude"), CLAUDE_NPM_EXE);
 });
@@ -220,10 +234,10 @@ test("windows: an attached image is stored relative to the paper folder and reso
 });
 
 // The stored name keeps the separator of the machine that wrote it: "attachments\\x.png"
-// from Windows (zusia.js:3944), "attachments/x.png" from macOS. A Zotero data folder
-// moved from a Mac to Windows then joins to "...\\attachments/x.png", which Gecko's
-// file APIs refuse, and the other way round to a name with a backslash in it.
-test("windows: a chat written on macOS finds its images on Windows", { todo: "bug: stored image paths use the writer's separator, zusia.js:3944" }, () => {
+// from Windows, "attachments/x.png" from macOS. Joined as it is, a Zotero data folder
+// moved from a Mac to Windows would give "...\\attachments/x.png", which Gecko's file
+// APIs refuse, and the other way round a name with a backslash in it.
+test("windows: a chat written on macOS finds its images on Windows", () => {
 	const { plugin } = loadWindowsPlugin();
 	const path = plugin.imagePaths(PAPER, { images: ["attachments/image-1.png"] })[0];
 	assert.equal(path, PAPER + "\\attachments\\image-1.png");

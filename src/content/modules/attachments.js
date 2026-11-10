@@ -15,7 +15,8 @@ Object.assign(Zusia, {
 
 	// Stored messages keep paths relative to the paper's folder.
 	imagePaths(dir, msg) {
-		return (msg.images || []).map(p => OS.Path.join(dir, p));
+		// Stored with the separator of the machine that wrote the chat, which may not be this one.
+		return (msg.images || []).map(p => OS.Path.join(dir, ...p.split(/[\\/]/)));
 	},
 
 	onPasteOrDrop(view, event, transfer) {
