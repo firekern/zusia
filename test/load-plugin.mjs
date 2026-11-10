@@ -70,6 +70,20 @@ export function loadPlugin({ prefs = {}, files = new Map() } = {}) {
 	return { window, document: window.document, plugin, map: window.ZusiaMap, prefs, files, Subprocess, backgroundCalls, runBackgroundCall };
 }
 
+// A chat rendered in the page, with the view the plugin keeps for it: what Zotero's
+// pane or the dock sets up before a test can type, send or read messages.
+export function openChat(env, { ctx = { dir: "/d" }, className = "" } = {}) {
+	const { plugin, document } = env;
+	const body = document.createElement("div");
+	body.className = className;
+	document.body.appendChild(body);
+	plugin.renderSkeleton(document, body);
+	const root = body.querySelector(".zs-root");
+	const view = { doc: document, root, ctx, logEl: root.querySelector(".zs-log"), input: root.querySelector(".zs-input") };
+	plugin._views.set(root, view);
+	return { body, root, view };
+}
+
 export function fixture(name) {
 	return read("test/fixtures/" + name);
 }

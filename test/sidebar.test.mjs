@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { loadPlugin } from "./load-plugin.mjs";
+import { loadPlugin, openChat } from "./load-plugin.mjs";
 
 const PREFIX = "extensions.zusia.";
 
@@ -8,23 +8,14 @@ function sidebar(prefs = {}) {
 	// The setup wizard is tested on its own; everywhere else setup is already done.
 	prefs = { [PREFIX + "onboarded"]: true, ...prefs };
 	const env = loadPlugin({ prefs });
-	const { plugin, document, window } = env;
+	const { window } = env;
 	const removed = [];
-	const body = document.createElement("div");
-	document.body.appendChild(body);
-	plugin.renderSkeleton(document, body);
-	const root = body.querySelector(".zs-root");
+	const { root, view } = openChat(env, { ctx: { dir: "/tmp/x" } });
 	root._installed = { claude: "/bin/claude", codex: null, agy: "/bin/agy" };
 	const sent = [];
-	const view = {
-		doc: document, root, ctx: { dir: "/tmp/x" },
-		logEl: root.querySelector(".zs-log"),
-		input: root.querySelector(".zs-input"),
-		send: (text, images) => sent.push(images && images.length ? { text, images } : text),
-	};
+	view.send = (text, images) => sent.push(images && images.length ? { text, images } : text);
 	window.Zotero.File = { pathToFileURI: path => "file://" + path, putContentsAsync: async () => {}, createDirectoryIfMissingAsync: async () => {} };
 	window.OS = { Path: { join: (...p) => p.join("/") }, File: { remove: async (path) => removed.push(path) } };
-	plugin._views.set(root, view);
 	return { ...env, root, view, sent, removed };
 }
 const menuLabels = root => [...root.querySelectorAll(".zs-menu .zs-menu-label")].map(n => n.textContent);

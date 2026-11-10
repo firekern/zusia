@@ -4,7 +4,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { loadPlugin } from "./load-plugin.mjs";
+import { loadPlugin, openChat } from "./load-plugin.mjs";
 
 const PREFIX = "extensions.zusia.";
 const plain = value => JSON.parse(JSON.stringify(value));
@@ -283,13 +283,8 @@ test("triggers: crossing into another chapter, by a page turn or between two que
 
 test("triggers: New chat folds the chat it puts away into the memory, and the new chat starts uncovered", async () => {
 	const env = loadPlugin();
-	const { plugin, files, document } = env;
-	const body = document.createElement("div");
-	document.body.appendChild(body);
-	plugin.renderSkeleton(document, body);
-	const root = body.querySelector(".zs-root");
-	const view = { doc: document, root, ctx: { dir: "/d" }, logEl: root.querySelector(".zs-log"), input: root.querySelector(".zs-input") };
-	plugin._views.set(root, view);
+	const { plugin, files } = env;
+	const { root, view } = openChat(env);
 	files.set("/d/chat.json", JSON.stringify(turns(2)));
 	files.set("/d/memory.json", JSON.stringify({ ...env.map.emptyMemory(), coveredThrough: 1, epoch: 3 }));
 	let release;
@@ -638,13 +633,7 @@ test("gists: in the prompt as orientation while fresh, stale and written again o
 
 function sheetEnv(prefs = {}) {
 	const env = loadPlugin({ prefs: { [PREFIX + "onboarded"]: true, ...prefs } });
-	const { plugin, document } = env;
-	const body = document.createElement("div");
-	document.body.appendChild(body);
-	plugin.renderSkeleton(document, body);
-	const root = body.querySelector(".zs-root");
-	const view = { doc: document, root, ctx: { dir: "/d" }, logEl: root.querySelector(".zs-log"), input: root.querySelector(".zs-input") };
-	plugin._views.set(root, view);
+	const { root, view } = openChat(env);
 	const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 	return { ...env, root, view, tick };
 }
@@ -759,16 +748,7 @@ test("memory sheet: the chip says when the memory is being updated or paused", a
 // ---------------------------------------------------------------- what survives a restart, a reset or a failure
 
 // The sidebar for /d, enough for New chat and the Memory sheet.
-function chatView(env) {
-	const { plugin, document } = env;
-	const body = document.createElement("div");
-	document.body.appendChild(body);
-	plugin.renderSkeleton(document, body);
-	const root = body.querySelector(".zs-root");
-	const view = { doc: document, root, ctx: { dir: "/d" }, logEl: root.querySelector(".zs-log"), input: root.querySelector(".zs-input") };
-	plugin._views.set(root, view);
-	return root;
-}
+const chatView = env => openChat(env).root;
 
 test("archives: a chat New chat put away is folded in after a restart, and a failed fold is tried again", async () => {
 	const env = loadPlugin();

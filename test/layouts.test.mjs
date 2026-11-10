@@ -1,19 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { loadPlugin } from "./load-plugin.mjs";
+import { loadPlugin, openChat } from "./load-plugin.mjs";
 
 const PREFIX = "extensions.zusia.";
 
 function sidebar(prefs = {}, { dock = false } = {}) {
 	const env = loadPlugin({ prefs: { [PREFIX + "onboarded"]: true, ...prefs } });
-	const { plugin, document } = env;
-	const body = document.createElement("div");
-	body.className = dock ? "zs-dock" : "";
-	document.body.appendChild(body);
-	plugin.renderSkeleton(document, body);
-	const root = body.querySelector(".zs-root");
-	plugin._views.set(root, { doc: document, root, ctx: { dir: "/tmp/x" }, logEl: root.querySelector(".zs-log"), input: root.querySelector(".zs-input"), send() {} });
+	const { root, view } = openChat(env, { ctx: { dir: "/tmp/x" }, className: dock ? "zs-dock" : "" });
+	view.send = () => {};
 	return { ...env, root };
 }
 const menuLabels = root => [...root.querySelectorAll(".zs-menu .zs-menu-label")].map(n => n.textContent);

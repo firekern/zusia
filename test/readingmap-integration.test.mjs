@@ -4,7 +4,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { loadPlugin } from "./load-plugin.mjs";
+import { loadPlugin, openChat } from "./load-plugin.mjs";
 
 const PREFIX = "extensions.zusia.";
 // PDF index 23 carries printed page 1, so PDF page 41 is printed 18, as in Oppenheim.
@@ -393,11 +393,7 @@ test("/remember and ricorda: are stored, not sent, and confirmed in the chat; /f
 	const env = loadPlugin();
 	const { document, plugin } = env;
 	const { ctx } = openBook(env, { pageIndex: 40 });
-	const body = document.createElement("div");
-	document.body.appendChild(body);
-	plugin.renderSkeleton(document, body);
-	const root = body.querySelector(".zs-root");
-	const view = { doc: document, root, ctx, logEl: root.querySelector(".zs-log"), input: root.querySelector(".zs-input") };
+	const { view } = openChat(env, { ctx });
 	let started = 0;
 	plugin.startRequest = () => { started++; };
 
