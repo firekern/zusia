@@ -70,9 +70,10 @@ Object.assign(Zusia, {
 	},
 
 	finishWizard(root) {
-		this.setPref("onboarded", true);
-		// Its last step said what the dock's note for people who update says.
+		// Before onboarded, whose observer redraws the dock at once: its last step said what
+		// the dock's note for people who update says, so that note must not appear now.
 		this.setPref("dockTipSeen", true);
+		this.setPref("onboarded", true);
 		root.querySelector(".zs-wizard")?.remove();
 		root.querySelector(".zs-input")?.focus();
 	},

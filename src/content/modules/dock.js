@@ -78,7 +78,11 @@ Object.assign(Zusia, {
 		content.parentNode.insertBefore(box, content);
 
 		let dock = { box, body, rail, resizer, paperID: null, rendered: false, itemsView: null, treeTimer: null, readerTimer: null, fixed: null, tip: null };
-		dock.onSelect = () => this.syncDock(win).catch(e => this.logError("syncDock", e));
+		// Returns nothing: Zotero awaits what a select listener returns before it calls the
+		// next one, and a render can last as long as an answer being written.
+		dock.onSelect = () => {
+			this.syncDock(win).catch(e => this.logError("syncDock", e));
+		};
 		dock.onKey = (event) => {
 			if (event.code !== "Key" + this.DOCK_KEY || !event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
 				return;
@@ -286,14 +290,20 @@ Object.assign(Zusia, {
 		let towardsEnd = win.getComputedStyle(box).direction === "rtl" ? -1 : 1;
 		let width = startWidth;
 		let move = (e) => {
-			width = startWidth + towardsEnd * (e.screenX - startX);
+			// What is shown is what is saved: the pointer may be far past either limit.
+			width = Math.min(this.dockLimits(win).max, Math.max(this.DOCK_WIDTH.min, startWidth + towardsEnd * (e.screenX - startX)));
 			// The pref is written once, on release; meanwhile only this window follows the pointer.
-			box.style.width = Math.min(this.dockLimits(win).max, Math.max(this.DOCK_WIDTH.min, width)) + "px";
+			box.style.width = width + "px";
 		};
+		let ended = false;
 		let end = () => {
-			resizer.removeEventListener("pointermove", move);
-			resizer.removeEventListener("pointerup", end);
-			resizer.removeEventListener("pointercancel", end);
+			if (ended) {
+				return;
+			}
+			ended = true;
+			for (let type of ["pointermove", "pointerup", "pointercancel", "lostpointercapture"]) {
+				resizer.removeEventListener(type, type === "pointermove" ? move : end);
+			}
 			box.classList.remove("zs-dock-resizing");
 			this.setDockWidth(width);
 		};
@@ -302,6 +312,8 @@ Object.assign(Zusia, {
 		resizer.addEventListener("pointermove", move);
 		resizer.addEventListener("pointerup", end);
 		resizer.addEventListener("pointercancel", end);
+		// Switching to another app or a dialog mid-drag ends the capture without a pointerup.
+		resizer.addEventListener("lostpointercapture", end);
 		box.classList.add("zs-dock-resizing");
 		event.preventDefault();
 	},
@@ -323,6 +335,13 @@ Object.assign(Zusia, {
 			return;
 		}
 		win.clearTimeout(dock.readerTimer);
+		// Zotero builds a new items tree when it reloads its data; the listener goes with it.
+		let tree = win.ZoteroPane.itemsView;
+		if (dock.itemsView && tree && tree !== dock.itemsView) {
+			dock.itemsView.onSelect.removeListener(dock.onSelect);
+			tree.onSelect.addListener(dock.onSelect);
+			dock.itemsView = tree;
+		}
 		let item = this.dockItem(win);
 		// A reader tab is selected a moment before Zotero has its reader.
 		if (!item && win.Zotero_Tabs.selectedType !== "library" && tries) {

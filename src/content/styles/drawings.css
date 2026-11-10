@@ -50,7 +50,11 @@
 	transition: opacity 0.12s ease;
 }
 .zs-figure:hover > .zs-figure-tools,
-.zs-figure-tools:focus-within,
+.zs-figure-tools:focus-within {
+	opacity: 1;
+}
+/* Its own rule: Zotero 7's Gecko has no :has() and drops a whole list that holds it,
+   which left the tools invisible there. */
 .zs-figure-tools:has([aria-expanded="true"]) {
 	opacity: 1;
 }

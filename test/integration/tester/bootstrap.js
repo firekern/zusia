@@ -668,9 +668,24 @@ async function testLayouts(win, CS) {
 			fits: root.scrollWidth <= root.clientWidth + 1 && rect.bottom - composer.bottom < 24 && composer.right <= rect.right,
 		};
 		await snapshot(win, "zotero-layout-" + layout, { x: rect.x, y: rect.y, width: rect.width + 4, height: rect.height });
+		if (layout === "minimal") {
+			// Its tools open from the one button left in the header, so that is where their menus must be.
+			let more = root.querySelector(".zs-header-more");
+			more.click();
+			[...root.querySelectorAll(".zs-menu-item")].find(i => i.textContent.startsWith("Previous chats")).click();
+			let menu = await waitFor(() => root.querySelector(".zs-history-menu"), 5000, "history menu from More");
+			await Zotero.Promise.delay(300);
+			let m = menu.getBoundingClientRect();
+			let b = more.getBoundingClientRect();
+			parts.minimalMenu = { top: Math.round(m.top), left: Math.round(m.left), right: Math.round(m.right), buttonBottom: Math.round(b.bottom), dock: [Math.round(rect.left), Math.round(rect.right)] };
+			parts.minimalMenuOk = m.top >= b.bottom - 1 && m.top - b.bottom < 16 && m.left >= rect.left && m.right <= rect.right + 1 && m.height > 20;
+			await snapshot(win, "zotero-minimal-history-menu", { x: rect.x, y: rect.y, width: rect.width + 4, height: 360 });
+			CS.closeMenu(root);
+		}
 	}
 	CS.saveAppearance(before);
 	let { minimal, standard, rich, visual } = parts;
+	check("layouts: in Minimal, Previous chats opens under the More button, inside the dock", parts.minimalMenuOk, parts.minimalMenu);
 	check("layouts: Minimal keeps New chat and a menu in the header, and the paper chip",
 		minimal.more && !minimal.search && !minimal.card && minimal.chip, minimal);
 	check("layouts: Standard shows its tools as icons and no paper card",
@@ -680,7 +695,7 @@ async function testLayouts(win, CS) {
 	check("layouts: Visual shows the paper card and the buddy beside each answer",
 		visual.card && !visual.chip && visual.avatar && !standard.avatar, visual);
 	check("layouts: every layout fits the dock, with the composer at its bottom",
-		Object.values(parts).every(p => p.fits), Object.fromEntries(Object.entries(parts).map(([k, p]) => [k, p.fits])));
+		[minimal, standard, rich, visual].every(p => p.fits), { minimal: minimal.fits, standard: standard.fits, rich: rich.fits, visual: visual.fits });
 }
 
 // The first-run wizard in the left dock: every step has to fit, with its buttons in reach.

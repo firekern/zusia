@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.6.3
+
+Found by a review of everything new since 1.2.0.
+
+- 🐛 **Selecting a paper could hang while an answer was being written.** With the left panel, choosing a paper whose answer was still coming in made Zotero wait for the whole answer before it finished the selection: opening a result of *Search all chats*, or a Related item, stalled for as long as the assistant took.
+- 🐛 *Minimal*: **Previous chats** and **Search all chats**, opened from the header's menu, appeared at the top-left corner of the window or out of sight. They now open under that menu's button.
+- 🐛 Finishing the setup wizard briefly showed the note meant for people who update.
+- 🐛 Dragging the panel's edge past its limit saved the width the pointer asked for, not the one shown, so a wider screen later opened the panel far too wide. A drag interrupted by switching apps no longer leaves the edge following the pointer.
+- 🐛 After Zotero reloads its data (a sync restore, for example) the panel follows the library's selection again.
+- 🐛 Zotero 7: the tools on a drawing (save, copy) were never visible.
+
 ## 1.6.2
 
 - 🐛 **The left panel could stop following the paper you select in the library** after a restart: when Zotero had not finished building its items list as the panel was made, the panel never started listening to it. It now waits for the list however long the window takes.

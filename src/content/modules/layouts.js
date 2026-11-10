@@ -44,8 +44,9 @@ Object.assign(Zusia, {
 					run();
 				},
 			});
-			item("Previous chats", "Reopen an earlier chat about this paper", () => this.openHistoryMenu(root));
-			item("Search all chats", "Across every paper", () => this.openSearchMenu(root));
+			// From this button: the ones these menus usually hang from are hidden in Minimal.
+			item("Previous chats", "Reopen an earlier chat about this paper", () => this.openHistoryMenu(root, anchor));
+			item("Search all chats", "Across every paper", () => this.openSearchMenu(root, anchor));
 			item("Clarifications", "What you asked about highlighted text", () =>
 				this.openClarifications(root).catch(e => this.logError("openClarifications", e)));
 			item("Settings", "Assistants, look and behaviour", () => this.openSettings());

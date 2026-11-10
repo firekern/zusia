@@ -361,3 +361,89 @@ test("on a Mac, Option+Z typed into a text field stays a character and does not 
 	assert.equal(press(field), true, "elsewhere Alt types nothing, so the field gives the key up");
 	plugin.removePlacement();
 });
+
+test("the selection listener hands Zotero nothing to wait for", () => {
+	// Zotero awaits each select listener before the next, and before selectItem() returns:
+	// a promise that lasts as long as an answer being written would hold all of that up.
+	const { plugin, state } = mainWindow();
+	plugin.renderContent = () => new Promise(() => {});
+	plugin.applyPlacement();
+	state.selected = [paper(1)];
+	for (const listener of state.listeners) {
+		assert.equal(listener(), undefined);
+	}
+	plugin.removePlacement();
+});
+
+test("a drag past either limit saves the width that was shown, and ends when the capture is lost", () => {
+	const { plugin, window, dock, prefs } = mainWindow();
+	plugin.applyPlacement();
+	const resizer = dock().querySelector(".zs-dock-resizer");
+	resizer.setPointerCapture = () => {};
+	dock().getBoundingClientRect = () => ({ width: 380 });
+	const pointer = (type, screenX) => {
+		const event = new window.MouseEvent(type, { bubbles: true, cancelable: true, button: 0, screenX });
+		event.pointerId = 1;
+		resizer.dispatchEvent(event);
+	};
+	pointer("pointerdown", 500);
+	pointer("pointermove", 3000);
+	pointer("pointerup", 3000);
+	assert.equal(prefs[PREFIX + "dockWidth"], 473, "not the 2880 the pointer asked for");
+	pointer("pointerdown", 500);
+	pointer("pointermove", 0);
+	pointer("pointerup", 0);
+	assert.equal(prefs[PREFIX + "dockWidth"], 280);
+
+	// Another app comes to the front mid-drag: no pointerup ever arrives.
+	pointer("pointerdown", 500);
+	pointer("pointermove", 520);
+	pointer("lostpointercapture", 520);
+	assert.equal(dock().classList.contains("zs-dock-resizing"), false);
+	assert.equal(prefs[PREFIX + "dockWidth"], 400);
+	pointer("pointermove", 700);
+	assert.equal(dock().style.width, "400px", "hovering the grip afterwards moves nothing");
+	plugin.removePlacement();
+});
+
+test("when Zotero rebuilds its items tree the dock listens to the new one", async () => {
+	const { plugin, window, state, shown } = mainWindow();
+	plugin.applyPlacement();
+	const fresh = new Set();
+	const old = window.ZoteroPane.itemsView;
+	window.ZoteroPane.itemsView = { onSelect: { addListener: fn => fresh.add(fn), removeListener: fn => fresh.delete(fn) } };
+	// The next thing that makes the dock look again, here a tab change.
+	for (const observer of state.observers) {
+		observer.notify("select", "tab", ["zotero-pane"]);
+	}
+	assert.equal(state.listeners.size, 0, "off the old tree");
+	assert.equal(fresh.size, 1);
+	state.selected = [paper(5)];
+	for (const listener of fresh) {
+		listener();
+	}
+	await new Promise(resolve => setTimeout(resolve, 0));
+	assert.equal(shown.at(-1), 5);
+	plugin.removePlacement();
+	assert.equal(fresh.size, 0);
+	window.ZoteroPane.itemsView = old;
+});
+
+test("finishing the setup wizard never flashes the note meant for people who update", () => {
+	const { plugin, dock, prefs } = mainWindow({ [PREFIX + "onboarded"]: false });
+	plugin.applyPlacement();
+	// Zotero calls a pref's observers as it is set; this one redraws every chat and the dock.
+	const { setPref } = plugin;
+	const tips = [];
+	plugin.setPref = (name, value) => {
+		setPref.call(plugin, name, value);
+		if (name === "onboarded") {
+			plugin.refreshAllSidebars();
+			tips.push(!!dock().querySelector(".zs-dock-tip"));
+		}
+	};
+	plugin.finishWizard(dock().querySelector(".zs-root"));
+	assert.deepEqual(tips, [false]);
+	assert.equal(prefs[PREFIX + "dockTipSeen"], true);
+	plugin.removePlacement();
+});

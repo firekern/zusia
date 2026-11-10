@@ -81,8 +81,9 @@ Object.assign(Zusia, {
 		}
 	},
 
-	openSearchMenu(root) {
-		let anchor = root.querySelector(".zs-search");
+	// `anchor` is the button the menu hangs from: the header's own, or the More menu's
+	// button in the layout that hides it.
+	openSearchMenu(root, anchor = root.querySelector(".zs-search")) {
 		if (!anchor) {
 			return;
 		}
@@ -204,9 +205,8 @@ Object.assign(Zusia, {
 		}
 	},
 
-	openHistoryMenu(root) {
+	openHistoryMenu(root, anchor = root.querySelector(".zs-history")) {
 		let view = this._views.get(root);
-		let anchor = root.querySelector(".zs-history");
 		if (!view || !anchor) {
 			return;
 		}

@@ -154,3 +154,26 @@ test("the answer still being written is marked, so a layout can show its buddy a
 	// The live answer counts its seconds on a timer, which would keep the test process alive.
 	window.close();
 });
+
+test("Minimal: the menus opened from the header menu hang from its button, the only one left on screen", async () => {
+	const { root, plugin } = sidebar({ [PREFIX + "appearance"]: JSON.stringify({ layout: "minimal" }) });
+	plugin.listArchives = async () => [];
+	plugin.loadAllChats = async () => [];
+	const more = root.querySelector(".zs-header-more");
+	const choose = (label) => {
+		more.click();
+		[...root.querySelectorAll(".zs-menu-item")].find(i => i.querySelector(".zs-menu-label").textContent === label).click();
+	};
+	choose("Previous chats");
+	assert.ok(root.querySelector(".zs-history-menu"));
+	assert.equal(more.getAttribute("aria-expanded"), "true", "anchored at More");
+	assert.notEqual(root.querySelector(".zs-history").getAttribute("aria-expanded"), "true", "not at the hidden History button");
+	plugin.closeMenu(root);
+	choose("Search all chats");
+	assert.ok(root.querySelector(".zs-search-menu"));
+	assert.equal(more.getAttribute("aria-expanded"), "true");
+	plugin.closeMenu(root);
+	// The header's own buttons still open them where they are.
+	root.querySelector(".zs-history").click();
+	assert.equal(root.querySelector(".zs-history").getAttribute("aria-expanded"), "true");
+});
