@@ -410,6 +410,8 @@
 	white-space: nowrap;
 }
 .zs-menu-desc {
+	/* Room under the second line, or the row sits closer to the next than the others do. */
+	margin-bottom: 3px;
 	font-size: 0.85em;
 	color: var(--zs-muted);
 	overflow: hidden;
