@@ -95,6 +95,12 @@
 		color-mix(in srgb, var(--zs-ground) var(--zs-bg-veil, 45%), transparent);
 }
 
+/* The buddy in the header sits on the corner where the accent glows: in the accent's
+   own colour it nearly vanished there. */
+.zs-root[data-style="glass"] .zs-header-icon {
+	color: color-mix(in srgb, var(--zs-accent) 25%, var(--zs-text));
+}
+
 /* Cards: translucent, a bright top edge and a soft drop shadow. */
 .zs-root[data-style="glass"] :is(.zs-user, .zs-code, .zs-env:not(.zs-env-proof), .zs-table-wrap) {
 	border-color: var(--zs-glass-line);

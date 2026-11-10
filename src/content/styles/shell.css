@@ -247,3 +247,7 @@
 .zs-dock .zs-root .zs-dock-hide {
 	display: inline-flex !important;
 }
+/* The icon draws a panel at the left of a window: at the right it is mirrored to match. */
+.zs-dock[data-side="right"] .zs-dock-hide .zs-i {
+	transform: scaleX(-1);
+}
