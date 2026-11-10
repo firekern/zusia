@@ -94,6 +94,11 @@ test("answers from different assistants or models are labelled", () => {
 		{ role: "user", text: "q2" }, { role: "assistant", text: "a2", backend: "agy" },
 	]);
 	assert.deepEqual([...root.querySelectorAll(".zs-by")].map(n => n.textContent), ["Claude · Opus", "Antigravity"]);
+	assert.equal(root.dataset.runs, "several");
+	// With one assistant the line is still there for the Rich layout; the stylesheet hides it elsewhere.
+	plugin.renderMessages(view, [{ role: "user", text: "q1" }, { role: "assistant", text: "a1", backend: "claude", model: "opus" }]);
+	assert.deepEqual([...root.querySelectorAll(".zs-by")].map(n => n.textContent), ["Claude · Opus"]);
+	assert.equal(root.dataset.runs, "one");
 });
 
 test("busy state turns Send into Stop and disables prompts", () => {

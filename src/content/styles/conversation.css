@@ -134,6 +134,9 @@
 .zs-footer .zs-ghost.zs-explain:hover:not(:disabled) {
 	background: var(--zs-accent-soft);
 }
+.zs-root[data-runs="one"]:not([data-layout="rich"]) .zs-by {
+	display: none;
+}
 .zs-by {
 	font-size: 0.85em;
 	color: var(--zs-faint);

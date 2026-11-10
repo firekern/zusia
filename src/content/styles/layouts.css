@@ -24,10 +24,14 @@
 	cursor: pointer;
 	transition: border-color 0.15s ease;
 }
-.zs-root:is([data-layout="rich"], [data-layout="visual"]) .zs-paper-card:hover,
+.zs-root:is([data-layout="rich"], [data-layout="visual"]) .zs-paper-card:hover {
+	border-color: var(--zs-accent-line);
+}
+/* It acts as a button, so the keyboard has to see where it is. */
 .zs-root:is([data-layout="rich"], [data-layout="visual"]) .zs-paper-card:focus-visible {
 	border-color: var(--zs-accent-line);
-	outline: none;
+	outline: 2px solid var(--zs-accent);
+	outline-offset: 1px;
 }
 .zs-paper-card-icon {
 	width: 18px;

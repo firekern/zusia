@@ -247,9 +247,10 @@ Object.assign(Zusia, {
 			this.renderEmptyState(view);
 			return;
 		}
-		// Only label answers once more than one assistant or model took part.
+		// Who answered is worth saying once more than one assistant or model took part; the
+		// stylesheet hides the line otherwise, except in the Rich layout, which always shows it.
 		let runs = new Set(history.filter(m => m.role === "assistant").map(m => this.describeRun(m)));
-		let labelled = runs.size > 1;
+		view.root.dataset.runs = runs.size > 1 ? "several" : "one";
 		let lastAssistant = history.map(m => m.role).lastIndexOf("assistant");
 		history.forEach((msg, index) => {
 			if (msg.role === "user") {
@@ -261,7 +262,7 @@ Object.assign(Zusia, {
 				index,
 				isLast: index === lastAssistant,
 				question: index > 0 && history[index - 1].role === "user" ? history[index - 1].text : "",
-				byline: labelled ? this.describeRun(msg) : null,
+				byline: this.describeRun(msg),
 			});
 			turn.classList.toggle("zs-last", index === lastAssistant);
 		});
