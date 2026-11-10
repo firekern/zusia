@@ -1,0 +1,34 @@
+/* ---- Rich: the tools named, the prompts all in view ---- */
+
+.zs-root[data-layout="rich"] .zs-header {
+	flex-wrap: wrap;
+	row-gap: 2px;
+}
+.zs-root[data-layout="rich"] .zs-header > .zs-icon[data-label] {
+	width: auto;
+	gap: 4px;
+	padding: 0 7px;
+}
+.zs-root[data-layout="rich"] .zs-header > .zs-icon[data-label]::after {
+	content: attr(data-label);
+	font-size: 0.88em;
+	white-space: nowrap;
+}
+/* The paper card names the paper, so the header is a row of tools, the last two at its end. */
+.zs-root[data-layout="rich"] .zs-header-title {
+	display: none !important;
+}
+.zs-root[data-layout="rich"] .zs-open-settings {
+	margin-inline-start: auto;
+}
+.zs-root[data-layout="rich"][data-chatting="true"] .zs-quick {
+	flex-wrap: wrap;
+	overflow: visible;
+}
+/* Who answered, with which model: shown without hovering. */
+.zs-root[data-layout="rich"] .zs-footer {
+	opacity: 1;
+}
+.zs-root[data-layout="rich"] .zs-by {
+	display: inline !important;
+}

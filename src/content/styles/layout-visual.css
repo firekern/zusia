@@ -1,0 +1,84 @@
+/* ---- Visual: the buddy in the conversation, colour behind it, prompts as cards ---- */
+
+.zs-root[data-layout="visual"] .zs-paper-card {
+	border-color: color-mix(in srgb, var(--zs-accent) 28%, transparent);
+	background: linear-gradient(135deg,
+		color-mix(in srgb, var(--zs-accent) 16%, var(--zs-raised)),
+		color-mix(in srgb, var(--accent-teal, #59adc4) 12%, var(--zs-raised)));
+}
+.zs-root[data-layout="visual"] .zs-paper-card-icon {
+	width: 30px;
+	height: 30px;
+	padding: 6px;
+	border-radius: 9px;
+	color: var(--zs-accent-text);
+	background: var(--zs-accent);
+}
+.zs-root[data-layout="visual"] .zs-paper-card-icon .zs-duo {
+	fill: currentColor;
+}
+.zs-root[data-layout="visual"] .zs-paper-card-progress {
+	height: 5px;
+	border-radius: 3px;
+}
+/* The buddy answers: its face beside each answer, in the accent colour. */
+.zs-root[data-layout="visual"] .zs-turn {
+	position: relative;
+	padding-inline-start: 32px;
+}
+.zs-root[data-layout="visual"] .zs-turn::before,
+.zs-root[data-layout="visual"] .zs-turn::after {
+	content: "";
+	position: absolute;
+	inset-inline-start: 0;
+	top: 0;
+	width: 24px;
+	height: 24px;
+}
+.zs-root[data-layout="visual"] .zs-turn::before {
+	border-radius: 50%;
+	background: var(--zs-accent-soft);
+}
+.zs-root[data-layout="visual"] .zs-turn::after {
+	background: var(--zs-accent);
+	mask: url("../icons/sparkle.svg") center / 15px no-repeat;
+}
+.zs-root[data-layout="visual"][data-mascot="cat"] .zs-turn::after { mask-image: url("../icons/cat.svg"); }
+.zs-root[data-layout="visual"][data-mascot="owl"] .zs-turn::after { mask-image: url("../icons/bird.svg"); }
+.zs-root[data-layout="visual"][data-mascot="robot"] .zs-turn::after { mask-image: url("../icons/robot.svg"); }
+/* Your side of the chat: a bubble on the right. */
+.zs-root[data-layout="visual"] .zs-user {
+	align-self: flex-end;
+	max-width: 88%;
+	border-end-end-radius: 4px;
+}
+.zs-root[data-layout="visual"] .zs-mascot {
+	width: 104px;
+	height: 104px;
+}
+.zs-root[data-layout="visual"] .zs-empty {
+	min-height: 220px;
+}
+/* Before the first question the prompts are cards to pick from. */
+.zs-root[data-layout="visual"]:not([data-chatting="true"]) .zs-quick {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 8px;
+}
+.zs-root[data-layout="visual"]:not([data-chatting="true"]) .zs-pill {
+	justify-content: flex-start;
+	min-height: 44px;
+	padding: 8px 12px;
+	border-radius: var(--zs-radius-card);
+	font-weight: 500;
+	white-space: normal;
+	text-align: start;
+	background: color-mix(in srgb, var(--zs-accent) 7%, var(--zs-raised));
+}
+/* More colour behind the glass than the other layouts ask for. */
+.zs-root[data-layout="visual"][data-style="glass"]:not([data-bg="image"]) > .zs-backdrop {
+	background:
+		radial-gradient(120% 60% at 0% 0%, color-mix(in srgb, var(--zs-accent) 26%, transparent), transparent 70%),
+		radial-gradient(90% 50% at 100% 30%, color-mix(in srgb, var(--accent-teal, #59adc4) 22%, transparent), transparent 70%),
+		radial-gradient(110% 55% at 30% 100%, color-mix(in srgb, var(--tag-purple, #a28ae5) 24%, transparent), transparent 70%);
+}

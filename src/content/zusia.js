@@ -16,6 +16,7 @@ Zusia = {
 	STYLES: [
 		"base", "shell", "conversation", "richtext", "states", "composer", "appearance", "drawings",
 		"buddies", "theorems", "search", "glass", "prefs", "wizard", "panels", "layouts",
+		"layout-minimal", "layout-rich", "layout-visual",
 	],
 	PREF_PREFIX: "extensions.zusia.",
 	PREFS_PANE_ID: "zusia-prefs",

@@ -1,0 +1,60 @@
+/* ---- Minimal: the conversation and the message box, nothing asking for attention ---- */
+
+.zs-root[data-layout="minimal"] .zs-header-icon,
+.zs-root[data-layout="minimal"] .zs-clarifications,
+.zs-root[data-layout="minimal"] .zs-search,
+.zs-root[data-layout="minimal"] .zs-history,
+.zs-root[data-layout="minimal"] .zs-open-settings,
+.zs-dock .zs-root[data-layout="minimal"] .zs-dock-hide {
+	display: none !important;
+}
+.zs-root[data-layout="minimal"] .zs-header-more {
+	display: inline-flex;
+}
+/* The header icon is gone, so the paper's title starts at the text's left edge. */
+.zs-root[data-layout="minimal"] .zs-header {
+	padding-inline-start: 4px;
+}
+.zs-root[data-layout="minimal"] .zs-header-paper {
+	font-weight: 500;
+	color: var(--zs-muted);
+}
+/* The prompts are a way to start; once the chat is going they would only take a row. */
+.zs-root[data-layout="minimal"][data-chatting="true"] .zs-quick {
+	display: none;
+}
+.zs-root[data-layout="minimal"] .zs-empty {
+	min-height: 96px;
+}
+.zs-root[data-layout="minimal"] .zs-empty-title {
+	font-size: 1.05em;
+	font-weight: 500;
+	color: var(--zs-muted);
+}
+.zs-root[data-layout="minimal"] .zs-empty-sub {
+	display: none;
+}
+.zs-root[data-layout="minimal"] .zs-user {
+	border-color: transparent;
+	background: var(--zs-hover);
+}
+.zs-root[data-layout="minimal"] .zs-pill {
+	border-color: transparent !important;
+	background: var(--zs-hover);
+}
+.zs-root[data-layout="minimal"] .zs-composer {
+	padding: 8px 9px 4px;
+	box-shadow: none;
+	background: transparent;
+	border-color: var(--zs-border-strong);
+}
+.zs-root[data-layout="minimal"] .zs-composer:focus-within {
+	border-color: var(--zs-accent-line);
+}
+/* Quiet until the pointer or the keyboard is in the message box. */
+.zs-root[data-layout="minimal"] .zs-composer:not(:hover):not(:focus-within) .zs-controls > :not(.zs-send) {
+	opacity: 0.45;
+}
+.zs-root[data-layout="minimal"] .zs-controls > * {
+	transition: opacity 0.15s ease;
+}

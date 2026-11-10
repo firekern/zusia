@@ -43,10 +43,10 @@ test("choosing a layout sets the look it starts from and keeps the rest", () => 
 	}
 });
 
-test("every layout but Standard has rules in layouts.css", () => {
-	const css = readFileSync(new URL("../src/content/styles/layouts.css", import.meta.url), "utf8");
+test("every layout but Standard has a stylesheet of its own", () => {
 	const { plugin } = sidebar();
 	for (const layout of Object.keys(plugin.LAYOUTS).filter(l => l !== "standard")) {
+		const css = readFileSync(new URL("../src/content/styles/layout-" + layout + ".css", import.meta.url), "utf8");
 		assert.ok(css.includes('[data-layout="' + layout + '"]'), layout);
 	}
 });
