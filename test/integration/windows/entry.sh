@@ -13,21 +13,12 @@ win /repo/test/integration/tester > "$base/profile/extensions/zusia-tester@firek
 win /repo/test/integration/windows/probe > "$base/profile/extensions/zusia-probe@firekern.github.io"
 # Prefs take JS strings, so each backslash is doubled.
 js() { local p; p="$(win "$1")"; printf '%s' "${p//\\/\\\\}"; }
-cat > "$base/profile/user.js" <<PREFS
+cp /repo/test/integration/profile.js "$base/profile/user.js"
+cat >> "$base/profile/user.js" <<PREFS
 user_pref("extensions.zotero.dataDir", "$(js "$base/data")");
-user_pref("extensions.zotero.useDataDir", true);
-user_pref("extensions.autoDisableScopes", 0);
-user_pref("extensions.enabledScopes", 15);
-user_pref("extensions.startupScanScopes", 15);
-user_pref("xpinstall.signatures.required", false);
-user_pref("extensions.zotero.firstRun2", false);
-user_pref("extensions.zotero.firstRunGuidance", false);
-user_pref("extensions.zotero.httpServer.enabled", false);
-user_pref("extensions.zotero.sync.autoSync", false);
 user_pref("extensions.zusia-tester.outDir", "$(js /out)");
 user_pref("extensions.zusia-tester.repo", "$(js /repo)");
 user_pref("extensions.zusia-tester.live", false);
-user_pref("extensions.zusia.onboarded", true);
 user_pref("ui.systemUsesDarkTheme", 0);
 // Wine under x86 emulation has no GPU and cannot run Gecko's sandboxed content
 // processes reliably, so everything renders in software in one process.

@@ -25,22 +25,12 @@ else
 	echo "$repo/src" > "$base/profile/extensions/zusia@firekern.github.io"
 fi
 echo "$here/tester" > "$base/profile/extensions/zusia-tester@firekern.github.io"
-cat > "$base/profile/user.js" <<PREFS
+cp "$here/profile.js" "$base/profile/user.js"
+cat >> "$base/profile/user.js" <<PREFS
 user_pref("extensions.zotero.dataDir", "$base/data");
-user_pref("extensions.zotero.useDataDir", true);
-user_pref("extensions.autoDisableScopes", 0);
-user_pref("extensions.enabledScopes", 15);
-user_pref("extensions.startupScanScopes", 15);
-user_pref("xpinstall.signatures.required", false);
-user_pref("extensions.zotero.firstRun2", false);
-user_pref("extensions.zotero.firstRunGuidance", false);
-user_pref("extensions.zotero.httpServer.enabled", false);
-user_pref("extensions.zotero.sync.autoSync", false);
 user_pref("extensions.zusia-tester.outDir", "$out");
 user_pref("extensions.zusia-tester.repo", "$repo");
 user_pref("extensions.zusia-tester.live", $([ "${LIVE:-0}" = 1 ] && echo true || echo false));
-// The setup wizard would cover the screenshots; its steps are tested in jsdom.
-user_pref("extensions.zusia.onboarded", true);
 user_pref("ui.systemUsesDarkTheme", $([ "${DARK:-0}" = 1 ] && echo 1 || echo 0));
 PREFS
 
