@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.5.0
 
 - ⌨️ **Alt+Z** (⌥Z on macOS) shows and hides the left panel from anywhere in the window; opening it puts the cursor in the message box. The rail the hidden panel leaves now wears your buddy and accent colour.
 - 🎨 **A second design pass on every layout.**
