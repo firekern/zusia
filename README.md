@@ -26,7 +26,9 @@
 
 ## 1. Ask about the paper
 
-> **Open the side pane → Zusia's icon → ask.** The chat takes the whole pane; any other icon in the side nav brings the item details back. Turn on *Drawing* and *LaTeX* for a diagram and real maths.
+> **Open a paper and ask.** Zusia is the panel on the left of the window, beside your library and the PDF. It follows the paper you select or open; drag its edge to resize it, and **⌥Z** (Alt+Z) hides it and brings it back. Turn on *Drawing* and *LaTeX* for a diagram and real maths.
+>
+> The recordings on this page were made with the chat in Zotero's item pane, on the right. It can still live there: **Settings → Zusia → Chat → *Where the chat is***.
 >
 > Real recording: Zotero on a Mac, *Attention Is All You Need*, a live answer from Claude. 27 seconds, with the wait sped up.
 
@@ -36,7 +38,11 @@
 
 ## 2. Make it yours
 
-> **Settings → Zusia.** Style, buddy, pattern, accent colour, background image and button labels, all updating live in the sidebar. Glass, corners, font, answer length, level, tone and the system prompt are there too.
+> **Settings → Zusia → Appearance → *Layout*.** Four ways to see the chat. *Minimal*: the conversation and the message box. *Standard*: the tools as icons, one click away. *Rich*: a card for the paper with your reading progress, the tools by name. *Visual*: your buddy beside each answer, bubbles, prompt cards and colour. The setup wizard asks on first run.
+
+<p align="center"><img src="docs/layouts.png" alt="The same short chat in the four layouts, Minimal, Standard, Rich and Visual, in Zotero's light theme above and its dark theme below" width="100%"></p>
+
+> **Then everything else in Settings → Zusia.** Style, buddy, pattern, accent colour, background image and button labels, all updating live in the chat. Glass, corners, font, answer length, level, tone and the system prompt are there too.
 
 <p align="center"><img src="docs/videos/zusia-style.gif" alt="In Zotero Settings, switch glass and flat, buddy and pattern, pick the red accent and a background illustration while the sidebar updates live to red and black" width="100%"></p>
 
@@ -85,6 +91,7 @@
 | 🟤 | **Memory** | `/remember` a note, `/forget` one; click the paper chip above the message box to see, edit or reset what Zusia keeps |
 | 🟡 | **Printed pages** | Ask about "page 18" and the assistant reads the page printed 18, whatever its PDF number |
 | ⚫ | **Setup** | A visual wizard on first run, including the assistant's voice: a preset or your own system prompt |
+| ⚪ | **Left panel** | ⌥Z / Alt+Z shows and hides it; drag its edge to resize, double-click the edge to reset; or move the chat to the item pane in Settings |
 
 ## Install
 
@@ -129,7 +136,9 @@ npm run build        # writes zusia.xpi
 ```sh
 npm test             # unit tests (jsdom): rendering, settings, wizard, backends, repo checks
 npm run shots        # screenshots of the UI in headless Firefox (optional)
-npm run test:zotero  # headless Zotero integration run (Linux, Flatpak)
+npm run test:zotero          # the checks inside a real, headless Zotero (macOS app, or Flatpak on Linux)
+npm run test:zotero:linux    # the same in Docker, against the official Linux build
+npm run test:zotero:windows  # the same in the Windows build under Wine, in Docker
 ZUSIA_BACKGROUND=path/to/illustration.jpg npm run videos   # re-records the README videos (macOS)
 ```
 
