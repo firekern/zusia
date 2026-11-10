@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 🐛 **The left panel could stop following the paper you select in the library** after a restart: when Zotero had not finished building its items list as the panel was made, the panel never started listening to it. It now waits for the list however long the window takes.
+- ⌨️ On a Mac, ⌥Z typed in a text field stays a character (ż on a Polish layout, Ω on others) and only toggles the panel elsewhere.
 - 🎛️ **Settings → Appearance → *Layout*** now says in words what the layout you picked is.
 
 ## 1.6.1

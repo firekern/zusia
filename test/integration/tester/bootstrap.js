@@ -790,6 +790,13 @@ async function run() {
 		await Zotero.uiReadyPromise;
 		let CS = await waitFor(() => Zotero.Zusia, 30000, "Claude Sidebar startup");
 		check("plugin started", true, CS.version);
+		// The dock a normal start gives every user, before anything here touches it: made
+		// while the window was still loading, it has to end up following the items tree.
+		let startWin = await waitFor(() => Zotero.getMainWindow() && Zotero.getMainWindow().ZoteroPane?.itemsView && Zotero.getMainWindow(), 30000, "items tree");
+		let startDock = CS._docks.get(startWin);
+		let listening = await waitFor(() => startDock.itemsView === startWin.ZoteroPane.itemsView, 12000, "the dock's selection listener").then(() => true, () => false);
+		check("dock at startup: made as Zotero starts, it listens to the items tree once there is one",
+			!!startDock && listening, { dock: !!startDock, itemsView: !!startDock?.itemsView });
 		// The checks start in the item pane, on every platform's profile; testDock moves
 		// the chat to the left dock at the end.
 		CS.setPlacement("pane");

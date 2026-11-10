@@ -322,3 +322,42 @@ test("a new user gets the setup wizard, not the note, and finishing it counts as
 	assert.equal(prefs[PREFIX + "dockTipSeen"], true);
 	assert.equal(dock().querySelector(".zs-dock-tip"), null);
 });
+
+test("a dock made before Zotero has built its items tree still ends up following the selection", async () => {
+	const { plugin, window, state, shown } = mainWindow();
+	const itemsView = window.ZoteroPane.itemsView;
+	// As when a window is still loading: no items tree yet.
+	window.ZoteroPane.itemsView = undefined;
+	plugin.applyPlacement();
+	assert.equal(state.listeners.size, 0);
+	window.ZoteroPane.itemsView = itemsView;
+	await new Promise(resolve => setTimeout(resolve, 320));
+	assert.equal(state.listeners.size, 1, "the wait for the tree outlives the dock's first render");
+	state.selected = [paper(7)];
+	for (const listener of state.listeners) {
+		listener();
+	}
+	await new Promise(resolve => setTimeout(resolve, 0));
+	assert.equal(shown.at(-1), 7);
+	plugin.removePlacement();
+});
+
+test("on a Mac, Option+Z typed into a text field stays a character and does not toggle the dock", () => {
+	const { plugin, window, document, dock, prefs } = mainWindow();
+	plugin.applyPlacement();
+	const press = (target) => {
+		const event = new window.KeyboardEvent("keydown", { code: "KeyZ", key: "ż", altKey: true, bubbles: true, cancelable: true });
+		target.dispatchEvent(event);
+		return event.defaultPrevented;
+	};
+	const field = dock().querySelector(".zs-input");
+	window.Zotero.isMac = true;
+	assert.equal(press(field), false, "the message box keeps the key");
+	assert.notEqual(prefs[PREFIX + "dockOpen"], false);
+	assert.equal(press(document.body), true, "anywhere else it is the shortcut");
+	assert.equal(prefs[PREFIX + "dockOpen"], false);
+	window.Zotero.isMac = false;
+	plugin.setDockOpen(true);
+	assert.equal(press(field), true, "elsewhere Alt types nothing, so the field gives the key up");
+	plugin.removePlacement();
+});

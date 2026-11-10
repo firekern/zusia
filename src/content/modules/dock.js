@@ -77,13 +77,18 @@ Object.assign(Zusia, {
 		let content = doc.getElementById("appcontent");
 		content.parentNode.insertBefore(box, content);
 
-		let dock = { box, body, rail, resizer, paperID: null, rendered: false, itemsView: null, timer: null, fixed: null, tip: null };
+		let dock = { box, body, rail, resizer, paperID: null, rendered: false, itemsView: null, treeTimer: null, readerTimer: null, fixed: null, tip: null };
 		dock.onSelect = () => this.syncDock(win).catch(e => this.logError("syncDock", e));
 		dock.onKey = (event) => {
 			if (event.code !== "Key" + this.DOCK_KEY || !event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
 				return;
 			}
-			// Also keeps macOS from typing the Option character into a focused field.
+			// On a Mac, Option with a letter types a character, and on some layouts one in
+			// daily use (ż on the Polish one): a text field keeps the key.
+			let target = event.originalTarget || event.target;
+			if (Zotero.isMac && (target.isContentEditable || /^(input|textarea)$/.test(target.localName))) {
+				return;
+			}
 			event.preventDefault();
 			event.stopPropagation();
 			this.setDockOpen(!this.dockOpen());
@@ -120,7 +125,8 @@ Object.assign(Zusia, {
 		if (!dock) {
 			return;
 		}
-		win.clearTimeout(dock.timer);
+		win.clearTimeout(dock.treeTimer);
+		win.clearTimeout(dock.readerTimer);
 		win.removeEventListener("keydown", dock.onKey, true);
 		win.removeEventListener("resize", dock.onResize);
 		dock.needs.disconnect();
@@ -135,12 +141,13 @@ Object.assign(Zusia, {
 		this._docks.delete(win);
 	},
 
-	// The items tree is built after the window loads, so a new window has none yet.
+	// The items tree is built after the window loads, so a new window has none yet. This
+	// wait has a timer of its own: the dock renders meanwhile, and that must not end it.
 	watchSelection(win, dock, tries = 40) {
 		let itemsView = win.ZoteroPane.itemsView;
 		if (!itemsView) {
 			if (tries) {
-				dock.timer = win.setTimeout(() => this.watchSelection(win, dock, tries - 1), 250);
+				dock.treeTimer = win.setTimeout(() => this.watchSelection(win, dock, tries - 1), 250);
 			}
 			return;
 		}
@@ -315,11 +322,11 @@ Object.assign(Zusia, {
 		if (!dock || !this.dockOpen()) {
 			return;
 		}
-		win.clearTimeout(dock.timer);
+		win.clearTimeout(dock.readerTimer);
 		let item = this.dockItem(win);
 		// A reader tab is selected a moment before Zotero has its reader.
 		if (!item && win.Zotero_Tabs.selectedType !== "library" && tries) {
-			dock.timer = win.setTimeout(() => this.syncDock(win, tries - 1).catch(e => this.logError("syncDock", e)), 200);
+			dock.readerTimer = win.setTimeout(() => this.syncDock(win, tries - 1).catch(e => this.logError("syncDock", e)), 200);
 		}
 		let usable = !!item && (item.isRegularItem() || item.isFileAttachment());
 		// The chat stays on its paper while the selection is empty, several items or a note.
