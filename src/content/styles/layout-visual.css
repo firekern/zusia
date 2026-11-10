@@ -1,84 +1,374 @@
-/* ---- Visual: the buddy in the conversation, colour behind it, prompts as cards ---- */
+/* ---- Visual: a study buddy beside the paper, colour behind the glass, prompts as cards ---- */
+
+.zs-root[data-layout="visual"] {
+	--zs-vis-teal: var(--accent-teal);
+	--zs-vis-purple: var(--tag-purple);
+	--zs-vis-glow: var(--zs-glow-strength, 30%);
+	/* The answers' gutter: the buddy's face, and the gap to the text. */
+	--zs-vis-avatar: 28px;
+	--zs-vis-gutter: calc(var(--zs-vis-avatar) + 9px);
+	--zs-vis-ink: color-mix(in srgb, var(--zs-accent) 60%, var(--zs-text));
+	--zs-vis-face: var(--zs-accent-ink);
+	--zs-vis-soft-shadow: 0 10px 24px -16px color-mix(in srgb, var(--zs-accent) 60%, transparent);
+}
+
+/* ---- the aurora ----
+   Strong at the top, behind the header and the paper card, and at the bottom, behind
+   the prompts and the message box; the middle, where answers are read, stays near the
+   pane's own colour. It follows the glow strength in Settings, so turning the glow off
+   turns it off. A background image of the user's own replaces it (glass.css). */
+.zs-root[data-layout="visual"][data-style="glass"]:not([data-bg="image"]) > .zs-backdrop::after {
+	background:
+		radial-gradient(95% 30% at 0% 0%, color-mix(in srgb, var(--zs-accent) calc(var(--zs-vis-glow) * 1.25), transparent), transparent 78%),
+		radial-gradient(75% 26% at 100% 4%, color-mix(in srgb, var(--zs-vis-teal) calc(var(--zs-vis-glow) * 1.15), transparent), transparent 78%),
+		radial-gradient(95% 26% at 0% 100%, color-mix(in srgb, var(--zs-vis-purple) calc(var(--zs-vis-glow) * 1.2), transparent), transparent 78%),
+		radial-gradient(80% 22% at 100% 100%, color-mix(in srgb, var(--zs-accent) var(--zs-vis-glow), transparent), transparent 78%),
+		linear-gradient(180deg,
+			color-mix(in srgb, var(--zs-accent) 6%, var(--zs-ground)),
+			var(--zs-ground) 45%,
+			color-mix(in srgb, var(--zs-vis-purple) 7%, var(--zs-ground)));
+}
+@media (prefers-color-scheme: dark) {
+	/* On Zotero's grey a soft wash of colour turns muddy; on a deeper ground the same
+	   colours read as light. The glass picks up a little of the accent for the same reason. */
+	.zs-root[data-layout="visual"][data-style="glass"]:not([data-bg="image"]) {
+		--zs-vis-deep: color-mix(in srgb, var(--zs-ground) 72%, black);
+		--zs-glass-tint: color-mix(in oklch, var(--zs-accent) 12%, color-mix(in srgb, white 8%, var(--zs-vis-deep)));
+		--zs-glass-strong-tint: color-mix(in oklch, var(--zs-accent) 10%, color-mix(in srgb, white 4%, var(--zs-vis-deep)));
+	}
+	/* A dark accent on its own tint would leave the buddy's face too faint to make out. */
+	.zs-root[data-layout="visual"] {
+		--zs-vis-ink: color-mix(in srgb, var(--zs-accent) 45%, var(--zs-text));
+		--zs-vis-face: var(--zs-vis-ink);
+	}
+	.zs-root[data-layout="visual"][data-style="glass"]:not([data-bg="image"]) > .zs-backdrop::after {
+		background:
+			radial-gradient(90% 28% at 0% 0%, color-mix(in oklch, var(--zs-accent) calc(var(--zs-vis-glow) * 1.5), transparent), transparent 78%),
+			radial-gradient(70% 24% at 100% 4%, color-mix(in oklch, var(--zs-vis-teal) calc(var(--zs-vis-glow) * 1.1), transparent), transparent 78%),
+			radial-gradient(95% 26% at 0% 100%, color-mix(in oklch, var(--zs-vis-purple) var(--zs-vis-glow), transparent), transparent 78%),
+			radial-gradient(80% 22% at 100% 100%, color-mix(in oklch, var(--zs-accent) var(--zs-vis-glow), transparent), transparent 78%),
+			var(--zs-vis-deep);
+	}
+}
+
+/* ---- header: the buddy's badge ---- */
+
+.zs-root[data-layout="visual"] .zs-header-icon {
+	box-sizing: content-box;
+	width: 16px;
+	height: 16px;
+	padding: 5px;
+	border-radius: 50%;
+	color: var(--zs-accent-ink);
+	background: var(--zs-accent-soft);
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--zs-accent) 22%, transparent);
+}
+
+/* ---- the paper card ---- */
 
 .zs-root[data-layout="visual"] .zs-paper-card {
+	column-gap: 11px;
+	row-gap: 9px;
+	padding: 11px 13px 12px;
 	border-color: color-mix(in srgb, var(--zs-accent) 28%, transparent);
-	background: linear-gradient(135deg,
-		color-mix(in srgb, var(--zs-accent) 16%, var(--zs-raised)),
-		color-mix(in srgb, var(--accent-teal, #59adc4) 12%, var(--zs-raised)));
+	background:
+		linear-gradient(135deg,
+			color-mix(in srgb, var(--zs-accent) 15%, transparent),
+			color-mix(in srgb, var(--zs-vis-teal) 10%, transparent)),
+		var(--zs-raised);
+	box-shadow: var(--zs-glass-sheen, none), var(--zs-vis-soft-shadow);
+}
+.zs-root[data-layout="visual"] .zs-paper-card:focus-visible {
+	outline: 2px solid var(--zs-accent);
+	outline-offset: 2px;
 }
 .zs-root[data-layout="visual"] .zs-paper-card-icon {
-	width: 30px;
-	height: 30px;
-	padding: 6px;
-	border-radius: 9px;
+	width: 34px;
+	height: 34px;
+	margin-top: 0;
+	padding: 8px;
+	border-radius: 11px;
 	color: var(--zs-accent-text);
-	background: var(--zs-accent);
+	background: linear-gradient(135deg, var(--zs-accent), color-mix(in srgb, var(--zs-accent) 55%, var(--zs-vis-purple)));
+	box-shadow: inset 0 1px 0 color-mix(in srgb, white 30%, transparent), 0 4px 10px -4px color-mix(in srgb, var(--zs-accent) 70%, transparent);
 }
 .zs-root[data-layout="visual"] .zs-paper-card-icon .zs-duo {
 	fill: currentColor;
+	opacity: 0.3;
+}
+/* Over the card's tint Zotero's muted grey and the accent ink fall just short of 4.5:1. */
+.zs-root[data-layout="visual"] :is(.zs-paper-card-byline, .zs-paper-card-status) {
+	color: color-mix(in srgb, var(--zs-muted) 60%, var(--zs-text));
+}
+.zs-root[data-layout="visual"] .zs-paper-card-reading {
+	color: var(--zs-vis-ink);
 }
 .zs-root[data-layout="visual"] .zs-paper-card-progress {
-	height: 5px;
-	border-radius: 3px;
+	height: 6px;
+	border-radius: 999px;
+	background:
+		linear-gradient(to right, var(--zs-accent), color-mix(in srgb, var(--zs-accent) 50%, var(--zs-vis-purple)))
+			0 0 / var(--zs-read, 0%) 100% no-repeat,
+		color-mix(in srgb, var(--zs-accent) 14%, var(--zs-line));
 }
-/* The buddy answers: its face beside each answer, in the accent colour. */
-.zs-root[data-layout="visual"] .zs-turn {
+.zs-root[data-layout="visual"] .zs-paper-card-progress:dir(rtl) {
+	background-position: 100% 0, 0 0;
+}
+
+/* ---- empty chat: the buddy, large, saying hello ---- */
+
+.zs-root[data-layout="visual"] .zs-empty {
 	position: relative;
-	padding-inline-start: 32px;
+	flex-grow: 1;
+	align-items: center;
+	min-height: 240px;
+	gap: 14px;
 }
-.zs-root[data-layout="visual"] .zs-turn::before,
-.zs-root[data-layout="visual"] .zs-turn::after {
+/* Two sparkles around the buddy, in the aurora's other colours. The block is centred, so
+   they are placed from its middle: the buddy's face is about 30px above it. */
+.zs-root[data-layout="visual"] .zs-empty::before,
+.zs-root[data-layout="visual"] .zs-empty::after {
 	content: "";
 	position: absolute;
-	inset-inline-start: 0;
-	top: 0;
-	width: 24px;
-	height: 24px;
+	top: calc(50% - 58px);
+	inset-inline-start: calc(50% - 80px);
+	width: 20px;
+	height: 20px;
+	background: var(--zs-vis-teal);
+	mask: url("../icons/sparkle.svg") center / contain no-repeat;
+	animation: zs-mascot-twinkle 3.2s ease-in-out infinite;
 }
-.zs-root[data-layout="visual"] .zs-turn::before {
-	border-radius: 50%;
-	background: var(--zs-accent-soft);
-}
-.zs-root[data-layout="visual"] .zs-turn::after {
-	background: var(--zs-accent);
-	mask: url("../icons/sparkle.svg") center / 15px no-repeat;
-}
-.zs-root[data-layout="visual"][data-mascot="cat"] .zs-turn::after { mask-image: url("../icons/cat.svg"); }
-.zs-root[data-layout="visual"][data-mascot="owl"] .zs-turn::after { mask-image: url("../icons/bird.svg"); }
-.zs-root[data-layout="visual"][data-mascot="robot"] .zs-turn::after { mask-image: url("../icons/robot.svg"); }
-/* Your side of the chat: a bubble on the right. */
-.zs-root[data-layout="visual"] .zs-user {
-	align-self: flex-end;
-	max-width: 88%;
-	border-end-end-radius: 4px;
+.zs-root[data-layout="visual"] .zs-empty::after {
+	top: calc(50% - 10px);
+	inset-inline-start: calc(50% + 66px);
+	width: 13px;
+	height: 13px;
+	background: var(--zs-vis-purple);
+	animation-delay: -1.6s;
 }
 .zs-root[data-layout="visual"] .zs-mascot {
-	width: 104px;
-	height: 104px;
+	width: 116px;
+	height: 116px;
+	margin-bottom: 0;
+	padding: 6px;
+	border-radius: 50%;
+	background: radial-gradient(closest-side, color-mix(in srgb, var(--zs-accent) 22%, transparent), color-mix(in srgb, var(--zs-accent) 8%, transparent) 70%, transparent);
 }
-.zs-root[data-layout="visual"] .zs-empty {
-	min-height: 220px;
+/* The drawings name these parts cs-mascot-*, not the zs-mascot-* that base.css colours,
+   so without this the spark stays black and the blush never shows. */
+.zs-root[data-layout="visual"] .zs-mascot .cs-mascot-spark {
+	fill: var(--zs-accent);
+	transform-box: fill-box;
+	transform-origin: center;
+	animation: zs-mascot-twinkle 2.4s ease-in-out infinite;
 }
-/* Before the first question the prompts are cards to pick from. */
+.zs-root[data-layout="visual"] .zs-mascot .cs-mascot-blush {
+	stroke: color-mix(in srgb, var(--accent-red) 55%, transparent);
+	stroke-width: 2.6;
+}
+/* What the buddy says: a speech bubble whose tail points up at it. */
+.zs-root[data-layout="visual"] .zs-empty-title {
+	position: relative;
+	padding: 9px 16px;
+	border: 1px solid var(--zs-border);
+	border-radius: 16px;
+	font-size: 1.12em;
+	background: var(--zs-glass-strong, var(--zs-raised));
+	box-shadow: var(--zs-glass-sheen, none), var(--zs-vis-soft-shadow);
+}
+.zs-root[data-layout="visual"] .zs-empty-title::before {
+	content: "";
+	position: absolute;
+	top: -6px;
+	inset-inline-start: calc(50% - 6px);
+	width: 10px;
+	height: 10px;
+	/* Physical on purpose: the tail points up at the buddy in either text direction. */
+	border: inherit;
+	border-right-color: transparent;
+	border-bottom-color: transparent;
+	border-top-left-radius: 3px;
+	background: inherit;
+	transform: rotate(45deg);
+}
+
+/* Without a buddy there is no one to sparkle around or to speak. */
+.zs-root[data-layout="visual"][data-mascot="none"] .zs-empty::before,
+.zs-root[data-layout="visual"][data-mascot="none"] .zs-empty::after,
+.zs-root[data-layout="visual"][data-mascot="none"] .zs-empty-title::before {
+	display: none;
+}
+
+/* ---- prompts: cards to pick from before the first question ---- */
+
 .zs-root[data-layout="visual"]:not([data-chatting="true"]) .zs-quick {
 	display: grid;
 	grid-template-columns: repeat(2, minmax(0, 1fr));
 	gap: 8px;
 }
 .zs-root[data-layout="visual"]:not([data-chatting="true"]) .zs-pill {
+	--zs-vis-hue: var(--zs-accent);
+	--zs-vis-glyph: url("../icons/chat-circle-dots.svg");
+	position: relative;
 	justify-content: flex-start;
-	min-height: 44px;
+	min-height: 48px;
 	padding: 8px 12px;
+	padding-inline-start: 44px;
 	border-radius: var(--zs-radius-card);
 	font-weight: 500;
 	white-space: normal;
 	text-align: start;
-	background: color-mix(in srgb, var(--zs-accent) 7%, var(--zs-raised));
+	line-height: 1.3;
+	background: color-mix(in srgb, var(--zs-vis-hue) 6%, var(--zs-raised));
 }
-/* More colour behind the glass than the other layouts ask for. */
-.zs-root[data-layout="visual"][data-style="glass"]:not([data-bg="image"]) > .zs-backdrop {
-	background:
-		radial-gradient(120% 60% at 0% 0%, color-mix(in srgb, var(--zs-accent) 26%, transparent), transparent 70%),
-		radial-gradient(90% 50% at 100% 30%, color-mix(in srgb, var(--accent-teal, #59adc4) 22%, transparent), transparent 70%),
-		radial-gradient(110% 55% at 30% 100%, color-mix(in srgb, var(--tag-purple, #a28ae5) 24%, transparent), transparent 70%);
+/* The prompts are the user's own, so the icons only vary the colour and shape;
+   they make no claim about what a prompt asks. */
+.zs-root[data-layout="visual"]:not([data-chatting="true"]) .zs-pill:nth-child(4n + 2) {
+	--zs-vis-hue: var(--zs-vis-teal);
+	--zs-vis-glyph: url("../icons/lightbulb.svg");
+}
+.zs-root[data-layout="visual"]:not([data-chatting="true"]) .zs-pill:nth-child(4n + 3) {
+	--zs-vis-hue: var(--zs-vis-purple);
+	--zs-vis-glyph: url("../icons/magnifying-glass.svg");
+}
+.zs-root[data-layout="visual"]:not([data-chatting="true"]) .zs-pill:nth-child(4n + 4) {
+	--zs-vis-hue: var(--accent-orange);
+	--zs-vis-glyph: url("../icons/sparkle.svg");
+}
+.zs-root[data-layout="visual"]:not([data-chatting="true"]) .zs-pill::before,
+.zs-root[data-layout="visual"]:not([data-chatting="true"]) .zs-pill::after {
+	content: "";
+	position: absolute;
+	inset-inline-start: 10px;
+	top: calc(50% - 13px);
+	width: 26px;
+	height: 26px;
+	border-radius: 8px;
+}
+.zs-root[data-layout="visual"]:not([data-chatting="true"]) .zs-pill::before {
+	background: color-mix(in srgb, var(--zs-vis-hue) 20%, transparent);
+}
+.zs-root[data-layout="visual"]:not([data-chatting="true"]) .zs-pill::after {
+	background: color-mix(in srgb, var(--zs-vis-hue) 75%, var(--zs-text));
+	mask: var(--zs-vis-glyph) center / 15px no-repeat;
+}
+.zs-root[data-layout="visual"]:not([data-chatting="true"]) .zs-pill:hover:not(:disabled) {
+	background: color-mix(in srgb, var(--zs-vis-hue) 14%, var(--zs-raised));
+	border-color: color-mix(in srgb, var(--zs-vis-hue) 55%, transparent) !important;
+}
+.zs-root[data-layout="visual"] .zs-pill:focus-visible {
+	outline: 2px solid var(--zs-accent);
+	outline-offset: 2px;
+}
+/* Two cards side by side leave a narrow panel no room for the label beside the icon,
+   so there the icon sits above it. */
+.zs-root[data-layout="visual"] .zs-quick {
+	container: zs-visual-quick / inline-size;
+}
+@container zs-visual-quick (max-width: 300px) {
+	.zs-root[data-layout="visual"]:not([data-chatting="true"]) .zs-pill {
+		flex-direction: column;
+		align-items: flex-start;
+		justify-content: flex-end;
+		min-height: 66px;
+		padding: 40px 10px 9px;
+	}
+	.zs-root[data-layout="visual"]:not([data-chatting="true"]) .zs-pill::before,
+	.zs-root[data-layout="visual"]:not([data-chatting="true"]) .zs-pill::after {
+		top: 9px;
+		inset-inline-start: 9px;
+	}
+}
+/* Once chatting, the row scrolls sideways: fade its far end so a cut-off prompt reads as more.
+   The padding leaves room for the focus ring, which the scroller would clip. */
+.zs-root[data-layout="visual"][data-chatting="true"] .zs-quick {
+	padding: 4px;
+	mask-image: linear-gradient(to right, black calc(100% - 28px), transparent);
+}
+.zs-root[data-layout="visual"][data-chatting="true"] .zs-quick:dir(rtl) {
+	mask-image: linear-gradient(to left, black calc(100% - 28px), transparent);
+}
+
+/* ---- the conversation ---- */
+
+/* Your side: a bubble on the right, its corner towards you. */
+.zs-root[data-layout="visual"] .zs-user {
+	align-self: flex-end;
+	max-width: 86%;
+	border-radius: 18px;
+	border-end-end-radius: 6px;
+	box-shadow: var(--zs-glass-sheen, none), var(--zs-vis-soft-shadow);
+}
+.zs-root[data-layout="visual"][data-bubble="accent"] .zs-user {
+	border-color: color-mix(in srgb, var(--zs-accent) 32%, transparent);
+	background: linear-gradient(135deg,
+		color-mix(in srgb, var(--zs-accent) 22%, var(--zs-raised)),
+		color-mix(in srgb, var(--zs-vis-purple) 14%, var(--zs-raised)));
+}
+
+/* The buddy's side: its face in the gutter, the answer beside it. */
+.zs-root[data-layout="visual"] .zs-turn {
+	position: relative;
+	padding-inline-start: var(--zs-vis-gutter);
+}
+.zs-root[data-layout="visual"] .zs-turn::before,
+.zs-root[data-layout="visual"] .zs-turn::after {
+	content: "";
+	position: absolute;
+	inset-inline-start: 0;
+	top: -2px;
+	width: var(--zs-vis-avatar);
+	height: var(--zs-vis-avatar);
+	border-radius: 50%;
+}
+.zs-root[data-layout="visual"] .zs-turn::before {
+	background: linear-gradient(135deg,
+		color-mix(in srgb, var(--zs-accent) 22%, var(--zs-raised)),
+		color-mix(in srgb, var(--zs-vis-teal) 18%, var(--zs-raised)));
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--zs-accent) 30%, transparent), var(--zs-vis-soft-shadow);
+}
+/* The buddy drawing from the empty chat, cropped to its face; without a buddy, a sparkle. */
+.zs-root[data-layout="visual"] .zs-turn::after {
+	background: var(--zs-vis-face);
+	mask: url("../icons/sparkle.svg") center / 58% no-repeat;
+}
+.zs-root[data-layout="visual"][data-mascot="cat"] .zs-turn::after {
+	mask-image: url("../icons/mascot-cat.svg");
+	mask-size: 125%;
+	mask-position: 50% 37%;
+}
+.zs-root[data-layout="visual"][data-mascot="owl"] .zs-turn::after {
+	mask-image: url("../icons/mascot-owl.svg");
+	mask-size: 121%;
+	mask-position: 50% 62%;
+}
+.zs-root[data-layout="visual"][data-mascot="robot"] .zs-turn::after {
+	mask-image: url("../icons/mascot-robot.svg");
+	mask-size: 114%;
+	mask-position: 50% 0%;
+}
+
+/* On a narrow panel the gutter would take a sixth of every line: the face shrinks, and
+   tables, display maths, code and theorem boxes hang into the gutter below it so they
+   keep the full width, as in Standard. Prose stays beside the face. */
+.zs-root[data-layout="visual"] .zs-log {
+	container: zs-visual-log / inline-size;
+}
+@container zs-visual-log (max-width: 320px) {
+	.zs-root[data-layout="visual"] .zs-turn {
+		--zs-vis-avatar: 24px;
+		--zs-vis-gutter: calc(var(--zs-vis-avatar) + 8px);
+	}
+	.zs-root[data-layout="visual"] .zs-turn :is(.zs-assistant, .zs-live-content) > :is(.zs-table-wrap, .zs-code, .zs-math-block, .zs-env, .zs-figure, pre) {
+		max-width: none;
+		margin-inline-start: calc(-1 * var(--zs-vis-gutter));
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.zs-root[data-layout="visual"] :is(.zs-mascot, .zs-mascot .cs-mascot-spark),
+	.zs-root[data-layout="visual"] .zs-empty::before,
+	.zs-root[data-layout="visual"] .zs-empty::after {
+		animation: none;
+	}
 }
