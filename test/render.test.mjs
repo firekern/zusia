@@ -370,3 +370,26 @@ test("latex: the end-of-proof square closes the last line instead of taking one 
 	const numbered = proof("So\n\\begin{equation}\\label{eq:x} a = b \\end{equation}");
 	assert.equal(numbered.querySelector(".zs-qed").classList.contains("zs-qed-here"), false, "the equation's number has that place");
 });
+
+test("a wide formula is shrunk only when that makes it fit; one that must scroll anyway keeps its size", () => {
+	const { document, plugin } = env;
+	// jsdom has no layout: a scroller 300px wide whose content scales with its font size.
+	const formula = (natural) => {
+		const scroller = document.createElement("div");
+		scroller.className = "zs-math-scroll";
+		Object.defineProperties(scroller, {
+			clientWidth: { value: 300 },
+			scrollWidth: { get: () => Math.round(natural * (parseFloat(scroller.style.fontSize) || 100) / 100) },
+		});
+		return scroller;
+	};
+	const box = document.createElement("div");
+	const [fits, shrinks, nearly, never] = [280, 380, 430, 900].map(formula);
+	box.append(fits, shrinks, nearly, never);
+	plugin.fitWideContent(box);
+	assert.equal(fits.style.fontSize, "");
+	assert.ok(parseFloat(shrinks.style.fontSize) >= 72 && shrinks.scrollWidth <= 301, shrinks.style.fontSize);
+	assert.ok(parseFloat(nearly.style.fontSize) < 72 && nearly.scrollWidth <= 301, "a few pixels over at the floor: a little smaller still");
+	assert.equal(never.style.fontSize, "", "tiny and still cut off is worse than full size and cut off");
+	assert.ok(never.classList.contains("zs-overflow"));
+});

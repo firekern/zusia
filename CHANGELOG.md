@@ -7,6 +7,7 @@
 - 🪟 **The panel fills its column.** The chat was drawn as a rounded card inside a gutter of the pane's colour, one frame inside another; its background now runs from edge to edge.
 - ⬇️ Where the conversation goes on past the top or the bottom of the panel, the lines at that edge fade out instead of being cut mid-letter, and the *Scroll to latest* button sits in the middle of that fade, no longer on words you are reading.
 - 🪟 **Glass style: menus, sheets and the setup wizard no longer let the conversation show through.** Lines of the chat were faintly readable behind the Reading memory sheet and the model menu; they are opaque now, whatever *Glass opacity* is set to.
+- 🔎 A formula too wide for the panel even at its smallest size is no longer shrunk: it was tiny and still cut off. It keeps the size of the formulas around it and scrolls sideways. Formulas that fit when shrunk still shrink.
 - ∎ The square that ends a proof closes the proof's last line, or sits beside its last equation, instead of taking a line of its own.
 - 🫥 The row of quick prompts above the message box fades at its far end in every layout, so a prompt cut by the edge reads as "more this way"; the send button stays readable while the box is empty.
 
