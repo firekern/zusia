@@ -1,4 +1,12 @@
-/* ---- Minimal: the conversation and the message box, nothing asking for attention ---- */
+/* ---- Minimal: the conversation and the message box, nothing asking for attention ----
+   A quiet reading companion. The text of the conversation carries the page; every
+   control is there, but sits back until the pointer or the keyboard comes to it. */
+
+.zs-root[data-layout="minimal"] {
+	/* The quietest a control may be at rest and still be found: 3:1 on the pane in
+	   both themes (muted alone is 4.6:1 in light, 5.2:1 in dark). */
+	--zs-min-dim: color-mix(in srgb, var(--zs-muted) 80%, transparent);
+}
 
 .zs-root[data-layout="minimal"] .zs-header-icon,
 .zs-root[data-layout="minimal"] .zs-clarifications,
@@ -8,53 +16,258 @@
 .zs-dock .zs-root[data-layout="minimal"] .zs-dock-hide {
 	display: none !important;
 }
+/* Phosphor's soft duotone layer reads as a tinted chip behind every icon (a pill
+   behind "more"); here icons are line drawings in the text colour. */
+.zs-root[data-layout="minimal"] .zs-i .zs-duo {
+	display: none;
+}
+
+/* ---- header: the paper's title, New chat and one menu ---- */
+
+.zs-root[data-layout="minimal"] .zs-header {
+	gap: 2px;
+	padding-inline-start: 2px;
+}
 .zs-root[data-layout="minimal"] .zs-header-more {
 	display: inline-flex;
 }
-/* The header icon is gone, so the paper's title starts at the text's left edge. */
-.zs-root[data-layout="minimal"] .zs-header {
-	padding-inline-start: 4px;
+/* The header icon that pushed the buttons to the end is gone; outside the chat view
+   there is no title to do it either. */
+.zs-root[data-layout="minimal"] .zs-new-chat {
+	margin-inline-start: auto;
 }
 .zs-root[data-layout="minimal"] .zs-header-paper {
+	padding-inline-end: 6px;
 	font-weight: 500;
-	color: var(--zs-muted);
+	color: var(--zs-text);
 }
-/* The prompts are a way to start; once the chat is going they would only take a row. */
-.zs-root[data-layout="minimal"][data-chatting="true"] .zs-quick {
-	display: none;
+/* Where the log scrolls under the header, a hairline keeps the title from looking
+   cut into the text below it. */
+:is(:root[data-zs-view="chat"] item-details[zs-chat-ready], .zs-dock) .zs-root[data-layout="minimal"] .zs-header {
+	padding-block-end: 6px;
+	border-block-end: 1px solid var(--zs-line);
 }
+
+/* ---- before the first question: one line and the prompts, just above the box ---- */
+
+/* At the foot of the log, so the line, the prompts and the box read as one place
+   to start, instead of a heading stranded at the top of an empty column. */
 .zs-root[data-layout="minimal"] .zs-empty {
-	min-height: 96px;
+	min-height: 0;
+	margin-block-start: auto;
+	padding: 12px 3px 2px;
+	text-align: start;
+}
+/* In the item pane the log takes its content's height; an empty one would hold
+   120px of nothing above the line. The dock's log fills the column regardless. */
+.zs-root[data-layout="minimal"]:not([data-chatting="true"]) .zs-log {
+	min-height: 0;
 }
 .zs-root[data-layout="minimal"] .zs-empty-title {
-	font-size: 1.05em;
-	font-weight: 500;
+	font-size: 1.08em;
+	font-weight: 400;
 	color: var(--zs-muted);
 }
 .zs-root[data-layout="minimal"] .zs-empty-sub {
 	display: none;
 }
-.zs-root[data-layout="minimal"] .zs-user {
-	border-color: transparent;
-	background: var(--zs-hover);
+.zs-root[data-layout="minimal"] .zs-quick {
+	gap: 5px;
 }
 .zs-root[data-layout="minimal"] .zs-pill {
-	border-color: transparent !important;
+	min-height: 24px;
+	padding: 2px 10px;
+	border-color: var(--zs-line) !important;
+	color: var(--zs-muted) !important;
+	background: transparent;
+	transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.zs-root[data-layout="minimal"] .zs-pill:hover:not(:disabled),
+.zs-root[data-layout="minimal"] .zs-pill:focus-visible {
+	border-color: var(--zs-accent-line) !important;
+	color: var(--zs-text) !important;
 	background: var(--zs-hover);
 }
+/* Once the chat is going the prompts stay, as one line of plain words: a row of
+   pills above every question would weigh more than the question. */
+.zs-root[data-layout="minimal"][data-chatting="true"] .zs-quick {
+	gap: 0;
+	margin-block-end: -3px;
+	padding: 0;
+}
+.zs-root[data-layout="minimal"][data-chatting="true"] .zs-pill {
+	min-height: 20px;
+	padding: 0 6px;
+	border-color: transparent !important;
+	border-radius: var(--zs-radius-control);
+	font-size: 0.86em !important;
+	color: var(--zs-min-dim) !important;
+}
+.zs-root[data-layout="minimal"][data-chatting="true"] .zs-pill:first-child {
+	margin-inline-start: -2px;
+}
+.zs-root[data-layout="minimal"][data-chatting="true"] .zs-pill:hover:not(:disabled),
+.zs-root[data-layout="minimal"][data-chatting="true"] .zs-pill:focus-visible {
+	border-color: transparent !important;
+	color: var(--zs-text) !important;
+	background: var(--zs-hover);
+}
+
+/* ---- your messages: a tint, not a card ---- */
+
+/* Short and to the end, as in any chat, so the answers keep the full measure. */
+.zs-root[data-layout="minimal"] .zs-user {
+	align-self: flex-end;
+	width: fit-content;
+	max-width: 88%;
+	padding: 5px 10px;
+	border-color: transparent;
+	background: var(--zs-hover);
+	box-shadow: none;
+}
+/* Beside the message instead of over its last words, which a short message would hide. */
+.zs-root[data-layout="minimal"] .zs-user:not(.zs-clamped) .zs-user-edit {
+	inset-block-start: 50%;
+	inset-inline-end: calc(100% + 3px);
+	transform: translateY(-50%);
+	background: transparent !important;
+}
+.zs-root[data-layout="minimal"] .zs-user:not(.zs-clamped) .zs-user-edit:hover {
+	background: var(--zs-hover) !important;
+}
+
+/* ---- answers: the activity line and the footer step back ---- */
+
+.zs-root[data-layout="minimal"] .zs-activity-head {
+	font-size: 0.86em !important;
+	color: var(--zs-min-dim) !important;
+}
+.zs-root[data-layout="minimal"] .zs-activity-head:hover,
+.zs-root[data-layout="minimal"] .zs-activity-head:focus-visible,
+.zs-root[data-layout="minimal"] .zs-activity.zs-open .zs-activity-head {
+	color: var(--zs-muted) !important;
+}
+/* The actions gather under the start of the answer, where reading ends, instead of
+   spreading across the whole width. */
+.zs-root[data-layout="minimal"] .zs-footer {
+	gap: 0;
+	min-height: 20px;
+	margin-inline-start: -3px;
+	opacity: 1;
+}
+.zs-root[data-layout="minimal"] .zs-footer .zs-spacer {
+	display: none;
+}
+.zs-root[data-layout="minimal"] .zs-footer .zs-ghost {
+	margin-inline-start: 0;
+}
+.zs-root[data-layout="minimal"] .zs-footer :is(.zs-ghost, .zs-icon) {
+	color: var(--zs-min-dim) !important;
+}
+/* Explain better is the one to look for, so it takes the accent only when reached. */
+.zs-root[data-layout="minimal"] .zs-footer :is(.zs-ghost, .zs-icon):hover:not(:disabled),
+.zs-root[data-layout="minimal"] .zs-footer :is(.zs-ghost, .zs-icon):focus-visible,
+.zs-root[data-layout="minimal"] .zs-footer .zs-more[aria-expanded="true"] {
+	color: var(--zs-text) !important;
+}
+.zs-root[data-layout="minimal"] .zs-footer .zs-ghost.zs-explain:hover:not(:disabled),
+.zs-root[data-layout="minimal"] .zs-footer .zs-ghost.zs-explain:focus-visible {
+	color: var(--zs-accent-ink) !important;
+}
+/* Only the latest answer shows its actions at rest; earlier ones keep their row, so
+   nothing moves, and show it when the pointer or the keyboard reaches the answer. */
+.zs-root[data-layout="minimal"] .zs-turn:not(.zs-last) .zs-footer {
+	margin-block-end: -8px;
+	opacity: 0;
+}
+.zs-root[data-layout="minimal"] .zs-turn:not(.zs-last):is(:hover, :focus-within) .zs-footer {
+	opacity: 1;
+}
+/* Its own rule: Zotero 7's Gecko has no :has() and would drop a list that held it.
+   Where it works, the footer stays while its menu is open over another answer. */
+.zs-root[data-layout="minimal"] .zs-turn:not(.zs-last) .zs-footer:has(.zs-more[aria-expanded="true"]) {
+	opacity: 1;
+}
+
+/* Theorems and definitions as a book sets them: a rule in the margin, not a box
+   inside the answer. The rule keeps its colour, which says which kind it is. */
+.zs-root[data-layout="minimal"] .zs-env {
+	padding: 1px 0 1px 12px;
+	border-color: transparent;
+	border-inline-start-width: 2px;
+	border-radius: 0;
+	background: transparent;
+	box-shadow: none;
+}
+.zs-root[data-layout="minimal"] .zs-env-head {
+	margin-bottom: 2px;
+}
+
+/* ---- the message box: one hairline, its controls quiet until reached ---- */
+
 .zs-root[data-layout="minimal"] .zs-composer {
 	padding: 8px 9px 4px;
+	border-color: var(--zs-line);
 	box-shadow: none;
 	background: transparent;
-	border-color: var(--zs-border-strong);
+}
+.zs-root[data-layout="minimal"] .zs-composer:hover {
+	border-color: color-mix(in srgb, var(--zs-text) 22%, transparent);
 }
 .zs-root[data-layout="minimal"] .zs-composer:focus-within {
 	border-color: var(--zs-accent-line);
 }
-/* Quiet until the pointer or the keyboard is in the message box. */
-.zs-root[data-layout="minimal"] .zs-composer:not(:hover):not(:focus-within) .zs-controls > :not(.zs-send) {
-	opacity: 0.45;
+/* The faint placeholder is the first thing a new user reads; it says where to type. */
+.zs-root[data-layout="minimal"] .zs-input::placeholder {
+	color: var(--zs-min-dim);
 }
-.zs-root[data-layout="minimal"] .zs-controls > * {
-	transition: opacity 0.15s ease;
+/* The paper chip becomes a line of text: what the answers draw on, not a tag. */
+.zs-root[data-layout="minimal"] .zs-context {
+	margin: -2px 0 6px;
+}
+.zs-root[data-layout="minimal"] .zs-context-chip {
+	min-height: 18px;
+	padding: 0 2px;
+	border-color: transparent;
+	font-size: 0.86em;
+	color: var(--zs-min-dim);
+	background: transparent;
+}
+.zs-root[data-layout="minimal"] .zs-context-icon {
+	color: inherit;
+}
+.zs-root[data-layout="minimal"] .zs-context-label,
+.zs-root[data-layout="minimal"] .zs-context-reading {
+	color: inherit;
+}
+/* In a narrow pane the paper's name stays whole; where you are in it gives way first. */
+.zs-root[data-layout="minimal"] .zs-context-label {
+	flex-shrink: 0;
+	max-width: 14em;
+}
+.zs-root[data-layout="minimal"] .zs-context-chip[role="button"]:hover {
+	border-color: transparent;
+	color: var(--zs-text);
+}
+.zs-root[data-layout="minimal"] .zs-context-chip[role="button"]:focus-visible {
+	border-color: transparent;
+	color: var(--zs-text);
+	outline: 2px solid var(--zs-accent);
+	outline-offset: 1px;
+}
+/* Quiet until the pointer or the keyboard is in the message box. */
+.zs-root[data-layout="minimal"] .zs-composer:not(:hover):not(:focus-within) .zs-controls > :not(.zs-send):not(.zs-spacer) {
+	color: var(--zs-min-dim) !important;
+}
+.zs-root[data-layout="minimal"] .zs-controls .zs-mode[aria-pressed="true"] {
+	box-shadow: none;
+}
+.zs-root[data-layout="minimal"] .zs-composer:not(:hover):not(:focus-within) .zs-controls > .zs-mode[aria-pressed="true"] {
+	color: var(--zs-accent-ink) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.zs-root[data-layout="minimal"] :is(.zs-footer, .zs-pill, .zs-composer, .zs-controls > *) {
+		transition: none;
+	}
 }
