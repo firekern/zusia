@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.4.0
 
 - 🎛️ **Four layouts.** **Settings → Zusia → Appearance → *Layout***, also in the setup wizard's look step. *Minimal*: the conversation and the message box, the tools in one menu. *Standard*: as before. *Rich*: a card with the paper, your reading progress and a progress bar, tools with their names, every prompt in view. *Visual*: your buddy beside each answer, your messages as bubbles on the right, prompts as cards and more colour. Choosing one also sets the style, buddy, spacing and labels it starts from; each stays changeable on its own.
 
