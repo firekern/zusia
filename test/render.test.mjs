@@ -353,3 +353,20 @@ test("equation refs: inside maths each reference is found again by a numbered to
 		[["eq:1'", "(1)"], ["a^b", "(2)"], ["ab", "(3)"], ["nope", "(nope)"]]);
 	assert.doesNotMatch(c.querySelector(".zs-math-block:last-child annotation").textContent, /zsref/);
 });
+
+test("latex: the end-of-proof square closes the last line instead of taking one of its own", () => {
+	const proof = body => render(env, "\\begin{proof}\n" + body + "\n\\end{proof}").querySelector(".zs-env-proof");
+	const text = proof("Take $N$ large.\n\nThen the tail is small.");
+	const last = text.querySelector(".zs-env-body").lastElementChild;
+	assert.equal(last.localName, "p");
+	assert.equal(last.lastElementChild.className, "zs-qed", "inside the last paragraph, so it shares its last line");
+	assert.equal(text.querySelectorAll(".zs-qed").length, 1);
+
+	const display = proof("Since $n_k \\ge k$,\n$$d(x_{n_k}, x) < \\varepsilon.$$");
+	const here = display.querySelector(".zs-qed");
+	assert.equal(here.previousElementSibling.querySelector(".zs-math-block:last-child") ? "after" : "", "after", "after the body that ends in the equation");
+	assert.ok(here.classList.contains("zs-qed-here"), "pulled up beside the equation, as \\qedhere does");
+
+	const numbered = proof("So\n\\begin{equation}\\label{eq:x} a = b \\end{equation}");
+	assert.equal(numbered.querySelector(".zs-qed").classList.contains("zs-qed-here"), false, "the equation's number has that place");
+});

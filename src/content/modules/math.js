@@ -68,7 +68,20 @@ Object.assign(Zusia, {
 			box.appendChild(content);
 		}
 		if (kind === "proof") {
-			box.appendChild(this.el(doc, this._noteMode ? "p" : "div", "zs-qed", "∎"));
+			let last = content.lastElementChild;
+			if (!this._noteMode && last?.localName === "p") {
+				// At the end of the last line of text, where a printed proof has it.
+				last.appendChild(this.el(doc, "span", "zs-qed", "∎"));
+			}
+			else {
+				let qed = this.el(doc, this._noteMode ? "p" : "div", "zs-qed", "∎");
+				// A proof that ends in a display equation has it beside the equation, as
+				// \qedhere does, unless the equation's number is there.
+				if (last?.matches(".zs-math-block:not(.zs-math-numbered)")) {
+					qed.classList.add("zs-qed-here");
+				}
+				box.appendChild(qed);
+			}
 		}
 		return box;
 	},

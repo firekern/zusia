@@ -266,4 +266,18 @@
 	line-height: 1;
 	color: var(--zs-muted);
 }
+/* In the last paragraph: at the end of its last line, or on the next when that is full. */
+p > .zs-qed {
+	float: inline-end;
+	margin-inline-start: 10px;
+	line-height: inherit;
+}
+/* After a display equation: up on the equation's own line, at the margin. */
+.zs-qed-here {
+	margin-top: calc(-10px - 1.4em);
+	padding-bottom: 0.4em;
+	/* What the pull took from under the equation. */
+	margin-bottom: 6px;
+	pointer-events: none;
+}
 .zs-li-body > p { margin: 0; }
