@@ -6,11 +6,23 @@
 	gap: 6px;
 	padding: 0 1px;
 }
-/* Once the chat has started the prompts shrink to one sideways-scrolling row. */
+/* Once the chat has started the prompts shrink to one sideways-scrolling row. Its far
+   end fades, so a prompt cut by the edge reads as "more this way", not as a clipped button.
+   The padding leaves room for the focus ring, which the scroller would clip; the margin
+   takes it back, so the row still lines up with the message box. */
+.zs-quick {
+	--zs-quick-fade: linear-gradient(to right, black calc(100% - 28px), transparent);
+}
+.zs-quick:dir(rtl) {
+	--zs-quick-fade: linear-gradient(to left, black calc(100% - 28px), transparent);
+}
 .zs-root[data-chatting="true"] .zs-quick {
 	flex-wrap: nowrap;
 	overflow-x: auto;
 	scrollbar-width: none;
+	margin: -4px;
+	padding: 4px;
+	mask-image: var(--zs-quick-fade);
 }
 .zs-root[data-chatting="true"] .zs-pill {
 	flex: none;
@@ -309,7 +321,8 @@
 	filter: brightness(1.1);
 }
 .zs-send:disabled {
-	color: var(--zs-faint) !important;
+	/* Nothing to send yet: quiet, but still plainly the send button. */
+	color: var(--zs-muted) !important;
 	background: var(--zs-line);
 	cursor: default;
 }

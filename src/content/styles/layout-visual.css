@@ -279,16 +279,6 @@
 		inset-inline-start: 9px;
 	}
 }
-/* Once chatting, the row scrolls sideways: fade its far end so a cut-off prompt reads as more.
-   The padding leaves room for the focus ring, which the scroller would clip. */
-.zs-root[data-layout="visual"][data-chatting="true"] .zs-quick {
-	padding: 4px;
-	mask-image: linear-gradient(to right, black calc(100% - 28px), transparent);
-}
-.zs-root[data-layout="visual"][data-chatting="true"] .zs-quick:dir(rtl) {
-	mask-image: linear-gradient(to left, black calc(100% - 28px), transparent);
-}
-
 /* ---- the conversation ---- */
 
 /* Your side: a bubble on the right, its corner towards you. */

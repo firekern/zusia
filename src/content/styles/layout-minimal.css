@@ -92,7 +92,7 @@
    pills above every question would weigh more than the question. */
 .zs-root[data-layout="minimal"][data-chatting="true"] .zs-quick {
 	gap: 0;
-	margin-block-end: -3px;
+	margin: 0 0 -3px;
 	padding: 0;
 }
 .zs-root[data-layout="minimal"][data-chatting="true"] .zs-pill {

@@ -222,6 +222,10 @@
 	grid-template-columns: repeat(auto-fill, minmax(min(100%, 8.75em), 1fr));
 	gap: 5px;
 	overflow: visible;
+	/* All of them are in view: nothing to fade, no scroller to pad. */
+	margin: 0;
+	padding: 0 1px;
+	mask-image: none;
 }
 .zs-root[data-layout="rich"] .zs-pill {
 	justify-content: center;
@@ -235,6 +239,9 @@
 		display: flex;
 		flex-wrap: nowrap;
 		overflow-x: auto;
+		margin: -4px;
+		padding: 4px;
+		mask-image: var(--zs-quick-fade);
 	}
 	.zs-root[data-layout="rich"][data-chatting="true"] .zs-pill {
 		flex: none;
