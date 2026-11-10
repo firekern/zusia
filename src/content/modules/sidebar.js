@@ -280,9 +280,10 @@ Object.assign(Zusia, {
 		if (log && jump) {
 			let below = log.scrollHeight - log.scrollTop - log.clientHeight;
 			jump.hidden = below < 120;
-			// The stylesheet fades the last lines out, so text is never cut mid-line at the
-			// edge nor legible under the button.
+			// The stylesheet fades the lines at an edge with more beyond it, so text is never
+			// cut mid-letter there nor legible under the button.
 			log.parentNode.classList.toggle("zs-more-below", below > 8);
+			log.parentNode.classList.toggle("zs-more-above", log.scrollTop > 8);
 		}
 	},
 

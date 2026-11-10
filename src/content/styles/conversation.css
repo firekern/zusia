@@ -19,9 +19,20 @@
 	box-shadow: var(--zs-shadow);
 	animation: zs-fade-in 0.15s ease-out;
 }
-/* More conversation below: its last lines fade out instead of being cut mid-letter. */
+/* More conversation beyond an edge: the lines there fade out instead of being cut
+   mid-letter. Longer at the bottom, where the jump button sits over them. */
+.zs-log-wrap {
+	--zs-fade-above: transparent, #000 22px;
+	--zs-fade-below: #000 calc(100% - 56px), transparent calc(100% - 4px);
+}
+.zs-log-wrap.zs-more-above > .zs-log {
+	mask-image: linear-gradient(to bottom, var(--zs-fade-above));
+}
 .zs-log-wrap.zs-more-below > .zs-log {
-	mask-image: linear-gradient(to bottom, #000 calc(100% - 56px), transparent calc(100% - 4px));
+	mask-image: linear-gradient(to bottom, var(--zs-fade-below));
+}
+.zs-log-wrap.zs-more-above.zs-more-below > .zs-log {
+	mask-image: linear-gradient(to bottom, var(--zs-fade-above), var(--zs-fade-below));
 }
 .zs-jump .zs-i {
 	width: 14px !important;

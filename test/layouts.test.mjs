@@ -222,4 +222,7 @@ test("while there is more below, the conversation is marked so its last lines fa
 	assert.deepEqual([wrap.classList.contains("zs-more-below"), jump.hidden], [true, true], "a little above: the fade, no button yet");
 	scrolledTo(900);
 	assert.deepEqual([wrap.classList.contains("zs-more-below"), jump.hidden], [true, false]);
+	assert.equal(wrap.classList.contains("zs-more-above"), true, "scrolled down: the first lines fade under the header too");
+	scrolledTo(0);
+	assert.equal(wrap.classList.contains("zs-more-above"), false, "at the top nothing is hidden above");
 });
