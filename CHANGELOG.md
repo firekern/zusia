@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.3.0
 
 - ⬅️ **The chat has its own panel on the left.** Zusia is now a column at the left edge of the window, beside the library and the reader, and no longer a section among Zotero's item details. It follows the paper you select or open and stays on it while nothing is selected. Drag its edge to resize it (double-click to reset), hide it with the button in its header and bring it back from the rail it leaves. **Settings → Zusia → Chat → *Where the chat is*** puts it back in the item pane.
 - 🪟 **Windows:** the assistants are now found wherever they are on your `Path` (winget, scoop, a custom folder), and so is `node.exe` for the npm install of Codex; before, only four fixed folders were searched. A `HOME` set by Git Bash, a path setting typed with forward slashes and a chat folder copied from a Mac no longer end in a path error.
