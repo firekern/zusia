@@ -1,34 +1,268 @@
-/* ---- Rich: the tools named, the prompts all in view ---- */
+/* ---- Rich: a workbench for long study sessions, every tool named and in view ----
+   Top to bottom: a toolbar, the paper card, the conversation, the prompts and the
+   message box. Each band has one left edge and one job, so more on screen still
+   reads in a glance. Labels follow Settings → Button labels: the user can still
+   choose icons only. */
+
+.zs-root[data-layout="rich"] {
+	/* Named tools are read, not glanced at: a step stronger than muted. */
+	--zs-rich-tool: color-mix(in srgb, var(--zs-text) 70%, var(--zs-muted));
+	/* The shared ink sits near 3.3:1 on dark glass; Rich sets more text in it (the
+	   reading line, Explain better, New chat), so it mixes in more of the text colour. */
+	--zs-accent-ink: color-mix(in srgb, var(--zs-accent) 72%, var(--zs-text));
+}
+@media (prefers-color-scheme: dark) {
+	.zs-root[data-layout="rich"] {
+		--zs-accent-ink: color-mix(in srgb, var(--zs-accent) 45%, var(--zs-text));
+	}
+}
+
+/* ---- toolbar: the named tools first, the icon-only utilities at its end ---- */
 
 .zs-root[data-layout="rich"] .zs-header {
+	/* The header sheds labels by its own width, which differs between the dock and the item pane. */
+	container: zs-rich-head / inline-size;
+	/* Only a font far wider than Zotero's could still overrun the row: wrap, never overflow. */
 	flex-wrap: wrap;
-	row-gap: 2px;
+	gap: 4px 2px;
+	min-height: 28px;
 }
-.zs-root[data-layout="rich"] .zs-header > .zs-icon[data-label] {
-	width: auto;
-	gap: 4px;
-	padding: 0 7px;
-}
-.zs-root[data-layout="rich"] .zs-header > .zs-icon[data-label]::after {
-	content: attr(data-label);
-	font-size: 0.88em;
-	white-space: nowrap;
-}
-/* The paper card names the paper, so the header is a row of tools, the last two at its end. */
+/* The paper card names the paper, so the header title would only repeat it. */
 .zs-root[data-layout="rich"] .zs-header-title {
 	display: none !important;
 }
-.zs-root[data-layout="rich"] .zs-open-settings {
+.zs-root[data-layout="rich"] .zs-header > .zs-header-icon {
+	order: 0;
+	margin-inline: 3px 6px;
+}
+.zs-root[data-layout="rich"] .zs-search { order: 1; }
+.zs-root[data-layout="rich"] .zs-history { order: 2; }
+/* The margin keeps the two groups apart when the row is full. */
+.zs-root[data-layout="rich"] .zs-new-chat {
+	order: 3;
+	margin-inline-end: 6px;
+}
+/* Clarifications has no short name yet; it leads the icon group so the named tools stay together. */
+.zs-root[data-layout="rich"] .zs-clarifications {
+	order: 4;
 	margin-inline-start: auto;
 }
-.zs-root[data-layout="rich"][data-chatting="true"] .zs-quick {
-	flex-wrap: wrap;
-	overflow: visible;
+.zs-root[data-layout="rich"] .zs-open-settings { order: 5; }
+.zs-root[data-layout="rich"] :is(.zs-view-chat, .zs-view-details) { order: 6; }
+.zs-root[data-layout="rich"] .zs-dock-hide { order: 7; }
+
+.zs-root[data-layout="rich"]:not([data-labels="icons"]) .zs-header > .zs-icon[data-label]:not(.zs-new-chat):not(:disabled) {
+	color: var(--zs-rich-tool) !important;
 }
-/* Who answered, with which model: shown without hovering. */
+.zs-root[data-layout="rich"]:not([data-labels="icons"]) .zs-header > .zs-icon[data-label] {
+	width: auto;
+	height: 26px;
+	gap: 5px;
+	padding: 0 8px 0 6px;
+}
+.zs-root[data-layout="rich"]:not([data-labels="icons"]) .zs-header > .zs-icon[data-label]::after {
+	content: attr(data-label);
+	font-size: 0.92em;
+	white-space: nowrap;
+}
+/* New chat is the one tool reached for many times a session: it carries the accent. */
+.zs-root[data-layout="rich"] .zs-header > .zs-new-chat {
+	color: var(--zs-accent-ink) !important;
+	background: color-mix(in srgb, var(--zs-accent) 12%, var(--zs-raised));
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--zs-accent) 30%, transparent);
+}
+.zs-root[data-layout="rich"] .zs-header > .zs-new-chat:hover:not(:disabled) {
+	color: var(--zs-accent-ink) !important;
+	background: color-mix(in srgb, var(--zs-accent) 20%, var(--zs-raised));
+}
+.zs-root[data-layout="rich"] .zs-header > .zs-new-chat:disabled {
+	color: var(--zs-muted) !important;
+	background: transparent;
+	box-shadow: inset 0 0 0 1px var(--zs-line);
+}
+/* Narrower than the full row: the buddy steps aside first, then Search and History
+   keep only their icons; New chat keeps its name down to the narrowest dock. */
+@container zs-rich-head (max-width: 360px) {
+	.zs-root[data-layout="rich"] .zs-header > .zs-header-icon {
+		display: none;
+	}
+}
+@container zs-rich-head (max-width: 300px) {
+	.zs-root[data-layout="rich"]:not([data-labels="icons"]) .zs-header > :is(.zs-search, .zs-history)[data-label] {
+		width: 26px;
+		padding: 0;
+	}
+	.zs-root[data-layout="rich"]:not([data-labels="icons"]) .zs-header > :is(.zs-search, .zs-history)[data-label]::after {
+		content: none;
+	}
+}
+
+/* ---- the paper card ----
+   Icon tile, then one text column that the reading line and the bar share, so
+   everything after the icon starts at the same edge. A chevron says it opens. */
+
+.zs-root[data-layout="rich"] .zs-paper-card {
+	grid-template-columns: auto minmax(0, 1fr) auto;
+	column-gap: 10px;
+	row-gap: 8px;
+	padding: 10px 10px 11px;
+	transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+.zs-root[data-layout="rich"] .zs-paper-card:hover {
+	background: color-mix(in srgb, var(--zs-accent) 6%, var(--zs-raised));
+}
+.zs-root[data-layout="rich"] .zs-paper-card:focus-visible {
+	outline: 2px solid var(--zs-accent);
+	outline-offset: 1px;
+}
+.zs-root[data-layout="rich"] .zs-paper-card-icon {
+	grid-row: 1 / span 2;
+	width: 30px;
+	height: 30px;
+	margin: 0;
+	padding: 6px;
+	border-radius: var(--zs-radius-control);
+	background: var(--zs-accent-soft);
+}
+.zs-root[data-layout="rich"] .zs-paper-card-text {
+	grid-column: 2;
+	grid-row: 1;
+	gap: 1px;
+}
+.zs-root[data-layout="rich"] .zs-paper-card-reading {
+	margin-top: 3px;
+	font-weight: 500;
+	font-variant-numeric: tabular-nums;
+}
+.zs-root[data-layout="rich"] .zs-paper-card-progress {
+	grid-column: 2 / -1;
+	grid-row: 2;
+	align-self: center;
+	height: 4px;
+	border-radius: 2px;
+}
+.zs-root[data-layout="rich"] .zs-paper-card::after {
+	content: "";
+	grid-column: 3;
+	grid-row: 1;
+	align-self: center;
+	width: 12px;
+	height: 12px;
+	background: var(--zs-muted);
+	mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M6 3.5L10.5 8 6 12.5' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+	transition: transform 0.15s ease, background-color 0.15s ease;
+}
+.zs-root[data-layout="rich"] .zs-paper-card:is(:hover, :focus-visible)::after {
+	background: var(--zs-accent-ink);
+	transform: translateX(2px);
+}
+.zs-root[data-layout="rich"] .zs-paper-card:dir(rtl)::after {
+	transform: scaleX(-1);
+}
+.zs-root[data-layout="rich"] .zs-paper-card:dir(rtl):is(:hover, :focus-visible)::after {
+	transform: scaleX(-1) translateX(2px);
+}
+
+/* ---- conversation ---- */
+
+/* The log scrolls under the card and over the prompts: a short fade at both ends
+   instead of a hard cut through a line of text. The padding keeps the first and
+   last lines clear of it at rest. */
+.zs-root[data-layout="rich"] .zs-log-wrap {
+	margin-block: -4px;
+}
+.zs-root[data-layout="rich"] .zs-log {
+	padding-block: 12px;
+	mask-image: linear-gradient(to bottom, transparent, black 12px, black calc(100% - 12px), transparent);
+}
+/* The card already names the paper above the empty chat, and the welcome sits in
+   the middle of the space the conversation will fill. */
+.zs-root[data-layout="rich"] .zs-empty-paper {
+	display: none;
+}
+.zs-root[data-layout="rich"] .zs-log > .zs-empty:only-child {
+	flex: 1 0 auto;
+}
+/* Who answered, and the actions under each answer, stay in view without hovering. */
 .zs-root[data-layout="rich"] .zs-footer {
 	opacity: 1;
+	gap: 4px;
 }
 .zs-root[data-layout="rich"] .zs-by {
 	display: inline !important;
+	overflow: hidden;
+	min-width: 0;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	/* Read, not glanced at: muted, not faint, for contrast. */
+	color: var(--zs-muted);
+}
+/* The dots icon's soft layer is a filled bar; beside Copy it reads as a highlight. */
+.zs-root[data-layout="rich"] .zs-footer .zs-more .zs-duo {
+	display: none;
+}
+
+/* ---- quick prompts: all in view, on a grid of equal buttons ----
+   A ragged wrap leaves one prompt alone on a row; equal columns line them up,
+   two by two in a narrow panel and four across a wide one. */
+
+.zs-root[data-layout="rich"] .zs-quick {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(min(100%, 8.75em), 1fr));
+	gap: 5px;
+	overflow: visible;
+}
+.zs-root[data-layout="rich"] .zs-pill {
+	justify-content: center;
+	min-width: 0;
+	max-width: none;
+}
+.zs-root[data-layout="rich"][data-chatting="true"] .zs-pill {
+	min-height: 24px;
+	padding: 1px 8px;
+	font-size: 0.88em !important;
+}
+
+/* ---- message box: the toggles and the effort carry their names ---- */
+
+.zs-root[data-layout="rich"] .zs-composer {
+	container: zs-rich-composer / inline-size;
+}
+.zs-root[data-layout="rich"]:not([data-labels="icons"]) .zs-controls .zs-mode .zs-label {
+	display: inline;
+}
+.zs-root[data-layout="rich"]:not([data-labels="icons"]) .zs-controls .zs-ghost:not([aria-pressed="true"]):not(:disabled) {
+	color: var(--zs-rich-tool) !important;
+}
+/* A hairline sets the controls apart from what is being written: a toolbar under the page. */
+.zs-root[data-layout="rich"] .zs-controls {
+	gap: 3px;
+	margin-top: 6px;
+	padding-top: 5px;
+	border-top: 1px solid var(--zs-line);
+}
+/* Below one row's width the tools take a row of their own (attach, Drawing, LaTeX)
+   and who answers takes the next, with Send at its end: no name is cut. */
+@container zs-rich-composer (max-width: 365px) {
+	.zs-root[data-layout="rich"]:not([data-labels="icons"]) .zs-controls {
+		flex-wrap: wrap;
+		row-gap: 2px;
+	}
+	.zs-root[data-layout="rich"]:not([data-labels="icons"]) .zs-controls::before {
+		content: "";
+		order: 1;
+		flex-basis: 100%;
+	}
+	.zs-root[data-layout="rich"]:not([data-labels="icons"]) .zs-controls > :is(.zs-model-btn, .zs-effort-btn, .zs-spacer, .zs-send) {
+		order: 2;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.zs-root[data-layout="rich"] .zs-paper-card:is(:hover, :focus-visible)::after {
+		transform: none;
+	}
+	.zs-root[data-layout="rich"] .zs-paper-card:dir(rtl):is(:hover, :focus-visible)::after {
+		transform: scaleX(-1);
+	}
 }
