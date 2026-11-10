@@ -111,6 +111,7 @@
 	position: relative;
 	box-sizing: border-box;
 	display: flex;
+	flex-direction: column;
 	flex: 0 0 auto;
 	min-width: 0;
 	background: var(--material-sidepane);
@@ -141,6 +142,44 @@
 	min-width: 0;
 	min-height: 0;
 	padding: 6px 8px 8px;
+}
+/* The one-time note for people who update. Outside .zs-root, so on Zotero's tokens. */
+.zs-dock-tip {
+	margin: 8px 8px 0;
+	padding: 10px 12px;
+	border: 1px solid color-mix(in srgb, var(--zs-accent, var(--accent-blue)) 35%, transparent);
+	border-radius: 10px;
+	background: color-mix(in srgb, var(--zs-accent, var(--accent-blue)) 9%, var(--color-sidepane, var(--material-sidepane)));
+	font-size: 12px;
+	line-height: 1.45;
+}
+.zs-dock-tip-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-top: 8px;
+}
+.zs-dock-tip-button {
+	appearance: none;
+	margin: 0;
+	padding: 3px 10px;
+	border: 1px solid var(--fill-quarternary);
+	border-radius: 999px;
+	font: inherit;
+	color: var(--fill-primary);
+	background: var(--color-sidepane, var(--material-sidepane));
+}
+.zs-dock-tip-button:first-child {
+	border-color: transparent;
+	color: var(--zs-accent-text, #fff);
+	background: var(--zs-accent, var(--accent-blue));
+}
+.zs-dock-tip-button:hover {
+	filter: brightness(0.96);
+}
+.zs-dock-tip-button:focus-visible {
+	outline: 2px solid var(--zs-accent, var(--accent-blue));
+	outline-offset: 1px;
 }
 .zs-dock-rail {
 	display: flex;

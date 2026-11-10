@@ -11,3 +11,5 @@ user_pref("extensions.zotero.httpServer.enabled", false);
 user_pref("extensions.zotero.sync.autoSync", false);
 // The setup wizard would cover the screenshots; its steps are tested in jsdom.
 user_pref("extensions.zusia.onboarded", true);
+// The note for people who update sits above the chat; the tester shows it on its own.
+user_pref("extensions.zusia.dockTipSeen", true);

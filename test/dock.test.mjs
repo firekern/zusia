@@ -275,3 +275,50 @@ test("the dock never pushes Zotero's panes out of the window: it narrows, then b
 	plugin.removePlacement();
 	resizeTo(1400);
 });
+
+test("the dock follows Zotero's panes being collapsed or dragged, without a window resize", async () => {
+	const { plugin, window, document, dock } = mainWindow();
+	Object.defineProperty(window, "innerWidth", { value: 1180, configurable: true });
+	plugin.applyPlacement();
+	assert.equal(dock().classList.contains("zs-dock-drawer"), true);
+	// What Zotero writes when the item pane is collapsed.
+	document.documentElement.style.setProperty("--width-of-fixed-components", "237px");
+	await new Promise(resolve => setTimeout(resolve, 0));
+	assert.equal(dock().classList.contains("zs-dock-drawer"), false);
+	plugin.removePlacement();
+	document.documentElement.style.setProperty("--width-of-fixed-components", "557px");
+	await new Promise(resolve => setTimeout(resolve, 0));
+});
+
+test("someone who updates is told once where the chat went, and can send it back", () => {
+	const { plugin, dock, prefs, state } = mainWindow();
+	plugin.applyPlacement();
+	const tip = () => dock()?.querySelector(".zs-dock-tip");
+	assert.match(tip().textContent, /its own panel here.*Alt\+Z hides it/);
+	assert.equal(tip().nextElementSibling, dock().querySelector(".zs-dock-body"), "above the chat");
+	plugin.updateDocks();
+	assert.equal(dock().querySelectorAll(".zs-dock-tip").length, 1);
+	const [gotIt, back] = tip().querySelectorAll("button");
+	gotIt.click();
+	assert.equal(prefs[PREFIX + "dockTipSeen"], true);
+	assert.equal(tip(), null);
+
+	prefs[PREFIX + "dockTipSeen"] = false;
+	plugin.updateDocks();
+	assert.equal(back.textContent, "Back to the item pane");
+	tip().querySelectorAll("button")[1].click();
+	assert.equal(prefs[PREFIX + "placement"], "pane");
+	assert.equal(dock(), null);
+	assert.equal(state.sections, 1);
+});
+
+test("a new user gets the setup wizard, not the note, and finishing it counts as having read it", () => {
+	const { plugin, dock, prefs } = mainWindow({ [PREFIX + "onboarded"]: false });
+	plugin.applyPlacement();
+	assert.equal(dock().querySelector(".zs-dock-tip"), null);
+	assert.ok(dock().querySelector(".zs-wizard"));
+	plugin.finishWizard(dock().querySelector(".zs-root"));
+	plugin.updateDocks();
+	assert.equal(prefs[PREFIX + "dockTipSeen"], true);
+	assert.equal(dock().querySelector(".zs-dock-tip"), null);
+});

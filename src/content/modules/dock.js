@@ -77,7 +77,7 @@ Object.assign(Zusia, {
 		let content = doc.getElementById("appcontent");
 		content.parentNode.insertBefore(box, content);
 
-		let dock = { box, body, rail, resizer, paperID: null, rendered: false, itemsView: null, timer: null };
+		let dock = { box, body, rail, resizer, paperID: null, rendered: false, itemsView: null, timer: null, fixed: null, tip: null };
 		dock.onSelect = () => this.syncDock(win).catch(e => this.logError("syncDock", e));
 		dock.onKey = (event) => {
 			if (event.code !== "Key" + this.DOCK_KEY || !event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
@@ -93,9 +93,18 @@ Object.assign(Zusia, {
 		};
 		// Capturing, so it works whichever of Zotero's panes has the focus.
 		win.addEventListener("keydown", dock.onKey, true);
-		// The room beside Zotero's panes changes with the window.
+		// The room beside Zotero's panes changes with the window, and when one of them is
+		// collapsed or dragged: Zotero then rewrites what its fixed panes need on the root.
 		dock.onResize = () => this.updateDock(win);
 		win.addEventListener("resize", dock.onResize);
+		dock.needs = new win.MutationObserver(() => {
+			let fixed = doc.documentElement.style.getPropertyValue("--width-of-fixed-components");
+			if (fixed !== dock.fixed) {
+				dock.fixed = fixed;
+				this.updateDock(win);
+			}
+		});
+		dock.needs.observe(doc.documentElement, { attributes: true, attributeFilter: ["style"] });
 		this._docks.set(win, dock);
 		// The chat view of the item pane would hide Zotero's sections around a section that is gone.
 		doc.documentElement.setAttribute(this.VIEW_ATTR, "details");
@@ -114,6 +123,7 @@ Object.assign(Zusia, {
 		win.clearTimeout(dock.timer);
 		win.removeEventListener("keydown", dock.onKey, true);
 		win.removeEventListener("resize", dock.onResize);
+		dock.needs.disconnect();
 		dock.itemsView?.onSelect.removeListener(dock.onSelect);
 		// As when an item pane section goes: what was said about the paper is folded into its memory.
 		let dir = this._shownDirs.get(dock.body);
@@ -211,7 +221,9 @@ Object.assign(Zusia, {
 				"Show Zusia (" + this.shortcutLabel(this.DOCK_KEY) + ")", icon, () => this.setDockOpen(true)));
 		}
 		dock.box.style.setProperty("--zs-accent", appearance.accent || "var(--accent-blue)");
+		dock.box.style.setProperty("--zs-accent-text", this.textOn(appearance.accent || this.ZOTERO_ACCENT));
 		dock.rail.hidden = open;
+		this.renderDockTip(win, dock);
 		dock.body.hidden = !open;
 		dock.resizer.hidden = !open;
 		dock.box.style.width = open ? this.dockWidth(win) + "px" : "";
@@ -219,6 +231,42 @@ Object.assign(Zusia, {
 		if (open) {
 			this.syncDock(win).catch(e => this.logError("syncDock", e));
 		}
+	},
+
+	// For someone who updates: the chat used to be a section of Zotero's item pane, and
+	// nothing else says where it went or how to put it back. Shown until it is answered;
+	// a new user reads the same in the setup wizard instead.
+	renderDockTip(win, dock) {
+		let wanted = this.dockOpen() && this.getPref("onboarded") === true && this.getPref("dockTipSeen") !== true;
+		if (!wanted) {
+			dock.tip?.remove();
+			dock.tip = null;
+			return;
+		}
+		if (dock.tip) {
+			return;
+		}
+		let doc = win.document;
+		let tip = this.el(doc, "div", "zs-dock-tip");
+		tip.setAttribute("role", "note");
+		tip.appendChild(this.el(doc, "div", "zs-dock-tip-text",
+			"Zusia now has its own panel here, beside your library and the PDF. " +
+			this.shortcutLabel(this.DOCK_KEY) + " hides it and brings it back."));
+		let actions = this.el(doc, "div", "zs-dock-tip-actions");
+		let action = (label, run) => {
+			let button = this.el(doc, "button", "zs-dock-tip-button", label);
+			button.type = "button";
+			button.addEventListener("click", () => {
+				this.setPref("dockTipSeen", true);
+				run();
+			});
+			actions.appendChild(button);
+		};
+		action("Got it", () => this.updateDocks());
+		action("Back to the item pane", () => this.setPlacement("pane"));
+		tip.appendChild(actions);
+		dock.box.insertBefore(tip, dock.body);
+		dock.tip = tip;
 	},
 
 	startDockResize(win, event) {

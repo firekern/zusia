@@ -575,6 +575,24 @@ async function testDock(win, CS) {
 	check("dock: the rail button opens it again on the same chat",
 		Math.round(dock.getBoundingClientRect().width) === CS.DOCK_WIDTH.initial && shown(dock.querySelector(".zs-root .zs-input")));
 
+	// The note for people who update: above the chat, gone for good once answered.
+	CS.setPref("dockTipSeen", false);
+	CS.updateDocks();
+	await Zotero.Promise.delay(300);
+	let tip = dock.querySelector(".zs-dock-tip");
+	let tipRect = tip?.getBoundingClientRect();
+	let rootTop = dock.querySelector(".zs-root").getBoundingClientRect().top;
+	let composerBottom = dock.querySelector(".zs-composer").getBoundingClientRect().bottom;
+	check("dock: someone who updates sees a note above the chat, which still fits under it",
+		shown(tip) && tipRect.bottom <= rootTop + 1 && tipRect.right <= dock.getBoundingClientRect().right
+			&& dock.getBoundingClientRect().bottom - composerBottom < 24,
+		tipRect && { tip: [Math.round(tipRect.top), Math.round(tipRect.bottom)], rootTop: Math.round(rootTop) });
+	let dockNow = dock.getBoundingClientRect();
+	await snapshot(win, "zotero-dock-tip", { x: dockNow.x, y: dockNow.y, width: dockNow.width + 4, height: 420 });
+	tip.querySelector("button").click();
+	await Zotero.Promise.delay(200);
+	check("dock: Got it puts the note away for good", !dock.querySelector(".zs-dock-tip") && CS.getPref("dockTipSeen") === true);
+
 	let altZ = () => doc.getElementById("zotero-items-tree").dispatchEvent(
 		new win.KeyboardEvent("keydown", { code: "KeyZ", key: "z", altKey: true, bubbles: true, cancelable: true }));
 	altZ();

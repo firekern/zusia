@@ -71,6 +71,8 @@ Object.assign(Zusia, {
 
 	finishWizard(root) {
 		this.setPref("onboarded", true);
+		// Its last step said what the dock's note for people who update says.
+		this.setPref("dockTipSeen", true);
 		root.querySelector(".zs-wizard")?.remove();
 		root.querySelector(".zs-input")?.focus();
 	},

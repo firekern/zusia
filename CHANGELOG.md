@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.6.0
+
+- 👋 **A note for people who update.** The first time the left panel shows after an update, a note above the chat says that Zusia moved there and that ⌥Z / Alt+Z hides it, with a button to put the chat back in Zotero's item pane. It shows once. A new install gets the setup wizard, which says the same.
+- 📐 The left panel now also makes room when you collapse, reopen or drag one of Zotero's own panes, not only when the window is resized.
+
 ## 1.5.1
 
 - 💻 **The left panel no longer pushes Zotero's item pane off a laptop screen.** On a window about 1300px wide or less, the panel at its usual width left the library less room than its three columns need, and the item pane and its side rail slid past the right edge. The panel now narrows to the room there is; when even its narrowest does not fit, it lies over the library as a drawer (⌥Z / Alt+Z puts it away). The width you chose comes back on a wider window.
