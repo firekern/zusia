@@ -307,6 +307,24 @@ function fakeSpawn(env, stdout = "") {
 const QUESTION = 'QUESTION-MARKER: is "x" & y > 0? 100%\n- not a flag';
 const noPromptInArgv = (args) => !args.some(a => a.includes("QUESTION-MARKER") || a.includes("You are Zusia"));
 
+test("a CLI that exits before stdin is closed is an error only if a prompt was lost", async () => {
+	const env = loadPlugin();
+	fakeSpawn(env, "");
+	const call = env.Subprocess.call;
+	env.Subprocess.call = async (options) => {
+		const proc = await call(options);
+		proc.stdin.close = async () => { throw new Error("pipe closed"); };
+		return proc;
+	};
+	const errors = () => env.plugin._logLines.filter(line => line.includes("ERROR"));
+	await env.plugin.runProcess("/bin/agy", ["models"], "/tmp", null, null, "");
+	assert.equal(errors().length, 0, "`agy models` has nothing on stdin: its quick exit is not a failure");
+	assert.ok(env.plugin._logLines.some(line => line.includes("stdin of /bin/agy was closed before we closed it")));
+	await env.plugin.runProcess("/bin/claude", ["-p"], "/tmp", null, null, "PROMPT");
+	assert.equal(errors().length, 1);
+	assert.match(errors()[0], /writing stdin of \/bin\/claude/);
+});
+
 test("runProcess writes stdin, then closes it", async () => {
 	const env = loadPlugin();
 	const runs = fakeSpawn(env, "{\"a\":1}\n");

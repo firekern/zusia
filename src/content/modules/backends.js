@@ -353,8 +353,14 @@ Object.assign(Zusia, {
 			await proc.stdin.close();
 		})().catch((e) => {
 			// A CLI that exits early (bad flag, signed out) closes the pipe under us; its
-			// exit code and stderr say why better than this error does.
-			this.logError("writing stdin of " + command, e);
+			// exit code and stderr say why better than this error does. With nothing to
+			// send, our close merely lost a race with a CLI that had already finished.
+			if (stdinText) {
+				this.logError("writing stdin of " + command, e);
+			}
+			else {
+				this.log("stdin of " + command + " was closed before we closed it: " + e);
+			}
 		});
 		if (onSpawn) {
 			onSpawn(proc);

@@ -276,7 +276,13 @@ Object.assign(Zusia, {
 
 	// The sidebar moved to another paper or closed.
 	leavePaper(dir) {
-		this.scheduleConsolidation(dir, "leave").catch(e => this.logError("scheduling memory consolidation", e));
+		this.scheduleConsolidation(dir, "leave").catch((e) => {
+			// A paper left as Zotero quits: the plugin's globals are gone by the time the
+			// files are read, and the next start picks up what this would have queued.
+			if (!this._jobsStopped) {
+				this.logError("scheduling memory consolidation", e);
+			}
+		});
 	},
 
 	// A page turn into another chapter folds the conversation so far into the memory, and a

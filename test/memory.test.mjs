@@ -1012,3 +1012,16 @@ test("gists: a read section with a missing or stale gist gets one from the next 
 	await ask(env, ctx, "And now again?");
 	assert.equal(failing.filter(p => /Section 2\.1 Sequences/.test(p.prompt)).length, 1, "a gist that failed is not asked for on every question");
 });
+
+test("a paper left while Zotero quits logs no error when the plugin's globals are already gone", async () => {
+	const { plugin } = loadPlugin();
+	plugin.scheduleConsolidation = async () => { throw new TypeError("ZusiaMap is undefined"); };
+	plugin.stopJobs();
+	plugin.leavePaper("/d");
+	await new Promise(resolve => setTimeout(resolve, 0));
+	assert.equal(plugin._logLines.filter(line => line.includes("ERROR")).length, 0);
+	plugin._jobsStopped = false;
+	plugin.leavePaper("/d");
+	await new Promise(resolve => setTimeout(resolve, 0));
+	assert.equal(plugin._logLines.filter(line => line.includes("ERROR")).length, 1, "while running, the same failure is an error");
+});
