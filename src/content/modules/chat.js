@@ -294,6 +294,12 @@ Object.assign(Zusia, {
 				scale = Math.max(0.72, Math.floor(scale * (available / natural) * 100 - 1) / 100);
 				scroller.style.fontSize = Math.round(scale * 100) + "%";
 			}
+			// A formula a few pixels too wide at the floor reads better a little smaller
+			// than behind a scrollbar that only moves it by those pixels.
+			let excess = scroller.clientWidth ? scroller.scrollWidth / scroller.clientWidth : 1;
+			if (scale === 0.72 && excess > 1 && excess <= 1.06) {
+				scroller.style.fontSize = Math.floor(scale / excess * 100 - 1) + "%";
+			}
 			this.markOverflow(scroller);
 		}
 		for (let wrap of container.querySelectorAll(".zs-table-wrap")) {
