@@ -128,6 +128,13 @@ Object.assign(Zusia, {
 		composer.append(context, attachments, input, controls);
 		root.append(header, paperCard, logWrap, quick, composer);
 		root.addEventListener("keydown", event => this.handleShortcut(root, event));
+		// A sheet or the wizard lies over the chat and needs room even when the chat is
+		// short. Marked with a class, since Zotero 7's Gecko has no :has() to ask with.
+		if (win && win.MutationObserver) {
+			new win.MutationObserver(() => {
+				root.classList.toggle("zs-overlaid", !!root.querySelector(":scope > .zs-panel, :scope > .zs-wizard"));
+			}).observe(root, { childList: true });
+		}
 		body.appendChild(root);
 
 		this.updateControls(root);

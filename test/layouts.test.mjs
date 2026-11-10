@@ -177,3 +177,28 @@ test("Minimal: the menus opened from the header menu hang from its button, the o
 	root.querySelector(".zs-history").click();
 	assert.equal(root.querySelector(".zs-history").getAttribute("aria-expanded"), "true");
 });
+
+test("a sheet or the wizard over the chat marks it, so it gets room without :has()", async () => {
+	const { root, plugin } = sidebar();
+	const settle = () => new Promise(resolve => setTimeout(resolve, 0));
+	assert.equal(root.classList.contains("zs-overlaid"), false);
+	const { panel } = plugin.openPanel(root, { label: "Reading memory", icon: "memory" });
+	await settle();
+	assert.equal(root.classList.contains("zs-overlaid"), true);
+	panel.remove();
+	await settle();
+	assert.equal(root.classList.contains("zs-overlaid"), false);
+	plugin.showWizard(root);
+	await settle();
+	assert.equal(root.classList.contains("zs-overlaid"), true);
+	plugin.finishWizard(root);
+	await settle();
+	assert.equal(root.classList.contains("zs-overlaid"), false);
+	// Zotero 7's Gecko drops a whole rule whose selector list holds :has().
+	for (const name of plugin.STYLES) {
+		const css = readFileSync(new URL("../src/content/styles/" + name + ".css", import.meta.url), "utf8").replace(/\/\*[^]*?\*\//g, "");
+		for (const [selectors] of css.matchAll(/[^{}]*:has\([^{}]*\{/g)) {
+			assert.ok(!/,/.test(selectors.replace(/\([^()]*\)/g, "")), name + ".css: :has() shares a rule with other selectors: " + selectors.trim().slice(0, 80));
+		}
+	}
+});

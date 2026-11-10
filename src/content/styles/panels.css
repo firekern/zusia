@@ -328,8 +328,7 @@
 	.zs-clar-item:hover { transform: none; }
 }
 /* Panels and the wizard need room even when the chat is short. */
-.zs-root:has(> .zs-panel),
-.zs-root:has(> .zs-wizard) {
+.zs-root.zs-overlaid {
 	min-height: 520px;
 }
 /* Wizard "Your voice" step: the system prompt editor. It is the one tall step, so the

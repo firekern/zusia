@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.6.4
+
+- 🐛 Zotero 7: a sheet (Clarifications, Reading memory) or the setup wizard opened over a short chat in the item pane was squeezed to the chat's height. It now gets the room it needs, as on newer Zotero.
+- 🧪 The checks inside a real Zotero now also run on Zotero 7, 8 and 9.
+
 ## 1.6.3
 
 Found by a review of everything new since 1.2.0.
