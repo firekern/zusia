@@ -532,6 +532,32 @@ async function showInDock(win, CS, paper) {
 		.find(el => CS._views.get(el)?.ctx.paperItem?.id === paper.id), 20000, "the paper's chat in the dock");
 }
 
+// The start page in the dock: what a paper with no conversation shows, in every layout.
+async function testStartPage(win, CS) {
+	let dock = win.document.getElementById("zusia-dock");
+	let paper = (await Zotero.Items.getAll(Zotero.Libraries.userLibraryID))
+		.find(i => i.isRegularItem() && i.getField("title") === "Loss of Plasticity in Deep Continual Learning");
+	let root = await showInDock(win, CS, paper);
+	await CS.newChat(root);
+	let before = CS.getAppearance();
+	let fits = {};
+	for (let layout of Object.keys(CS.LAYOUTS)) {
+		CS.saveAppearance(CS.layoutLook(layout, before));
+		await waitFor(() => root.dataset.layout === layout && root.querySelector(".zs-empty"), 5000, "the start page in " + layout);
+		await Zotero.Promise.delay(400);
+		let rect = dock.getBoundingClientRect();
+		let log = root.querySelector(".zs-log");
+		let composer = root.querySelector(".zs-composer").getBoundingClientRect();
+		let pills = [...root.querySelectorAll(".zs-quick .zs-pill")].map(p => p.getBoundingClientRect());
+		fits[layout] = root.scrollWidth <= root.clientWidth + 1 && log.scrollHeight <= log.clientHeight + 1
+			&& rect.bottom - composer.bottom < 24 && pills.length > 0 && pills.every(p => p.width > 20 && p.right <= rect.right + 1);
+		await snapshot(win, "zotero-start-" + layout, { x: rect.x, y: rect.y, width: rect.width + 4, height: rect.height });
+	}
+	CS.saveAppearance(before);
+	check("start page: in every layout it fits the dock without scrolling, with every quick prompt in view",
+		Object.values(fits).every(Boolean), fits);
+}
+
 // The dock: the chat as its own column beside Zotero's panes, in place of the item pane section.
 async function testDock(win, CS) {
 	let doc = win.document;
@@ -894,6 +920,7 @@ async function run() {
 		await testDock(win, CS);
 		await testLayouts(win, CS);
 		await testWizard(win, CS);
+		await testStartPage(win, CS);
 		if (!Services.env.exists("MOZ_HEADLESS")) {
 			await testDockFollows(win, CS);
 		}
