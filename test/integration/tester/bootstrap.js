@@ -66,7 +66,13 @@ async function testSidebar(win, CS) {
 	// as ZoteroPane.itemSelected() does after a click.
 	await waitFor(() => win.ZoteroPane.itemPane, 60000, "item pane");
 	let itemPane = win.ZoteroPane.itemPane;
-	itemPane.collectionTreeRows = win.ZoteroPane.getCollectionTreeRows();
+	// Zotero 10 selects several collections at once; before it there was one row.
+	if (win.ZoteroPane.getCollectionTreeRows) {
+		itemPane.collectionTreeRows = win.ZoteroPane.getCollectionTreeRows();
+	}
+	else {
+		itemPane.collectionTreeRow = win.ZoteroPane.getCollectionTreeRow();
+	}
 	itemPane.data = [item];
 	itemPane.editable = true;
 	await itemPane.renderItemPane(item);
@@ -510,6 +516,19 @@ async function testLive(win, CS) {
 	})());
 }
 
+// The headless items tree lays out no rows and cannot select one, so the selection is given
+// here and the dock told about it, as the tree's select listener does. Returns the chat.
+async function showInDock(win, CS, paper) {
+	let dock = win.document.getElementById("zusia-dock");
+	let { getSelectedItems } = win.ZoteroPane;
+	win.ZoteroPane.getSelectedItems = () => [paper];
+	await CS.syncDock(win).finally(() => {
+		win.ZoteroPane.getSelectedItems = getSelectedItems;
+	});
+	return waitFor(() => [...dock.querySelectorAll(".zs-root")]
+		.find(el => CS._views.get(el)?.ctx.paperItem?.id === paper.id), 20000, "the paper's chat in the dock");
+}
+
 // The left dock: the chat as its own column beside Zotero's panes, in place of the item pane section.
 async function testDock(win, CS) {
 	let doc = win.document;
@@ -518,16 +537,8 @@ async function testDock(win, CS) {
 		.find(i => i.isRegularItem() && i.getField("title") === "Integration test paper");
 	CS.setPlacement("left");
 	let dock = await waitFor(() => doc.getElementById("zusia-dock"), 5000, "the dock");
-	// The headless items tree lays out no rows and cannot select one, so the selection is
-	// given here and the dock told about it, as the tree's select listener does.
-	let { getSelectedItems } = win.ZoteroPane;
-	win.ZoteroPane.getSelectedItems = () => [paper];
-	await CS.syncDock(win).finally(() => {
-		win.ZoteroPane.getSelectedItems = getSelectedItems;
-	});
+	let root = await showInDock(win, CS, paper);
 	check("dock: listens to the items tree for the selection", CS._docks.get(win).itemsView === win.ZoteroPane.itemsView);
-	let root = await waitFor(() => [...dock.querySelectorAll(".zs-root")]
-		.find(el => CS._views.get(el)?.ctx.paperItem?.id === paper.id), 20000, "the paper's chat in the dock");
 	await doc.fonts.ready;
 	await Zotero.Promise.delay(800);
 
@@ -648,7 +659,10 @@ async function testDock(win, CS) {
 async function testLayouts(win, CS) {
 	let doc = win.document;
 	let dock = doc.getElementById("zusia-dock");
-	let root = dock.querySelector(".zs-root");
+	// testDock ends on a new dock, which has only what the items tree had selected.
+	let paper = (await Zotero.Items.getAll(Zotero.Libraries.userLibraryID))
+		.find(i => i.isRegularItem() && i.getField("title") === "Loss of Plasticity in Deep Continual Learning");
+	let root = await showInDock(win, CS, paper);
 	let shown = el => !!el && el.getClientRects().length > 0 && win.getComputedStyle(el).display !== "none";
 	let before = CS.getAppearance();
 	let parts = {};

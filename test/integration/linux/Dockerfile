@@ -4,7 +4,7 @@ FROM debian:bookworm-slim AS base
 # Zotero's tarball bundles Gecko but links against the system GTK/X stack;
 # the fonts stand in for the macOS system fonts the CSS falls back to.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-		ca-certificates libgtk-3-0 libdbus-glib-1-2 libxt6 libx11-xcb1 libasound2 libpci3 \
+		ca-certificates libgtk-3-0 libdbus-glib-1-2 libxt6 libxtst6 libx11-xcb1 libasound2 libpci3 \
 		fonts-dejavu-core fonts-liberation2 nodejs \
 	&& rm -rf /var/lib/apt/lists/*
 RUN useradd --create-home --uid 1000 zusia
@@ -18,17 +18,20 @@ USER zusia
 FROM debian:bookworm-slim AS fetch
 ARG ZOTERO_VERSION=10.0.8
 ARG TARGETARCH
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl xz-utils \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl xz-utils bzip2 \
 	&& rm -rf /var/lib/apt/lists/*
+# Zotero 7 is packed with bzip2, later versions with xz: tar tells them apart itself.
 RUN set -eu; \
 	case "$TARGETARCH" in \
 		arm64) platform=linux-arm64 ;; \
 		amd64) platform=linux-x86_64 ;; \
 		*) echo "Zotero publishes no Linux build for $TARGETARCH" >&2; exit 1 ;; \
 	esac; \
+	case "$ZOTERO_VERSION" in 7.*) packed=tar.bz2 ;; *) packed=tar.xz ;; esac; \
 	mkdir /opt/zotero; \
-	curl -fsSL "https://download.zotero.org/client/release/$ZOTERO_VERSION/Zotero-${ZOTERO_VERSION}_$platform.tar.xz" \
-		| tar -xJ -C /opt/zotero --strip-components=1; \
+	curl -fsSL -o /tmp/zotero.tar "https://download.zotero.org/client/release/$ZOTERO_VERSION/Zotero-${ZOTERO_VERSION}_$platform.$packed"; \
+	tar -xf /tmp/zotero.tar -C /opt/zotero --strip-components=1; \
+	rm /tmp/zotero.tar; \
 	test -x /opt/zotero/zotero
 
 FROM base AS zotero
