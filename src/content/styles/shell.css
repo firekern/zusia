@@ -105,7 +105,8 @@
 	display: inline-flex !important;
 }
 
-/* ---- left dock: Zusia as its own column beside the library and the reader ---- */
+/* ---- the dock: Zusia as its own column beside the library and the reader, at the
+   edge of the window chosen in Settings (data-side) ---- */
 
 .zs-dock {
 	position: relative;
@@ -117,6 +118,10 @@
 	background: var(--material-sidepane);
 	border-inline-end: var(--material-panedivider);
 	color: var(--fill-primary);
+}
+.zs-dock[data-side="right"] {
+	border-inline-end: none;
+	border-inline-start: var(--material-panedivider);
 }
 /* Zotero's panes keep their own minimum widths; without this the dock would push them out of the window. */
 :root[zs-dock] #appcontent {
@@ -135,13 +140,25 @@
 	background: var(--color-sidepane, var(--material-sidepane));
 	box-shadow: 4px 0 18px rgba(0, 0, 0, 0.22);
 }
+.zs-dock.zs-dock-drawer[data-side="right"] {
+	inset-inline: auto 0;
+	box-shadow: -4px 0 18px rgba(0, 0, 0, 0.22);
+}
 .zs-dock-body {
 	display: flex;
 	flex-direction: column;
 	flex: 1 1 0;
 	min-width: 0;
 	min-height: 0;
-	padding: 6px 8px 8px;
+}
+/* In the dock the chat is the column itself: its ground runs from edge to edge. As a
+   rounded card it sat in a gutter of the pane's own colour, one frame inside another. */
+.zs-dock > .zs-dock-body > .zs-root {
+	padding: 8px 10px 10px;
+	border-radius: 0;
+}
+.zs-dock > .zs-dock-body > .zs-root > .zs-backdrop {
+	box-shadow: none;
 }
 /* The one-time note for people who update. Outside .zs-root, so on Zotero's tokens. */
 .zs-dock-tip {
@@ -214,6 +231,9 @@
 	width: 6px;
 	cursor: ew-resize;
 	z-index: 2;
+}
+.zs-dock[data-side="right"] .zs-dock-resizer {
+	inset-inline: -3px auto;
 }
 .zs-dock-resizer:hover,
 .zs-dock-resizing .zs-dock-resizer {

@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { loadPlugin } from "./load-plugin.mjs";
 
 const PREFIX = "extensions.zusia.";
@@ -58,17 +59,64 @@ function mainWindow(prefs = {}) {
 	return { ...env, state, shown, select, openReader, dock: () => document.getElementById("zusia-dock") };
 }
 
-test("placement: the chat is a panel on the left by default, and no item pane section is registered", () => {
+test("placement: the chat is a panel on the right by default, and no item pane section is registered", () => {
 	const { plugin, document, state, dock } = mainWindow();
 	plugin.applyPlacement();
 	assert.ok(dock(), "the dock is in the window");
-	assert.equal(dock().nextElementSibling, document.getElementById("appcontent"), "left of Zotero's own content");
+	assert.equal(plugin.placement(), "right");
+	assert.equal(dock().previousElementSibling, document.getElementById("appcontent"), "right of Zotero's own content");
+	assert.equal(dock().dataset.side, "right");
 	assert.equal(state.sections, 0);
 	assert.equal(document.documentElement.getAttribute("zs-dock"), "open");
 	assert.ok(dock().querySelector(".zs-root .zs-input"), "the chat is rendered in it");
 	assert.equal(dock().style.width, "380px");
 	assert.equal(document.querySelector("item-details").hasAttribute("zs-chat-ready"), false,
 		"the item pane's chat view no longer hides Zotero's sections");
+});
+
+test("placement: the default Zotero is given is the one the plugin falls back to", () => {
+	// Zotero reads src/prefs.js, which these tests never load: the two must not drift apart.
+	const defaults = readFileSync(new URL("../src/prefs.js", import.meta.url), "utf8");
+	const { plugin } = mainWindow();
+	assert.equal(defaults.match(/pref\("extensions\.zusia\.placement", "(\w+)"\)/)[1], plugin.placement());
+});
+
+test("placement: 'left' puts the panel on the other side, and switching sides moves the same chat", () => {
+	const { plugin, document, state, shown, dock, prefs } = mainWindow({ [PREFIX + "placement"]: "left" });
+	plugin.applyPlacement();
+	const content = document.getElementById("appcontent");
+	assert.equal(dock().nextElementSibling, content, "left of Zotero's own content");
+	assert.equal(dock().dataset.side, "left");
+	const box = dock();
+	const rendered = shown.length;
+	plugin.setPlacement("right");
+	assert.equal(prefs[PREFIX + "placement"], "right");
+	assert.equal(dock(), box, "the panel is moved, not rebuilt");
+	assert.equal(box.previousElementSibling, content);
+	assert.equal(box.dataset.side, "right");
+	assert.equal(shown.length, rendered, "the conversation is not rendered again");
+	assert.equal(state.sections, 0);
+	assert.equal(document.querySelectorAll("#zusia-dock").length, 1);
+});
+
+test("dragging the edge of a panel on the right widens it towards the left", () => {
+	const { plugin, window, dock, prefs } = mainWindow();
+	plugin.applyPlacement();
+	const resizer = dock().querySelector(".zs-dock-resizer");
+	resizer.setPointerCapture = () => {};
+	dock().getBoundingClientRect = () => ({ width: 380 });
+	const pointer = (type, screenX) => {
+		const event = new window.MouseEvent(type, { bubbles: true, cancelable: true, button: 0, screenX });
+		event.pointerId = 1;
+		resizer.dispatchEvent(event);
+	};
+	pointer("pointerdown", 1000);
+	pointer("pointermove", 940);
+	assert.equal(dock().style.width, "440px");
+	pointer("pointermove", 1060);
+	assert.equal(dock().style.width, "320px");
+	pointer("pointerup", 1060);
+	assert.equal(prefs[PREFIX + "dockWidth"], 320);
 });
 
 test("placement: 'pane' keeps the chat in Zotero's item pane, and switching moves it", () => {
@@ -136,7 +184,7 @@ test("a closed dock renders nothing until it is opened", async () => {
 });
 
 test("dragging the dock's edge resizes it within its limits and remembers the width", () => {
-	const { plugin, window, dock, prefs } = mainWindow();
+	const { plugin, window, dock, prefs } = mainWindow({ [PREFIX + "placement"]: "left" });
 	plugin.applyPlacement();
 	const resizer = dock().querySelector(".zs-dock-resizer");
 	resizer.setPointerCapture = () => {};
@@ -376,7 +424,7 @@ test("the selection listener hands Zotero nothing to wait for", () => {
 });
 
 test("a drag past either limit saves the width that was shown, and ends when the capture is lost", () => {
-	const { plugin, window, dock, prefs } = mainWindow();
+	const { plugin, window, dock, prefs } = mainWindow({ [PREFIX + "placement"]: "left" });
 	plugin.applyPlacement();
 	const resizer = dock().querySelector(".zs-dock-resizer");
 	resizer.setPointerCapture = () => {};

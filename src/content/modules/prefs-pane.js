@@ -228,8 +228,8 @@ Object.assign(Zusia, {
 			this.LANGUAGES.map(language => [language, language || "Same as my question"]),
 			this.getLanguage(), value => this.setPref("language", value));
 		card.body.appendChild(this.row(doc, "Where the chat is",
-			this.segmented(doc, [["left", "Left panel"], ["pane", "Item pane"]], this.placement(), v => this.setPlacement(v)),
-			"Left panel: its own column beside the library and the reader. Item pane: a section among Zotero's item details."));
+			this.segmented(doc, [["left", "Left"], ["right", "Right"], ["pane", "Item pane"]], this.placement(), v => this.setPlacement(v)),
+			"Left or Right: its own panel at that edge of the window, beside the library and the reader. Item pane: a section among Zotero's item details."));
 		card.body.appendChild(this.row(doc, "Answer language", languageSelect,
 			"The assistants answer in this language whatever language you write in."));
 		card.body.appendChild(this.row(doc, "Send the paper's full text",

@@ -1,9 +1,9 @@
 "use strict";
 
 Object.assign(Zusia, {
-	// The chat as its own column on the left edge of the main window, under the tab bar, so
-	// it is the same panel in the library and in every reader tab. The other placement is
-	// the section in Zotero's item pane (window.js).
+	// The chat as its own column at one edge of the main window, under the tab bar, so it
+	// is the same panel in the library and in every reader tab. The other placement is the
+	// section in Zotero's item pane (window.js).
 	DOCK_WIDTH: { min: 280, initial: 380 },
 	// What Zotero's own panes need beside the dock. In the library that is its items list
 	// (370px, $min-width-items-pane) plus the panes Zotero itself counts as fixed, which it
@@ -17,8 +17,14 @@ Object.assign(Zusia, {
 	_docks: new Map(),
 	_tabObserver: null,
 
+	// "right" or "left" is the edge the panel is at; "pane" is the item pane section.
 	placement() {
-		return this.getPref("placement") === "pane" ? "pane" : "left";
+		let placement = this.getPref("placement");
+		return placement === "pane" || placement === "left" ? placement : "right";
+	},
+
+	docked() {
+		return this.placement() !== "pane";
 	},
 
 	setPlacement(placement) {
@@ -28,8 +34,8 @@ Object.assign(Zusia, {
 
 	// At startup and whenever the placement changes: exactly one of the two is in place.
 	applyPlacement() {
-		let left = this.placement() === "left";
-		if (left) {
+		let docked = this.docked();
+		if (docked) {
 			this.unregisterPaneSection();
 			this.watchTabs();
 		}
@@ -43,8 +49,9 @@ Object.assign(Zusia, {
 			if (!win.ZoteroPane) {
 				continue;
 			}
-			if (left) {
+			if (docked) {
 				this.addDock(win);
+				this.placeDock(win);
 			}
 			else {
 				this.removeDock(win);
@@ -74,8 +81,6 @@ Object.assign(Zusia, {
 		// A double click puts the width back, as Zotero's own splitters do.
 		resizer.addEventListener("dblclick", () => this.setDockWidth(this.DOCK_WIDTH.initial));
 		box.append(rail, body, resizer);
-		let content = doc.getElementById("appcontent");
-		content.parentNode.insertBefore(box, content);
 
 		let dock = { box, body, rail, resizer, paperID: null, rendered: false, itemsView: null, treeTimer: null, readerTimer: null, fixed: null, tip: null };
 		// Returns nothing: Zotero awaits what a select listener returns before it calls the
@@ -115,6 +120,7 @@ Object.assign(Zusia, {
 		});
 		dock.needs.observe(doc.documentElement, { attributes: true, attributeFilter: ["style"] });
 		this._docks.set(win, dock);
+		this.placeDock(win);
 		// The chat view of the item pane would hide Zotero's sections around a section that is gone.
 		doc.documentElement.setAttribute(this.VIEW_ATTR, "details");
 		for (let details of doc.querySelectorAll("item-details[zs-chat-ready]")) {
@@ -122,6 +128,17 @@ Object.assign(Zusia, {
 		}
 		this.watchSelection(win, dock);
 		this.updateDock(win);
+	},
+
+	// Puts the panel at the edge chosen in Settings. Moving it keeps the chat it holds.
+	placeDock(win) {
+		let { box } = this._docks.get(win);
+		let side = this.placement();
+		if (box.dataset.side === side) {
+			return;
+		}
+		box.dataset.side = side;
+		win.document.getElementById("appcontent")[side === "left" ? "before" : "after"](box);
 	},
 
 	removeDock(win) {
@@ -287,7 +304,8 @@ Object.assign(Zusia, {
 		let { box, resizer } = this._docks.get(win);
 		let startX = event.screenX;
 		let startWidth = box.getBoundingClientRect().width;
-		let towardsEnd = win.getComputedStyle(box).direction === "rtl" ? -1 : 1;
+		// The edge that is dragged faces Zotero's panes: a panel on the right grows leftwards.
+		let towardsEnd = (win.getComputedStyle(box).direction === "rtl" ? -1 : 1) * (box.dataset.side === "right" ? -1 : 1);
 		let width = startWidth;
 		let move = (e) => {
 			// What is shown is what is saved: the pointer may be far past either limit.

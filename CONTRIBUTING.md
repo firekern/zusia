@@ -24,7 +24,7 @@ The harness takes the state to render from its URL: `scenario` (`empty`, `pairs`
 
 `npm run test:zotero:windows` runs them in the official Windows build of Zotero under Wine, in a `linux/amd64` container, so the plugin's Windows branches run in a real Gecko without a Windows machine. Results go to `test/integration/out-windows/`. No child process can be started there (the x86 emulator dies at the spawn), so the one check that needs `agy models` answered is reported as not runnable and does not fail the run. `test/windows.test.mjs` covers what Wine cannot show (Windows spelling the variable `Path`) on a path model that the same run compares with the real `PathUtils`.
 
-`HEADED=1 npm run test:zotero` (macOS) opens a real window and adds the checks that need one: the left panel following a click in the items tree and the reader tabs.
+`HEADED=1 npm run test:zotero` (macOS) opens a real window and adds the checks that need one: the side panel following a click in the items tree and the reader tabs.
 
 ## Layout
 
@@ -33,7 +33,7 @@ The harness takes the state to render from its URL: `scenario` (`empty`, `pairs`
 | `src/bootstrap.js` | Zotero plugin lifecycle |
 | `src/content/zusia.js` | Constants, state, logging, and the two lists below: `MODULES` and `STYLES` |
 | `src/content/modules/` | One file per area; each adds its members to `Zusia` with `Object.assign`. A file missing from `MODULES` never loads (a test checks the list) |
-| `src/content/modules/dock.js`, `window.js` | Where the chat is: the panel on the left of the window, or the section in Zotero's item pane |
+| `src/content/modules/dock.js`, `window.js` | Where the chat is: the panel at the left or right edge of the window, or the section in Zotero's item pane |
 | `src/content/modules/sidebar.js`, `chat.js`, `ask.js` | The chat itself: its skeleton, the messages, a question from send to answer |
 | `src/content/modules/layouts.js` | The four layouts and the parts only some of them show |
 | `src/content/modules/binaries.js`, `prompts.js`, `backends.js` | Finding the assistant CLIs, what they are told, running them |

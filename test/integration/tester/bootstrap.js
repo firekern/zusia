@@ -529,13 +529,13 @@ async function showInDock(win, CS, paper) {
 		.find(el => CS._views.get(el)?.ctx.paperItem?.id === paper.id), 20000, "the paper's chat in the dock");
 }
 
-// The left dock: the chat as its own column beside Zotero's panes, in place of the item pane section.
+// The dock: the chat as its own column beside Zotero's panes, in place of the item pane section.
 async function testDock(win, CS) {
 	let doc = win.document;
 	let shown = el => !!el && el.getClientRects().length > 0 && win.getComputedStyle(el).display !== "none";
 	let paper = (await Zotero.Items.getAll(Zotero.Libraries.userLibraryID))
 		.find(i => i.isRegularItem() && i.getField("title") === "Integration test paper");
-	CS.setPlacement("left");
+	CS.setPlacement("right");
 	let dock = await waitFor(() => doc.getElementById("zusia-dock"), 5000, "the dock");
 	let root = await showInDock(win, CS, paper);
 	check("dock: listens to the items tree for the selection", CS._docks.get(win).itemsView === win.ZoteroPane.itemsView);
@@ -545,15 +545,15 @@ async function testDock(win, CS) {
 	let dockRect = dock.getBoundingClientRect();
 	let browser = doc.getElementById("browser").getBoundingClientRect();
 	let content = doc.getElementById("appcontent").getBoundingClientRect();
-	check("dock: a column at the left edge, from the tab bar to the bottom of the window",
-		dockRect.left <= 1 && Math.abs(dockRect.right - content.left) <= 1 && Math.abs(dockRect.height - browser.height) <= 1 && dockRect.height > 600,
-		{ dock: [Math.round(dockRect.left), Math.round(dockRect.right), Math.round(dockRect.height)], content: Math.round(content.left), browser: Math.round(browser.height) });
+	check("dock: a column at the right edge, from the tab bar to the bottom of the window",
+		Math.abs(dockRect.right - win.innerWidth) <= 1 && Math.abs(dockRect.left - content.right) <= 1 && Math.abs(dockRect.height - browser.height) <= 1 && dockRect.height > 600,
+		{ dock: [Math.round(dockRect.left), Math.round(dockRect.right), Math.round(dockRect.height)], content: Math.round(content.right), window: win.innerWidth, browser: Math.round(browser.height) });
 	check("dock: the item pane has no Zusia section any more",
 		!doc.querySelector('#zotero-item-pane [data-pane$="zusia-section"]') && CS.paneID === null);
 	let itemPane = doc.getElementById("zotero-item-pane").getBoundingClientRect();
 	let items = doc.getElementById("zotero-items-pane").getBoundingClientRect();
 	check("dock: Zotero's own panes still fit in the window beside it",
-		itemPane.right <= win.innerWidth + 1 && content.right <= win.innerWidth + 1 && items.width > 250 && items.left >= dockRect.right,
+		itemPane.right <= dockRect.left + 1 && content.left >= 0 && items.width > 250,
 		{ window: win.innerWidth, itemPaneRight: Math.round(itemPane.right), items: [Math.round(items.left), Math.round(items.width)] });
 	let rootRect = root.getBoundingClientRect();
 	let composer = root.querySelector(".zs-composer").getBoundingClientRect();
@@ -653,9 +653,18 @@ async function testDock(win, CS) {
 	check("dock: choosing the item pane takes the dock away and registers the section again",
 		!doc.getElementById("zusia-dock") && !!CS.paneID);
 	CS.setPlacement("left");
+	await Zotero.Promise.delay(300);
+	let leftDock = doc.getElementById("zusia-dock").getBoundingClientRect();
+	let beside = doc.getElementById("appcontent").getBoundingClientRect();
+	check("dock: Left in Settings puts it at the left edge, with Zotero's panes after it",
+		leftDock.left <= 1 && Math.abs(leftDock.right - beside.left) <= 1 && beside.right <= win.innerWidth + 1,
+		{ dock: [Math.round(leftDock.left), Math.round(leftDock.right)], content: [Math.round(beside.left), Math.round(beside.right)] });
+	await snapshot(win, "zotero-dock-left");
+	CS.setPlacement("right");
+	await Zotero.Promise.delay(300);
 }
 
-// The four layouts, in the left dock: each shows its own parts, and none of them overflows.
+// The four layouts, in the dock: each shows its own parts, and none of them overflows.
 async function testLayouts(win, CS) {
 	let doc = win.document;
 	let dock = doc.getElementById("zusia-dock");
@@ -712,7 +721,7 @@ async function testLayouts(win, CS) {
 		[minimal, standard, rich, visual].every(p => p.fits), { minimal: minimal.fits, standard: standard.fits, rich: rich.fits, visual: visual.fits });
 }
 
-// The first-run wizard in the left dock: every step has to fit, with its buttons in reach.
+// The first-run wizard in the dock: every step has to fit, with its buttons in reach.
 async function testWizard(win, CS) {
 	let doc = win.document;
 	let dock = doc.getElementById("zusia-dock");
@@ -768,8 +777,8 @@ async function testDockFollows(win, CS) {
 	await Zotero.Promise.delay(1500);
 	let dockRect = dock.getBoundingClientRect();
 	let tab = doc.getElementById(reader.tabID).getBoundingClientRect();
-	check("dock follows: the reader sits beside the dock, not under it", tab.left >= dockRect.right - 1 && tab.width > 400,
-		{ dockRight: Math.round(dockRect.right), reader: [Math.round(tab.left), Math.round(tab.width)] });
+	check("dock follows: the reader sits beside the dock, not under it", tab.right <= dockRect.left + 1 && tab.width > 400,
+		{ dockLeft: Math.round(dockRect.left), reader: [Math.round(tab.left), Math.round(tab.width)] });
 	await snapshot(win, "zotero-dock-reader");
 
 	let closed = win.ZoteroContextPane.collapsed;
@@ -826,8 +835,11 @@ async function run() {
 		let listening = await waitFor(() => startDock.itemsView === startWin.ZoteroPane.itemsView, 12000, "the dock's selection listener").then(() => true, () => false);
 		check("dock at startup: made as Zotero starts, it listens to the items tree once there is one",
 			!!startDock && listening, { dock: !!startDock, itemsView: !!startDock?.itemsView });
+		// With the defaults Zotero reads from prefs.js, which the unit tests never load.
+		check("dock at startup: on the right of the window until Settings says otherwise",
+			startDock?.box.dataset.side === "right", startDock?.box.dataset.side);
 		// The checks start in the item pane, on every platform's profile; testDock moves
-		// the chat to the left dock at the end.
+		// the chat to the dock at the end.
 		CS.setPlacement("pane");
 		// New chat and page turns start memory jobs, which would call the real CLI: no model
 		// runs here, live or not. The real call runs once with a fake process, to check the

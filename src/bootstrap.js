@@ -34,7 +34,7 @@ async function startup({ id, version, rootURI }) {
 
 function onMainWindowLoad({ window }) {
 	Zusia.addToWindow(window);
-	if (Zusia.placement() === "left") {
+	if (Zusia.docked()) {
 		Zusia.addDock(window);
 	}
 }
