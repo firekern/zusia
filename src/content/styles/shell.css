@@ -92,6 +92,12 @@
 	min-height: 0;
 	max-height: none;
 }
+/* In a tall column the start page would sit at the top with a void under it. The other
+   layouts place theirs themselves. */
+:is(:root[data-zs-view="chat"] item-details[zs-chat-ready], .zs-dock) .zs-root[data-layout="standard"] .zs-log > .zs-empty {
+	margin-block: auto;
+	padding-bottom: 12%;
+}
 :is(:root[data-zs-view="chat"] item-details[zs-chat-ready], .zs-dock) .zs-header-paper {
 	display: block;
 }

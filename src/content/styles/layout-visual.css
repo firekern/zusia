@@ -154,15 +154,15 @@
 	border-radius: 50%;
 	background: radial-gradient(closest-side, color-mix(in srgb, var(--zs-accent) 22%, transparent), color-mix(in srgb, var(--zs-accent) 8%, transparent) 70%, transparent);
 }
-/* The drawings name these parts cs-mascot-*, not the zs-mascot-* that base.css colours,
+/* The drawings name these parts zs-mascot-*, not the zs-mascot-* that base.css colours,
    so without this the spark stays black and the blush never shows. */
-.zs-root[data-layout="visual"] .zs-mascot .cs-mascot-spark {
+.zs-root[data-layout="visual"] .zs-mascot .zs-mascot-spark {
 	fill: var(--zs-accent);
 	transform-box: fill-box;
 	transform-origin: center;
 	animation: zs-mascot-twinkle 2.4s ease-in-out infinite;
 }
-.zs-root[data-layout="visual"] .zs-mascot .cs-mascot-blush {
+.zs-root[data-layout="visual"] .zs-mascot .zs-mascot-blush {
 	stroke: color-mix(in srgb, var(--accent-red) 55%, transparent);
 	stroke-width: 2.6;
 }
@@ -366,7 +366,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-	.zs-root[data-layout="visual"] :is(.zs-mascot, .zs-mascot .cs-mascot-spark),
+	.zs-root[data-layout="visual"] :is(.zs-mascot, .zs-mascot .zs-mascot-spark),
 	.zs-root[data-layout="visual"] .zs-empty::before,
 	.zs-root[data-layout="visual"] .zs-empty::after {
 		animation: none;

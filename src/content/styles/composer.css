@@ -216,8 +216,9 @@
 	font: inherit;
 	line-height: 1.4;
 }
+/* A hint someone has to read to know what the box is for, so not the faint colour (1.9:1). */
 .zs-input::placeholder {
-	color: var(--zs-faint);
+	color: var(--zs-muted);
 	opacity: 1;
 }
 .zs-controls {

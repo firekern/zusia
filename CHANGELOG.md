@@ -3,6 +3,12 @@
 ## Unreleased
 
 - ⌨️ **Alt+Z** (⌥Z on macOS) shows and hides the left panel from anywhere in the window; opening it puts the cursor in the message box. The rail the hidden panel leaves now wears your buddy and accent colour.
+- 🎨 **A second design pass on every layout.**
+  - *Minimal*: the paper's title, New chat and one menu in the header; your messages as quiet bubbles on the right; the prompts stay as one dim line of words once you are chatting; controls are dim until you reach for them, never below a readable contrast.
+  - *Rich*: a toolbar with Search, History and New chat by name, which sheds labels as the panel narrows; the paper card aligned on one edge; prompts on an even grid; the message box's tools named, on two rows when one will not fit; who answered under every answer.
+  - *Visual*: your buddy's own face beside each answer; an aurora of your accent colour behind the header and the message box; prompt cards with coloured icons; the start page says "Ask about this paper" in a speech bubble.
+  - *Standard*: the start page is centred in the panel instead of sitting at its top.
+- 🐱 The buddy's sparkle and blush are drawn in colour again in every layout; the three dots under an answer no longer sit on a blue pill; the hint in the message box, accent-coloured text on a dark pane and the paper card's keyboard focus are easier to see.
 - 🪟 **Menus, sheets and the setup wizard read clearly over the chat.** In the glass style they were clear enough for the conversation behind them to show through their own text; they now stay nearly opaque whatever the glass opacity, and the wizard dims the chat behind it more.
 
 ## 1.4.0
