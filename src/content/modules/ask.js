@@ -34,7 +34,8 @@ Object.assign(Zusia, {
 		logEl.querySelectorAll(".zs-turn.zs-last").forEach(turn => turn.classList.remove("zs-last"));
 		this.appendUser(view, pending.question, pending.images, pending.modes);
 
-		let turn = this.el(doc, "div", "zs-turn");
+		// zs-live marks the answer still being written, for the layouts that show it (Visual's buddy).
+		let turn = this.el(doc, "div", "zs-turn zs-live");
 		let live = this.el(doc, "div", "zs-msg zs-assistant");
 		let content = this.el(doc, "div", "zs-live-content");
 		let typing = this.el(doc, "div", "zs-typing");

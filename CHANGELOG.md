@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- 🐱 *Visual*: a ring breathes around your buddy's face while it is writing an answer.
+- ⬇️ The scroll-to-latest button sits at the end of the row, off the text being read. In a short window *Rich* keeps its prompts to one row once the chat has started.
+
 ## 1.5.0
 
 - ⌨️ **Alt+Z** (⌥Z on macOS) shows and hides the left panel from anywhere in the window; opening it puts the cursor in the message box. The rail the hidden panel leaves now wears your buddy and accent colour.

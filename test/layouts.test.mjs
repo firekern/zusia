@@ -142,3 +142,19 @@ test("setup wizard: the look step offers the layouts and shows the style a layou
 	assert.equal(root.dataset.layout, "minimal");
 	assert.equal(tile(styles, "flat").getAttribute("aria-checked"), "true");
 });
+
+test("the answer still being written is marked, so a layout can show its buddy at work", async () => {
+	const { root, plugin, window } = sidebar();
+	const view = plugin._views.get(root);
+	plugin.showPending(view, {
+		question: "And the inverse?", backend: "claude", startedAt: Date.now(), partial: "The inverse", status: "writing",
+		listeners: new Set(), promise: new Promise(() => {}), steps: [], images: [], modes: [],
+	});
+	const turns = [...root.querySelectorAll(".zs-turn")];
+	assert.equal(turns.length, 1);
+	assert.ok(turns[0].classList.contains("zs-live"));
+	plugin.renderMessages(view, [{ role: "user", text: "q" }, { role: "assistant", text: "a", backend: "claude" }]);
+	assert.equal(root.querySelector(".zs-turn.zs-live"), null, "a finished answer is not live");
+	// The live answer counts its seconds on a timer, which would keep the test process alive.
+	window.close();
+});

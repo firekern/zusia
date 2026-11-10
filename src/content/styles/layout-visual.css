@@ -365,7 +365,18 @@
 	}
 }
 
+/* While the buddy is writing, a ring breathes around its face: the answer below may take a while to start. */
+.zs-root[data-layout="visual"] .zs-turn.zs-live::before {
+	animation: zs-visual-thinking 1.6s ease-in-out infinite;
+}
+@keyframes zs-visual-thinking {
+	0%, 100% { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--zs-accent) 30%, transparent), 0 0 0 0 color-mix(in srgb, var(--zs-accent) 45%, transparent); }
+	50% { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--zs-accent) 30%, transparent), 0 0 0 5px color-mix(in srgb, var(--zs-accent) 0%, transparent); }
+}
 @media (prefers-reduced-motion: reduce) {
+	.zs-root[data-layout="visual"] .zs-turn.zs-live::before {
+		animation: none;
+	}
 	.zs-root[data-layout="visual"] :is(.zs-mascot, .zs-mascot .zs-mascot-spark),
 	.zs-root[data-layout="visual"] .zs-empty::before,
 	.zs-root[data-layout="visual"] .zs-empty::after {
