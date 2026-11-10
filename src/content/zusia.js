@@ -12,6 +12,11 @@ Zusia = {
 		"notes", "markdown", "drawings", "math", "context", "reading", "progress", "memory",
 		"jobs", "consolidation", "backends", "dock",
 	],
+	// The stylesheets in src/content/styles, in cascade order: a later file overrides an earlier one.
+	STYLES: [
+		"base", "shell", "conversation", "richtext", "states", "composer", "appearance", "drawings",
+		"buddies", "theorems", "search", "glass", "prefs", "wizard", "panels",
+	],
 	PREF_PREFIX: "extensions.zusia.",
 	PREFS_PANE_ID: "zusia-prefs",
 	DEFAULT_PROMPTS: [
@@ -417,8 +422,9 @@ Zusia = {
 		this.rootURI = rootURI;
 		this.iconBase = rootURI + "content/icons/";
 		// Updating the plugin while Zotero keeps running would otherwise reuse the
-		// previous version's cached stylesheet under the same URL.
-		this.stylesheetURL = rootURI + "content/zusia.css?v=" + encodeURIComponent(version + "-" + Date.now());
+		// previous version's cached stylesheets under the same URLs.
+		let stamp = "?v=" + encodeURIComponent(version + "-" + Date.now());
+		this.stylesheetURLs = this.STYLES.map(name => rootURI + "content/styles/" + name + ".css" + stamp);
 		this.initialized = true;
 		this.log("init() version " + version + " with rootURI=" + rootURI);
 	},

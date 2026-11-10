@@ -32,7 +32,7 @@ npm test
 | `src/content/zusia.js` | Constants, state, logging and `MODULES`, the list of files below |
 | `src/content/modules/` | One file per area (sidebar, chat, wizard, markdown, math, backends, …); each adds its members to `Zusia` |
 | `src/content/readingmap.js` | Pure functions that build a paper's reading map |
-| `src/content/zusia.css` | Styles; every colour comes from Zotero's theme tokens or `--zs-*` variables |
+| `src/content/styles/` | One stylesheet per area, linked in the order of `Zusia.STYLES`; every colour comes from Zotero's theme tokens or `--zs-*` variables |
 | `src/content/icons/` | Phosphor Duotone icons and the original study buddies |
 | `test/` | jsdom unit tests, the visual harness and the Zotero integration run |
 | `test/videos/zotero/` | Scenes that drive a real Zotero and record the README videos |

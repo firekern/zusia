@@ -33,7 +33,7 @@ function itemPane(prefs = {}) {
 			return PANE;
 		},
 	};
-	plugin.stylesheetURL = "zusia.css";
+	plugin.stylesheetURLs = ["base.css"];
 	plugin.addToWindow(window);
 	plugin.registerPaneSection();
 	const body = document.querySelector('[data-type="body"]');

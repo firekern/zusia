@@ -1,0 +1,384 @@
+/* ---- clarifications panel ---- */
+
+.zs-panel {
+	position: absolute;
+	inset: 0;
+	z-index: 25;
+	display: flex;
+	flex-direction: column;
+	padding: 10px 9px;
+	border-radius: inherit;
+	background: var(--zs-overlay);
+	backdrop-filter: blur(var(--zs-blur, 18px)) saturate(160%);
+	animation: zs-fade-in 0.18s ease-out;
+}
+.zs-panel-head {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	min-height: 28px;
+	margin-bottom: 8px;
+}
+.zs-panel-title {
+	flex: 1;
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font-weight: 650;
+}
+.zs-panel-title .zs-i {
+	width: 18px;
+	height: 18px;
+	color: var(--zs-accent-ink);
+}
+.zs-panel-body {
+	flex: 1;
+	min-height: 0;
+	overflow-y: auto;
+	scrollbar-width: thin;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	user-select: text;
+}
+.zs-clar-item {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	width: 100%;
+	padding: 9px 10px;
+	border: 1px solid var(--zs-border) !important;
+	border-radius: var(--zs-radius-card);
+	text-align: start;
+	color: var(--zs-text) !important;
+	background: var(--zs-raised) !important;
+	transition: border-color 0.15s ease, transform 0.15s ease;
+}
+.zs-clar-item:hover,
+.zs-clar-item:focus-visible {
+	border-color: var(--zs-accent-line) !important;
+	transform: translateY(-1px);
+}
+.zs-clar-item-top {
+	display: flex;
+	gap: 7px;
+}
+.zs-clar-quote-icon {
+	flex: none;
+	width: 16px !important;
+	height: 16px !important;
+	color: var(--zs-accent-ink);
+}
+.zs-clar-passage {
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 3;
+	overflow: hidden;
+	font-style: italic;
+	line-height: 1.4;
+}
+.zs-clar-meta {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding-inline-start: 23px;
+	font-size: 0.82em;
+	color: var(--zs-muted);
+}
+.zs-clar-page {
+	padding: 0 6px;
+	border-radius: 999px;
+	font-weight: 600;
+	color: var(--zs-accent-ink);
+	background: var(--zs-accent-soft);
+}
+.zs-clar-backend {
+	width: 13px !important;
+	height: 13px !important;
+	margin-inline-start: auto;
+}
+.zs-clar-empty {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	min-height: 220px;
+	text-align: center;
+}
+.zs-clar-empty-title {
+	font-weight: 650;
+}
+.zs-clar-empty-sub {
+	color: var(--zs-muted);
+}
+.zs-clar-empty-icon {
+	width: 48px !important;
+	height: 48px !important;
+	color: var(--zs-accent-ink);
+}
+.zs-clar-detail {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+.zs-clar-actions {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	position: sticky;
+	top: 0;
+	z-index: 1;
+	padding: 2px 0 4px;
+	background: var(--zs-overlay);
+}
+.zs-clar-actions .zs-spacer {
+	flex: 1;
+}
+.zs-clar-delete:hover:not(:disabled) {
+	color: var(--accent-red, #db2c3a) !important;
+}
+.zs-clar-section {
+	display: flex;
+	flex-direction: column;
+	gap: 5px;
+}
+.zs-clar-heading {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	font-size: 0.78em;
+	font-weight: 650;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--zs-muted);
+}
+.zs-clar-heading .zs-i {
+	width: 14px;
+	height: 14px;
+}
+.zs-clar-passage-full {
+	margin: 0;
+	padding: 8px 11px;
+	border-inline-start: 3px solid var(--zs-accent);
+	border-radius: var(--zs-radius-control);
+	font-style: italic;
+	line-height: 1.5;
+	background: var(--zs-accent-soft);
+}
+.zs-clar-prompt,
+.zs-clar-instructions pre {
+	margin: 0;
+	padding: 8px 10px;
+	border: 1px solid var(--zs-line);
+	border-radius: var(--zs-radius-control);
+	font-family: ui-monospace, "SF Mono", Menlo, monospace;
+	font-size: 0.86em;
+	line-height: 1.45;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	background: var(--zs-hover);
+}
+.zs-clar-instructions summary {
+	cursor: pointer;
+	font-size: 0.85em;
+	color: var(--zs-muted);
+}
+.zs-clar-instructions pre {
+	margin-top: 6px;
+	max-height: 220px;
+	overflow-y: auto;
+}
+.zs-clar-answer {
+	padding: 8px 11px;
+	border: 1px solid var(--zs-border);
+	border-radius: var(--zs-radius-card);
+	background: var(--zs-raised);
+}
+/* Memory sheet: where we are, the reading map, the memory items, the settings. */
+.zs-memory-section {
+	display: flex;
+	flex-direction: column;
+	gap: 5px;
+}
+.zs-memory-heading {
+	font-size: 0.78em;
+	font-weight: 650;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--zs-muted);
+}
+.zs-memory-line {
+	line-height: 1.45;
+}
+.zs-memory-outline {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+	max-height: 240px;
+	overflow-y: auto;
+	scrollbar-width: thin;
+}
+.zs-memory-entry {
+	display: grid;
+	grid-template-columns: 1.2em minmax(0, 1fr) auto;
+	gap: 6px;
+	padding: 2px 4px;
+	border-radius: var(--zs-radius-control);
+	line-height: 1.4;
+}
+.zs-memory-entry[data-level="2"] {
+	padding-inline-start: 18px;
+	font-size: 0.94em;
+}
+.zs-memory-entry[data-state="unread"] .zs-memory-entry-title {
+	color: var(--zs-muted);
+}
+.zs-memory-entry.zs-here {
+	background: var(--zs-accent-soft);
+}
+.zs-memory-mark {
+	color: var(--zs-accent-ink);
+	text-align: center;
+}
+.zs-memory-entry-title {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.zs-memory-entry-pages {
+	font-size: 0.88em;
+	color: var(--zs-muted);
+	font-variant-numeric: tabular-nums;
+}
+.zs-memory-list {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+.zs-memory-item,
+.zs-memory-summary {
+	display: flex;
+	flex-direction: column;
+	gap: 3px;
+	padding: 6px 9px;
+	border: 1px solid var(--zs-border);
+	border-radius: var(--zs-radius-control);
+	background: var(--zs-raised);
+}
+.zs-memory-meta {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	min-height: 22px;
+}
+.zs-memory-kind {
+	font-size: 0.8em;
+	font-weight: 600;
+	color: var(--zs-accent-ink);
+}
+.zs-memory-page {
+	font-size: 0.8em;
+	color: var(--zs-muted);
+}
+.zs-memory-actions {
+	display: inline-flex;
+	gap: 2px;
+	margin-inline-start: auto;
+}
+.zs-memory-delete:hover:not(:disabled) {
+	color: var(--accent-red, #db2c3a) !important;
+}
+.zs-memory-text {
+	line-height: 1.45;
+	overflow-wrap: anywhere;
+}
+.zs-memory-edit {
+	width: 100%;
+	box-sizing: border-box;
+	padding: 4px 6px;
+	border: 1px solid var(--zs-stroke);
+	border-radius: var(--zs-radius-control);
+	font: inherit;
+	color: var(--zs-text);
+	background: var(--zs-field);
+	resize: vertical;
+}
+.zs-memory-empty {
+	font-size: 0.9em;
+	line-height: 1.45;
+	color: var(--zs-muted);
+}
+.zs-memory-reset-row {
+	display: flex;
+	justify-content: flex-end;
+}
+.zs-memory-reset.zs-confirm {
+	border-color: var(--accent-red, #db2c3a);
+	color: var(--accent-red, #db2c3a);
+}
+/* The sheet is narrow: label and switch on one line, the hint under them. */
+.zs-memory-settings .zs-row {
+	grid-template-columns: minmax(0, 1fr) auto;
+	padding: 6px 0;
+}
+@media (prefers-reduced-motion: reduce) {
+	.zs-panel { animation: none; }
+	.zs-clar-item:hover { transform: none; }
+}
+/* Panels and the wizard need room even when the chat is short. */
+.zs-root:has(> .zs-panel),
+.zs-root:has(> .zs-wizard) {
+	min-height: 520px;
+}
+/* Wizard "Your voice" step: the system prompt editor. It is the one tall step, so the
+   overlay scrolls instead of pushing Next out of a short pane. */
+.zs-wizard {
+	overflow-y: auto;
+}
+.zs-wizard-voice {
+	display: flex;
+	flex-direction: column;
+	gap: 5px;
+	width: 100%;
+}
+.zs-wizard .zs-textarea {
+	width: 100%;
+	min-height: 6em;
+	text-align: start;
+}
+.zs-wizard-voice-foot {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+}
+.zs-wizard-count {
+	font-size: 0.8em;
+	font-variant-numeric: tabular-nums;
+	color: var(--zs-muted);
+}
+.zs-wizard-sent {
+	width: 100%;
+	text-align: start;
+}
+.zs-wizard-sent summary {
+	cursor: pointer;
+	font-size: 0.85em;
+	color: var(--zs-muted);
+}
+.zs-wizard-sent-text {
+	margin: 6px 0 0;
+	max-height: 200px;
+	overflow-y: auto;
+	padding: 8px 10px;
+	border: 1px solid var(--zs-line);
+	border-radius: var(--zs-radius-control);
+	font-family: ui-monospace, "SF Mono", Menlo, monospace;
+	font-size: 0.8em;
+	line-height: 1.45;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	background: var(--zs-hover);
+}

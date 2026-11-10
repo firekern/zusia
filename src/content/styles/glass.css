@@ -1,0 +1,213 @@
+/* =====================================================================
+ * Glass style (Settings → Appearance → Style, the default).
+ * A soft glow of the accent colour, and optionally the user's image, sit
+ * behind the sidebar in .zs-backdrop; cards are translucent over it. Only
+ * floating surfaces (composer, menus, jump button) blur what is behind them,
+ * so a long conversation stays cheap to scroll. Opacity, blur and glow come
+ * from Settings as --zs-glass-pct, --zs-blur and --zs-glow-strength.
+ * ===================================================================== */
+
+.zs-root[data-style="glass"] {
+	--zs-glass-tint: #ffffff;
+	--zs-glass-strong-tint: #ffffff;
+	--zs-glass: color-mix(in srgb, var(--zs-glass-tint) var(--zs-glass-pct, 55%), transparent);
+	--zs-glass-strong: color-mix(in srgb, var(--zs-glass-strong-tint) var(--zs-glass-strong-pct, 85%), transparent);
+	--zs-glass-edge: color-mix(in srgb, #ffffff 75%, transparent);
+	--zs-glass-line: rgba(30, 40, 70, 0.1);
+	--zs-glass-sheen: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+	--zs-glass-shadow: 0 10px 28px -12px rgba(25, 35, 70, 0.28), 0 1px 3px rgba(25, 35, 70, 0.07);
+
+	--zs-raised: var(--zs-glass);
+	--zs-overlay: var(--zs-glass-strong);
+	--zs-border: var(--zs-glass-line);
+	--zs-border-strong: color-mix(in srgb, var(--zs-accent) 35%, var(--zs-glass-line));
+	--zs-shadow: var(--zs-glass-shadow);
+	--zs-hover: rgba(255, 255, 255, 0.55);
+}
+@media (prefers-color-scheme: dark) {
+	.zs-root[data-style="glass"] {
+		--zs-glass-tint: #45454d;
+		--zs-glass-strong-tint: #2a2a30;
+		--zs-glass-edge: rgba(255, 255, 255, 0.14);
+		--zs-glass-line: rgba(255, 255, 255, 0.1);
+		--zs-glass-sheen: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+		--zs-glass-shadow: 0 12px 30px -12px rgba(0, 0, 0, 0.6), 0 1px 3px rgba(0, 0, 0, 0.3);
+		--zs-hover: rgba(255, 255, 255, 0.08);
+	}
+}
+
+/* The backdrop: an optional image, a veil that fades it into the pane, and the glow. */
+.zs-backdrop {
+	display: none;
+}
+.zs-root[data-style="glass"],
+.zs-root[data-bg="image"] {
+	isolation: isolate;
+	padding: 10px 9px;
+	border-radius: var(--zs-radius-root);
+}
+.zs-root[data-style="glass"] > .zs-backdrop,
+.zs-root[data-bg="image"] > .zs-backdrop {
+	display: block;
+	position: absolute;
+	inset: 0;
+	z-index: -1;
+	overflow: hidden;
+	border-radius: inherit;
+	pointer-events: none;
+	box-shadow: inset 0 0 0 1px var(--zs-line);
+}
+.zs-backdrop-image {
+	display: none;
+}
+.zs-root[data-bg="image"] .zs-backdrop-image {
+	display: block;
+	position: absolute;
+	/* Oversized so the blur never shows a soft transparent edge. */
+	inset: calc(var(--zs-bg-blur, 0px) * -3);
+	/* background-image is set inline by applyAppearance(). */
+	background-position: center;
+	background-size: cover;
+	background-repeat: no-repeat;
+	filter: blur(var(--zs-bg-blur, 0px));
+}
+.zs-backdrop::after {
+	content: "";
+	position: absolute;
+	inset: 0;
+}
+.zs-root[data-style="glass"] .zs-backdrop::after {
+	background:
+		radial-gradient(70% 38% at 0% 0%, color-mix(in srgb, var(--zs-accent) var(--zs-glow-strength, 30%), transparent), transparent 72%),
+		radial-gradient(60% 34% at 100% 42%, color-mix(in srgb, var(--accent-teal, #59adc4) calc(var(--zs-glow-strength, 30%) * 0.8), transparent), transparent 72%),
+		radial-gradient(75% 36% at 20% 100%, color-mix(in srgb, var(--tag-purple, #a28ae5) var(--zs-glow-strength, 30%), transparent), transparent 72%),
+		linear-gradient(165deg, color-mix(in srgb, var(--zs-accent) 5%, var(--zs-ground)), var(--zs-ground));
+}
+.zs-root[data-bg="image"] .zs-backdrop::after {
+	background: color-mix(in srgb, var(--zs-ground) var(--zs-bg-veil, 45%), transparent);
+}
+.zs-root[data-style="glass"][data-bg="image"] .zs-backdrop::after {
+	background:
+		radial-gradient(70% 38% at 0% 0%, color-mix(in srgb, var(--zs-accent) var(--zs-glow-strength, 30%), transparent), transparent 72%),
+		radial-gradient(75% 36% at 20% 100%, color-mix(in srgb, var(--tag-purple, #a28ae5) var(--zs-glow-strength, 30%), transparent), transparent 72%),
+		color-mix(in srgb, var(--zs-ground) var(--zs-bg-veil, 45%), transparent);
+}
+
+/* Cards: translucent, a bright top edge and a soft drop shadow. */
+.zs-root[data-style="glass"] :is(.zs-user, .zs-code, .zs-env:not(.zs-env-proof), .zs-table-wrap) {
+	border-color: var(--zs-glass-line);
+	background: var(--zs-glass);
+	box-shadow: var(--zs-glass-sheen), 0 4px 14px -8px rgba(25, 35, 70, 0.2);
+}
+.zs-root[data-style="glass"] .zs-env:not(.zs-env-proof) {
+	border-inline-start-color: var(--zs-accent);
+}
+.zs-root[data-style="glass"] .zs-env-def {
+	border-inline-start-color: var(--accent-teal, #59adc4);
+}
+.zs-root[data-style="glass"] .zs-env-rem {
+	border-inline-start-color: var(--zs-faint);
+}
+.zs-root[data-style="glass"][data-bubble="accent"] .zs-user {
+	border-color: color-mix(in srgb, var(--zs-accent) 30%, transparent);
+	background: linear-gradient(135deg,
+		color-mix(in srgb, var(--zs-accent) 20%, var(--zs-glass)),
+		color-mix(in srgb, var(--tag-purple, #a28ae5) 12%, var(--zs-glass)));
+}
+.zs-root[data-style="glass"] .zs-user-edit {
+	background: var(--zs-glass-strong) !important;
+}
+.zs-root[data-style="glass"] .zs-rich pre {
+	background: var(--zs-glass);
+	border-color: var(--zs-glass-line);
+}
+.zs-root[data-style="glass"] .zs-code pre {
+	background: transparent;
+}
+.zs-root[data-style="glass"] .zs-code-head {
+	background: color-mix(in srgb, var(--zs-glass-strong) 40%, transparent);
+}
+
+/* Floating surfaces: frosted. */
+.zs-root[data-style="glass"] :is(.zs-composer, .zs-menu, .zs-jump) {
+	border: 1px solid var(--zs-glass-edge) !important;
+	backdrop-filter: blur(var(--zs-blur, 18px)) saturate(170%);
+	box-shadow: var(--zs-glass-sheen), var(--zs-glass-shadow);
+}
+.zs-root[data-style="glass"] .zs-composer {
+	background: var(--zs-glass);
+	transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.zs-root[data-style="glass"] .zs-composer:focus-within {
+	border-color: color-mix(in srgb, var(--zs-accent) 45%, var(--zs-glass-edge)) !important;
+	box-shadow:
+		var(--zs-glass-sheen),
+		0 0 0 3px color-mix(in srgb, var(--zs-accent) 16%, transparent),
+		var(--zs-glass-shadow);
+}
+.zs-root[data-style="glass"] .zs-menu {
+	padding: 5px;
+	border-radius: var(--zs-radius-card);
+	background: var(--zs-glass-strong);
+	backdrop-filter: blur(calc(var(--zs-blur, 18px) * 1.5)) saturate(180%);
+}
+.zs-root[data-style="glass"] .zs-menu-item {
+	border-radius: 7px;
+}
+.zs-root[data-style="glass"] .zs-menu-item:hover:not(:disabled),
+.zs-root[data-style="glass"] .zs-menu-item:focus-visible {
+	background: color-mix(in srgb, var(--zs-accent) 14%, transparent);
+}
+.zs-root[data-style="glass"] .zs-jump {
+	background: var(--zs-glass-strong) !important;
+}
+
+/* Paper chip and quick prompts: small glass pills. */
+.zs-root[data-style="glass"] .zs-context-chip {
+	border-color: var(--zs-glass-line);
+	border-radius: 999px;
+	padding-inline-start: 8px;
+	background: var(--zs-hover);
+}
+.zs-root[data-style="glass"] .zs-pill {
+	border-color: var(--zs-glass-edge) !important;
+	background: var(--zs-glass);
+	box-shadow: var(--zs-glass-sheen), 0 2px 8px -4px rgba(25, 35, 70, 0.2);
+	transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+.zs-root[data-style="glass"] .zs-pill:hover:not(:disabled) {
+	border-color: color-mix(in srgb, var(--zs-accent) 55%, transparent) !important;
+	background: color-mix(in srgb, var(--zs-accent) 14%, var(--zs-glass));
+	transform: translateY(-1px);
+}
+
+/* Send: an accent-to-violet gem with a glow. */
+.zs-root[data-style="glass"] .zs-send {
+	width: 26px;
+	height: 26px;
+	background: linear-gradient(135deg, var(--zs-accent), color-mix(in srgb, var(--zs-accent) 55%, var(--tag-purple, #a28ae5)));
+	box-shadow:
+		inset 0 1px 0 rgba(255, 255, 255, 0.35),
+		0 4px 12px -3px color-mix(in srgb, var(--zs-accent) 70%, transparent);
+	transition: filter 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+.zs-root[data-style="glass"] .zs-send:hover:not(:disabled) {
+	transform: translateY(-1px);
+}
+.zs-root[data-style="glass"] .zs-send:disabled,
+.zs-root[data-style="glass"] .zs-send.zs-stop {
+	background: var(--zs-hover);
+	box-shadow: inset 0 0 0 1px var(--zs-glass-line);
+}
+
+/* Error card keeps its red, on glass. */
+.zs-root[data-style="glass"] .zs-error {
+	background: color-mix(in srgb, var(--zs-red) 9%, var(--zs-glass));
+	box-shadow: var(--zs-glass-sheen);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.zs-root[data-style="glass"] :is(.zs-pill, .zs-send):hover:not(:disabled) {
+		transform: none;
+	}
+}

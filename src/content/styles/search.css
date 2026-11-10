@@ -1,0 +1,72 @@
+/* ---- search across chats ---- */
+
+.zs-search-menu {
+	width: min(340px, 100%);
+	max-width: 100%;
+	padding: 6px;
+}
+.zs-search-input {
+	width: 100%;
+	height: 28px;
+	margin: 0 0 4px;
+	padding: 0 9px;
+	border: 1px solid var(--zs-border-strong);
+	border-radius: var(--zs-radius-control);
+	font: inherit;
+	color: var(--zs-text);
+	background: var(--zs-hover);
+	outline: none;
+}
+.zs-search-input:focus {
+	border-color: var(--zs-accent);
+	box-shadow: 0 0 0 2px var(--zs-accent-soft);
+}
+.zs-search-results .zs-menu-item {
+	align-items: flex-start;
+	min-height: 40px;
+	padding-block: 5px;
+}
+.zs-search-results .zs-menu-desc {
+	white-space: normal;
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 2;
+}
+/* A message reached from search glows briefly. */
+.zs-flash {
+	animation: zs-flash 1.8s ease-out;
+	border-radius: var(--zs-radius-card);
+}
+@keyframes zs-flash {
+	0%, 35% { box-shadow: 0 0 0 3px var(--zs-accent-line); }
+	100% { box-shadow: 0 0 0 3px transparent; }
+}
+
+@keyframes zs-spin {
+	to { transform: rotate(360deg); }
+}
+@keyframes zs-shimmer {
+	from { background-position: 100% 0; }
+	to { background-position: -100% 0; }
+}
+@keyframes zs-fade-in {
+	from { opacity: 0; transform: translateY(3px); }
+	to { opacity: 1; transform: none; }
+}
+/* New content eases in (Beaver fadeInShift); menus pop from their anchor. */
+.zs-live-content > .zs-enter,
+.zs-menu {
+	animation: zs-fade-in 0.16s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+	.zs-spinner { animation-duration: 2.4s; }
+	.zs-shimmer,
+	.zs-mascot,
+	.zs-mascot .zs-mascot-spark,
+	.zs-live-content > .zs-enter,
+	.zs-menu,
+	.zs-typing,
+	.zs-back,
+	.zs-jump { animation: none; }
+	.zs-shimmer { color: var(--zs-muted); -webkit-text-fill-color: currentColor; background: none; }
+}

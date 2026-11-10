@@ -120,6 +120,22 @@ test("the project is MIT licensed, so a fork is allowed to exist", () => {
 	assert.match(read("LICENSE"), /Copyright \(c\) \d{4} .+/);
 });
 
+test("every file in src/content/styles is in Zusia.STYLES, and nothing else is", () => {
+	// A stylesheet left out of the list is never linked, and its rules are silently missing.
+	const listed = /STYLES: \[([^\]]*)\]/.exec(read("src/content/zusia.js"))[1].match(/[\w-]+/g);
+	const files = readdirSync(new URL("../src/content/styles/", import.meta.url)).map(name => name.replace(/\.css$/, ""));
+	assert.deepEqual([...listed].sort(), files.sort());
+});
+
+test("every file a stylesheet points at exists", () => {
+	// A relative url() resolves against the stylesheet's own folder, not content/.
+	for (const name of readdirSync(new URL("../src/content/styles/", import.meta.url))) {
+		for (const [, target] of read("src/content/styles/" + name).matchAll(/url\("?(?!data:)([^")]+)"?\)/g)) {
+			assert.ok(existsSync(new URL(target, new URL("../src/content/styles/" + name, import.meta.url))), name + " → " + target);
+		}
+	}
+});
+
 test("every file in src/content/modules is in Zusia.MODULES, and nothing else is", () => {
 	// A module left out of the list is never loaded: its members are silently missing in Zotero.
 	const listed = /MODULES: \[([^\]]*)\]/.exec(read("src/content/zusia.js"))[1].match(/[\w-]+/g);

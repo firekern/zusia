@@ -4,7 +4,6 @@
 <meta charset="utf-8">
 <title>Claude Sidebar harness</title>
 <link rel="stylesheet" href="zotero-tokens.css">
-<link rel="stylesheet" href="../src/content/zusia.css">
 <style>
 	html, body { margin: 0; background: var(--color-sidepane); color: var(--fill-primary); }
 	body { font: 13px "Noto Sans", Cantarell, system-ui, sans-serif; padding: 12px; }
@@ -47,6 +46,9 @@
 <script>
 	for (const name of Zusia.MODULES) {
 		document.write('<script src="../src/content/modules/' + name + '.js"><\/script>');
+	}
+	for (const name of Zusia.STYLES) {
+		document.write('<link rel="stylesheet" href="../src/content/styles/' + name + '.css">');
 	}
 </script>
 </head>

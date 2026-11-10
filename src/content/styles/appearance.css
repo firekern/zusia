@@ -1,0 +1,43 @@
+/* ---- corners, spacing and font (Settings → Appearance) ---- */
+
+.zs-root[data-corners="square"],
+.zs-prefs[data-corners="square"] {
+	--zs-radius-control: 3px;
+	--zs-radius-card: 4px;
+	--zs-radius-root: 6px;
+}
+.zs-root[data-corners="rounded"],
+.zs-prefs[data-corners="rounded"] {
+	--zs-radius-control: 6px;
+	--zs-radius-card: 10px;
+	--zs-radius-root: 12px;
+}
+.zs-root[data-corners="round"],
+.zs-prefs[data-corners="round"] {
+	--zs-radius-control: 9px;
+	--zs-radius-card: 16px;
+	--zs-radius-root: 20px;
+}
+.zs-root[data-density="compact"] {
+	--zs-log-gap: 10px;
+	gap: 6px;
+}
+.zs-root[data-density="compact"] .zs-msg { line-height: 1.4; }
+.zs-root[data-density="compact"] .zs-user { padding: 5px 9px; }
+.zs-root[data-density="compact"] .zs-composer { padding: 7px 8px 4px; }
+.zs-root[data-density="roomy"] {
+	--zs-log-gap: 28px;
+	gap: 12px;
+}
+.zs-root[data-density="roomy"] .zs-msg { line-height: 1.62; }
+.zs-root[data-density="roomy"] .zs-user { padding: 11px 14px; }
+.zs-root[data-density="roomy"] .zs-composer { padding: 13px 13px 8px; }
+.zs-root[data-font="sans"] {
+	font-family: system-ui, -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+}
+.zs-root[data-font="serif"] {
+	font-family: "Iowan Old Style", Charter, "Source Serif 4", Georgia, "Times New Roman", serif;
+}
+.zs-root[data-font="mono"] {
+	font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+}

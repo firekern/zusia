@@ -1,0 +1,172 @@
+/* ---- header ---- */
+
+.zs-header {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	min-height: 26px;
+}
+.zs-header-title {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 0.92em;
+	color: var(--zs-muted);
+}
+
+/* Shown only in the chat view, where it replaces Zotero's title bar. */
+.zs-header-paper {
+	display: none;
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-weight: 600;
+	color: var(--zs-text);
+}
+.zs-view-details {
+	display: none !important;
+}
+
+/* ---- chat view: Zusia fills the side pane ---- */
+
+/* Zotero's item pane has no full-height section, so while the chat view is on
+   (data-zs-view, set by Zusia's side-nav icon) its title bar and the other
+   sections step aside and Zusia's section takes the whole column. zs-chat-ready
+   marks the item-details whose item has a Zusia section; others stay untouched.
+   The side-nav rail stays: any other icon brings the item details back. */
+:root[data-zs-view="chat"] item-details[zs-chat-ready] item-pane-header,
+:root[data-zs-view="chat"] item-details[zs-chat-ready] .zotero-view-item > [data-pane]:not(.zs-pane),
+:root[data-zs-view="chat"] item-details[zs-chat-ready] .zs-pane > collapsible-section > .head,
+:root[data-zs-view="chat"] item-details[zs-chat-ready] .zs-header-title,
+:root[data-zs-view="chat"] item-details[zs-chat-ready] .zs-view-chat {
+	display: none !important;
+}
+:root[data-zs-view="chat"] item-details[zs-chat-ready] .zotero-view-item-main {
+	min-height: 0;
+	overflow: hidden;
+}
+/* The log scrolls on its own; the section column must not scroll as well. */
+:root[data-zs-view="chat"] item-details[zs-chat-ready] .zotero-view-item {
+	flex: 1 1 0;
+	min-height: 0;
+	overflow: hidden;
+}
+/* The filler Zotero adds so a pinned section can scroll to the top. */
+:root[data-zs-view="chat"] item-details[zs-chat-ready] .zotero-view-item::before,
+:root[data-zs-view="chat"] item-details[zs-chat-ready] .zotero-view-item::after {
+	display: none !important;
+}
+:root[data-zs-view="chat"] item-details[zs-chat-ready] .zs-pane,
+:root[data-zs-view="chat"] item-details[zs-chat-ready] .zs-pane > collapsible-section,
+:root[data-zs-view="chat"] item-details[zs-chat-ready] .zs-pane > collapsible-section > [data-type="body"] {
+	display: flex !important;
+	flex-direction: column;
+	flex: 1 1 0;
+	height: 100%;
+	min-height: 0;
+	max-height: none;
+	margin: 0;
+	padding-block: 0;
+	border: none;
+	overflow: hidden;
+}
+:is(:root[data-zs-view="chat"] item-details[zs-chat-ready], .zs-dock) .zs-root {
+	flex: 1 1 0;
+	min-height: 0;
+}
+:is(:root[data-zs-view="chat"] item-details[zs-chat-ready], .zs-dock) .zs-root > :not(.zs-log-wrap):not(.zs-backdrop) {
+	flex-shrink: 0;
+}
+:is(:root[data-zs-view="chat"] item-details[zs-chat-ready], .zs-dock) .zs-log-wrap {
+	display: flex;
+	flex-direction: column;
+	flex: 1 1 0;
+	min-height: 0;
+}
+:is(:root[data-zs-view="chat"] item-details[zs-chat-ready], .zs-dock) .zs-log {
+	flex: 1 1 0;
+	min-height: 0;
+	max-height: none;
+}
+:is(:root[data-zs-view="chat"] item-details[zs-chat-ready], .zs-dock) .zs-header-paper {
+	display: block;
+}
+:root[data-zs-view="chat"] item-details[zs-chat-ready] .zs-view-details {
+	display: inline-flex !important;
+}
+
+/* ---- left dock: Zusia as its own column beside the library and the reader ---- */
+
+.zs-dock {
+	position: relative;
+	box-sizing: border-box;
+	display: flex;
+	flex: 0 0 auto;
+	min-width: 0;
+	background: var(--material-sidepane);
+	border-inline-end: var(--material-panedivider);
+	color: var(--fill-primary);
+}
+/* Zotero's panes keep their own minimum widths; without this the dock would push them out of the window. */
+:root[zs-dock] #appcontent {
+	min-width: 0;
+}
+.zs-dock-body {
+	display: flex;
+	flex-direction: column;
+	flex: 1 1 0;
+	min-width: 0;
+	min-height: 0;
+	padding: 6px 8px 8px;
+}
+.zs-dock-rail {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	padding: 6px 4px;
+}
+/* The rail is outside .zs-root, so its button takes Zotero's tokens instead of --zs-*. */
+.zs-dock-rail .zs-icon {
+	appearance: none;
+	margin: 0;
+	width: 28px;
+	height: 28px;
+	border-radius: 5px;
+	color: var(--fill-secondary) !important;
+}
+.zs-dock-rail .zs-icon:hover {
+	color: var(--fill-primary) !important;
+	background: var(--fill-quinary);
+}
+.zs-dock-rail .zs-i {
+	width: 18px;
+	height: 18px;
+}
+.zs-dock [hidden] {
+	display: none !important;
+}
+/* Straddles the dock's edge, so the grip is wider than the 1px divider it sits on. */
+.zs-dock-resizer {
+	position: absolute;
+	inset-block: 0;
+	inset-inline-end: -3px;
+	width: 6px;
+	cursor: ew-resize;
+	z-index: 2;
+}
+.zs-dock-resizer:hover,
+.zs-dock-resizing .zs-dock-resizer {
+	background: color-mix(in srgb, var(--accent-blue) 35%, transparent);
+}
+.zs-dock .zs-header-title,
+.zs-dock .zs-view-chat,
+.zs-root .zs-dock-hide {
+	display: none !important;
+}
+.zs-dock .zs-root .zs-dock-hide {
+	display: inline-flex !important;
+}

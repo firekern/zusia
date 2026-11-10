@@ -1,0 +1,362 @@
+/* =====================================================================
+ * Settings pane (Zotero Settings → Zusia)
+ * Card layout after llm-for-zotero's preference sections. Literal surface
+ * colours on purpose: the Settings content area is --material-sidepane, and
+ * Zotero's own mix tokens either vanish against it (light) or sink (dark).
+ * ===================================================================== */
+
+.zs-prefs {
+	--zs-card: #ffffff;
+	--zs-card-head: #fafafa;
+	--zs-field: #ffffff;
+	--zs-stroke: #dadada;
+	display: flex;
+	flex-direction: column;
+	gap: 16px;
+	width: 100%;
+	min-width: 0;
+	max-width: 680px;
+	padding-bottom: 12px;
+	color: var(--zs-text);
+	font-size: 13px;
+	user-select: text;
+}
+@media (prefers-color-scheme: dark) {
+	.zs-prefs {
+		--zs-card: #3a3a3a;
+		--zs-card-head: #333333;
+		--zs-field: #282828;
+		--zs-stroke: #4f4f4f;
+	}
+}
+.zs-card {
+	border: 1px solid var(--zs-stroke);
+	border-radius: var(--zs-radius-card);
+	background: var(--zs-card);
+	overflow: hidden;
+}
+.zs-card-head {
+	padding: 10px 14px;
+	border-bottom: 1px solid var(--zs-stroke);
+	background: var(--zs-card-head);
+}
+.zs-card-title {
+	margin: 0;
+	font-size: 1.08em;
+	font-weight: 600;
+}
+.zs-card-desc {
+	margin: 2px 0 0;
+	font-size: 0.92em;
+	line-height: 1.45;
+	color: var(--zs-muted);
+}
+.zs-card-body {
+	display: flex;
+	flex-direction: column;
+}
+.zs-row {
+	display: grid;
+	grid-template-columns: minmax(120px, 34%) minmax(0, 1fr);
+	align-items: center;
+	gap: 6px 14px;
+	padding: 10px 14px;
+}
+.zs-row + .zs-row,
+.zs-card-body > * + .zs-row,
+.zs-card-body > .zs-row + * {
+	border-top: 1px solid var(--zs-stroke);
+}
+.zs-row-stack {
+	grid-template-columns: minmax(0, 1fr);
+}
+.zs-row-control > * {
+	min-width: 0;
+}
+.zs-row-label {
+	font-weight: 500;
+}
+.zs-row-hint {
+	grid-column: 1 / -1;
+	margin-top: -2px;
+	font-size: 0.88em;
+	line-height: 1.4;
+	color: var(--zs-muted);
+}
+.zs-row-stack .zs-row-hint {
+	grid-column: auto;
+}
+.zs-row-control {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 6px;
+	min-width: 0;
+}
+
+/* Assistant rows: collapsible, with a status dot (llm-for-zotero Agent tab). */
+.zs-agent + .zs-agent {
+	border-top: 1px solid var(--zs-stroke);
+}
+.zs-agent > summary {
+	display: grid;
+	grid-template-columns: auto 1fr auto auto;
+	align-items: center;
+	gap: 10px;
+	padding: 10px 14px;
+	cursor: pointer;
+	list-style: none;
+}
+.zs-agent > summary:hover {
+	background: var(--zs-hover);
+}
+.zs-agent-dot {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: var(--zs-faint);
+}
+.zs-agent[data-found="true"] .zs-agent-dot {
+	background: var(--accent-green, #39bf68);
+}
+.zs-agent-name {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+}
+.zs-agent-name strong {
+	font-weight: 600;
+}
+.zs-agent-status {
+	font-size: 0.88em;
+	color: var(--zs-muted);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.zs-badge {
+	padding: 1px 8px;
+	border-radius: 999px;
+	font-size: 0.82em;
+	font-weight: 600;
+	color: var(--zs-accent-ink);
+	background: var(--zs-accent-soft);
+}
+.zs-agent-chevron {
+	width: 12px;
+	height: 12px;
+	color: var(--zs-muted);
+	transition: transform 0.15s ease;
+}
+.zs-agent[open] .zs-agent-chevron {
+	transform: rotate(180deg);
+}
+.zs-agent-body {
+	border-top: 1px solid var(--zs-stroke);
+	background: color-mix(in srgb, var(--zs-card-head) 60%, var(--zs-card));
+}
+
+/* Form controls */
+.zs-field,
+.zs-select,
+.zs-textarea {
+	width: 100%;
+	min-width: 0;
+	min-height: 28px;
+	margin: 0;
+	padding: 4px 8px;
+	font: inherit;
+	color: var(--zs-text);
+	background: var(--zs-field);
+	border: 1px solid var(--zs-stroke);
+	border-radius: var(--zs-radius-control);
+}
+/* Zotero's chrome drops the native dropdown arrow once a select is restyled, so draw one. */
+.zs-select {
+	appearance: none;
+	padding-inline-end: 28px;
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 6l4 4 4-4' fill='none' stroke='%23888' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+	background-repeat: no-repeat;
+	background-position: right 8px center;
+	background-size: 12px 12px;
+	cursor: pointer;
+}
+.zs-textarea {
+	resize: vertical;
+	line-height: 1.45;
+}
+/* Prompt fields size themselves to their text instead of showing a resize grip. */
+.zs-textarea.zs-autogrow {
+	resize: none;
+	overflow: hidden;
+	min-height: 28px;
+}
+.zs-field:focus,
+.zs-select:focus,
+.zs-textarea:focus {
+	outline: none;
+	border-color: var(--zs-accent);
+	box-shadow: 0 0 0 2px var(--zs-accent-soft);
+}
+.zs-field::placeholder,
+.zs-textarea::placeholder {
+	color: var(--zs-faint);
+	opacity: 1;
+}
+.zs-button {
+	min-height: 28px;
+	padding: 3px 12px;
+	border: 1px solid var(--zs-stroke);
+	border-radius: var(--zs-radius-control);
+	color: var(--zs-text);
+	background: var(--zs-field);
+}
+.zs-button:hover {
+	background: var(--zs-hover);
+}
+.zs-button-row {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
+/* Switch */
+.zs-switch {
+	position: relative;
+	display: inline-flex;
+	flex: none;
+	width: 32px;
+	height: 18px;
+	padding: 0;
+	border: none;
+	border-radius: 999px;
+	background: var(--zs-line);
+	transition: background-color 0.15s ease;
+}
+.zs-switch::after {
+	content: "";
+	position: absolute;
+	top: 2px;
+	left: 2px;
+	width: 14px;
+	height: 14px;
+	border-radius: 50%;
+	background: #fff;
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+	transition: transform 0.15s ease;
+}
+.zs-switch[aria-checked="true"] {
+	background: var(--zs-accent);
+}
+.zs-switch[aria-checked="true"]::after {
+	transform: translateX(14px);
+}
+
+/* Accent swatches */
+.zs-swatches {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	align-items: center;
+}
+.zs-swatch {
+	position: relative;
+	width: 22px;
+	height: 22px;
+	padding: 0;
+	border: none;
+	border-radius: 50%;
+	box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.15);
+}
+.zs-swatch[aria-checked="true"] {
+	box-shadow: 0 0 0 2px var(--zs-card), 0 0 0 4px var(--zs-text);
+}
+.zs-swatch-custom {
+	overflow: hidden;
+	background: conic-gradient(#f55, #fc3, #5d5, #3cf, #66f, #e5e, #f55);
+}
+.zs-swatch-custom input {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	opacity: 0;
+	cursor: pointer;
+}
+.zs-segmented {
+	display: inline-flex;
+	padding: 2px;
+	gap: 2px;
+	border: 1px solid var(--zs-stroke);
+	border-radius: var(--zs-radius-control);
+	background: var(--zs-hover);
+}
+.zs-segmented button {
+	min-height: 22px;
+	padding: 1px 10px;
+	border: none;
+	border-radius: 4px;
+	color: var(--zs-muted);
+	background: transparent;
+}
+.zs-segmented button[aria-checked="true"] {
+	color: var(--zs-text);
+	font-weight: 600;
+	background: var(--zs-field);
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+/* Quick prompt editor */
+.zs-prompt-list {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+.zs-prompt-row {
+	display: grid;
+	grid-template-columns: minmax(90px, 30%) minmax(0, 1fr) auto;
+	gap: 6px;
+	align-items: start;
+}
+.zs-prompt-tools {
+	display: flex;
+}
+.zs-prefs .zs-icon {
+	width: 26px;
+	height: 28px;
+}
+.zs-range {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	width: min(260px, 100%);
+}
+.zs-range input[type="range"] {
+	flex: 1;
+	min-width: 0;
+	margin: 0;
+	accent-color: var(--zs-accent);
+}
+.zs-range-value {
+	min-width: 3.2em;
+	text-align: end;
+	font-variant-numeric: tabular-nums;
+	color: var(--zs-muted);
+}
+.zs-bg-preview {
+	flex: none;
+	width: 44px;
+	height: 28px;
+	border: 1px solid var(--zs-stroke);
+	border-radius: 5px;
+	background: center / cover no-repeat;
+}
+
+/* Behaviour: hidden thinking steps and quick prompts. */
+.zs-root[data-steps="hidden"] .zs-activity,
+.zs-root[data-steps="hidden"] .zs-live-steps {
+	display: none;
+}
+.zs-root[data-quick="hidden"] .zs-quick {
+	display: none;
+}

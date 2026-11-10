@@ -1,0 +1,72 @@
+/* ---- drawings: SVG from the assistant, in the theme's colours on the sidebar's background ---- */
+
+.zs-root {
+	--zs-d-ink: var(--zs-text);
+	--zs-d-muted: var(--zs-muted);
+	--zs-d-line: var(--zs-faint);
+	--zs-d-surface: color-mix(in srgb, var(--zs-text) 6%, transparent);
+	--zs-d-accent: var(--zs-accent);
+	--zs-d-teal: var(--accent-teal, #59adc4);
+	--zs-d-violet: var(--tag-purple, #a28ae5);
+	--zs-d-orange: var(--accent-orange, #ff794c);
+	--zs-d-red: var(--accent-red, #db2c3a);
+	--zs-d-green: var(--accent-green, #39bf68);
+	--zs-d-accent-soft: color-mix(in srgb, var(--zs-d-accent) 18%, transparent);
+	--zs-d-teal-soft: color-mix(in srgb, var(--zs-d-teal) 20%, transparent);
+	--zs-d-violet-soft: color-mix(in srgb, var(--zs-d-violet) 20%, transparent);
+	--zs-d-orange-soft: color-mix(in srgb, var(--zs-d-orange) 18%, transparent);
+	--zs-d-red-soft: color-mix(in srgb, var(--zs-d-red) 16%, transparent);
+	--zs-d-green-soft: color-mix(in srgb, var(--zs-d-green) 18%, transparent);
+}
+.zs-figure {
+	position: relative;
+	margin: 4px 0 12px;
+}
+.zs-figure-canvas svg {
+	display: block;
+	width: 100%;
+	height: auto;
+	max-height: 560px;
+	overflow: visible;
+	color: var(--zs-d-ink);
+	fill: var(--zs-d-ink);
+	font-family: inherit;
+	font-size: 12px;
+}
+.zs-figure-canvas svg text {
+	font-family: inherit;
+	stroke: none;
+}
+.zs-figure-tools {
+	position: absolute;
+	top: -4px;
+	inset-inline-end: 0;
+	display: flex;
+	gap: 2px;
+	padding: 1px;
+	border-radius: var(--zs-radius-control);
+	background: var(--zs-overlay);
+	opacity: 0;
+	transition: opacity 0.12s ease;
+}
+.zs-figure:hover > .zs-figure-tools,
+.zs-figure-tools:focus-within,
+.zs-figure-tools:has([aria-expanded="true"]) {
+	opacity: 1;
+}
+.zs-figure-tools .zs-ghost {
+	height: 22px;
+	font-size: 0.85em !important;
+}
+.zs-figure > .zs-code {
+	margin: 8px 0 0;
+}
+.zs-figure-pending {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	min-height: 120px;
+	border: 1px dashed var(--zs-line);
+	border-radius: var(--zs-radius-card);
+}

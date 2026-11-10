@@ -1,0 +1,144 @@
+/* ---- empty state (llm-for-zotero start page) ---- */
+
+.zs-empty {
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	gap: 6px;
+	min-height: 150px;
+	padding: 18px 10px 10px;
+	text-align: center;
+}
+.zs-empty-title {
+	font-size: 1.25em;
+	font-weight: 600;
+}
+.zs-empty-paper {
+	max-width: 32em;
+	margin: -2px auto 4px;
+	font-style: italic;
+	color: var(--zs-muted);
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 2;
+	overflow: hidden;
+}
+.zs-empty-sub {
+	color: var(--zs-muted);
+	line-height: 1.45;
+}
+
+/* ---- activity: what the assistant read, searched and how long it thought ---- */
+
+.zs-activity {
+	margin: 0 0 2px;
+}
+.zs-activity-head {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	max-width: 100%;
+	min-height: 22px;
+	margin-inline-start: -4px;
+	padding: 0 6px 0 4px;
+	border: none;
+	border-radius: var(--zs-radius-control);
+	font-size: 0.9em !important;
+	color: var(--zs-muted) !important;
+	background: transparent;
+}
+.zs-activity-head:hover {
+	color: var(--zs-text) !important;
+	background: var(--zs-hover);
+}
+.zs-activity-summary {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.zs-activity-chevron {
+	width: 11px;
+	height: 11px;
+	opacity: 0.7;
+	transition: transform 0.15s ease;
+}
+.zs-activity.zs-open .zs-activity-chevron {
+	transform: none;
+}
+.zs-activity-list,
+.zs-live-steps {
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+}
+.zs-activity-list {
+	margin: 2px 0 6px 5px;
+	padding-inline-start: 10px;
+	border-inline-start: 1px solid var(--zs-line);
+}
+.zs-live-steps:not(:empty) {
+	margin-bottom: 6px;
+}
+.zs-step {
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	min-width: 0;
+	min-height: 20px;
+	font-size: 0.9em;
+	color: var(--zs-muted);
+	animation: zs-fade-in 0.16s ease-out;
+}
+.zs-step-icon {
+	width: 13px;
+	height: 13px;
+	opacity: 0.8;
+}
+.zs-step-label {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* ---- live answer ---- */
+
+.zs-live-content:empty {
+	display: none;
+}
+.zs-typing {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-height: 22px;
+	padding: 2px 2px 0;
+	animation: zs-fade-in 0.2s ease-out;
+}
+.zs-spinner {
+	flex: none;
+	width: 12px;
+	height: 12px;
+	border-radius: 50%;
+	border: 1.5px solid var(--zs-line);
+	border-top-color: var(--zs-muted);
+	animation: zs-spin 0.8s linear infinite;
+}
+.zs-elapsed {
+	font-size: 0.92em;
+	color: var(--zs-muted);
+}
+/* Beaver's shimmering status text. */
+.zs-shimmer {
+	background: linear-gradient(90deg, var(--zs-faint) 30%, var(--zs-text) 50%, var(--zs-faint) 70%);
+	background-size: 200% 100%;
+	background-clip: text;
+	color: transparent;
+	-webkit-text-fill-color: transparent;
+	animation: zs-shimmer 1.4s linear infinite;
+}
+.zs-seconds {
+	font-size: 0.85em;
+	font-variant-numeric: tabular-nums;
+	color: var(--zs-faint);
+}

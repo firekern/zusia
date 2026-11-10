@@ -1,0 +1,415 @@
+/* ---- quick prompts (llm-for-zotero shortcut pills) ---- */
+
+.zs-quick {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	padding: 0 1px;
+}
+/* Once the chat has started the prompts shrink to one sideways-scrolling row. */
+.zs-root[data-chatting="true"] .zs-quick {
+	flex-wrap: nowrap;
+	overflow-x: auto;
+	scrollbar-width: none;
+}
+.zs-root[data-chatting="true"] .zs-pill {
+	flex: none;
+	min-height: 24px;
+	padding: 2px 10px;
+}
+.zs-pill {
+	display: inline-flex;
+	align-items: center;
+	max-width: 100%;
+	min-height: 26px;
+	padding: 3px 11px;
+	border: 1px solid var(--zs-border) !important;
+	border-radius: 999px;
+	font-size: 0.92em !important;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	color: var(--zs-text) !important;
+	background: var(--zs-hover);
+	transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+.zs-pill:hover:not(:disabled) {
+	border-color: var(--zs-accent) !important;
+	background: var(--zs-accent-soft);
+}
+.zs-pill:disabled {
+	opacity: 0.5;
+	cursor: default;
+}
+
+/* ---- composer (Beaver .user-message-display + .composer-controls) ---- */
+
+.zs-composer {
+	display: flex;
+	flex-direction: column;
+	padding: 10px 10px 6px;
+	border: 1px solid var(--zs-border);
+	border-radius: var(--zs-radius-card);
+	background: var(--zs-raised);
+	transition: border-color 0.15s ease;
+	cursor: text;
+}
+.zs-composer:focus-within {
+	border-color: var(--zs-border-strong);
+}
+/* Paper chip at the top of the composer (llm-for-zotero paper context chip). */
+.zs-context {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 5px;
+	margin: -3px 0 8px -2px;
+}
+.zs-context-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	max-width: 100%;
+	min-height: 22px;
+	padding: 1px 3px 1px 6px;
+	border: 1px solid var(--zs-border);
+	border-radius: var(--zs-radius-control);
+	font-size: 0.88em;
+	color: var(--zs-muted);
+	background: var(--zs-hover);
+	cursor: default;
+}
+.zs-context-icon {
+	width: 13px;
+	height: 13px;
+	color: var(--zs-accent-ink);
+}
+.zs-context-label {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--zs-text);
+}
+/* Where the user is ("§2.3 · p. 18 · 9/15 read"): secondary to the paper's name, and the
+   first thing to shrink in a narrow pane. */
+.zs-context-reading {
+	flex: 0 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--zs-muted);
+	font-variant-numeric: tabular-nums;
+}
+.zs-context-reading::before {
+	content: "·";
+	margin-inline-end: 5px;
+}
+/* The chip opens the Memory sheet. */
+.zs-context-chip[role="button"] {
+	cursor: pointer;
+}
+.zs-context-chip[role="button"]:hover,
+.zs-context-chip[role="button"]:focus-visible {
+	border-color: var(--zs-stroke);
+	color: var(--zs-text);
+}
+/* "Memory: updating" while a background job runs for this paper. */
+.zs-memory-status {
+	align-self: center;
+	font-size: 0.82em;
+	color: var(--zs-muted);
+	animation: zs-pulse 1.6s ease-in-out infinite;
+}
+@keyframes zs-pulse {
+	50% { opacity: 0.45; }
+}
+@media (prefers-reduced-motion: reduce) {
+	.zs-memory-status { animation: none; }
+}
+/* Images attached to the message being written, and to sent messages. */
+.zs-attachments,
+.zs-user-images {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+.zs-attachments {
+	margin: -2px 0 8px;
+}
+.zs-user-images {
+	margin: 1px 0 6px;
+}
+.zs-user-images:last-child {
+	margin-bottom: 0;
+}
+.zs-thumb {
+	position: relative;
+	display: inline-flex;
+	flex: none;
+	width: 64px;
+	height: 64px;
+	border: 1px solid var(--zs-border);
+	border-radius: var(--zs-radius-control);
+	background: var(--zs-hover);
+	overflow: hidden;
+	animation: zs-fade-in 0.16s ease-out;
+}
+.zs-user-images .zs-thumb {
+	width: 88px;
+	height: 72px;
+}
+.zs-thumb img {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+}
+.zs-thumb-open {
+	cursor: zoom-in;
+}
+.zs-thumb-open:hover {
+	border-color: var(--zs-border-strong);
+}
+.zs-thumb-missing img {
+	visibility: hidden;
+}
+.zs-thumb-remove {
+	position: absolute;
+	top: 3px;
+	right: 3px;
+	width: 18px !important;
+	height: 18px !important;
+	border-radius: 999px !important;
+	color: #fff !important;
+	background: rgba(0, 0, 0, 0.55) !important;
+	opacity: 0;
+	transition: opacity 0.12s ease;
+}
+.zs-thumb-remove .zs-i {
+	width: 10px !important;
+	height: 10px !important;
+}
+.zs-thumb:hover .zs-thumb-remove,
+.zs-thumb-remove:focus-visible {
+	opacity: 1;
+}
+.zs-composer.zs-drop {
+	border-color: var(--zs-accent) !important;
+	box-shadow: 0 0 0 3px var(--zs-accent-soft);
+}
+.zs-controls .zs-attach {
+	margin-inline-end: 2px;
+}
+.zs-input {
+	width: 100%;
+	min-height: 20px;
+	max-height: 180px;
+	margin: 0;
+	padding: 1px 1px;
+	border: none !important;
+	outline: none !important;
+	box-shadow: none !important;
+	resize: none;
+	appearance: none;
+	background: transparent !important;
+	color: var(--zs-text);
+	font: inherit;
+	line-height: 1.4;
+}
+.zs-input::placeholder {
+	color: var(--zs-faint);
+	opacity: 1;
+}
+.zs-controls {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	min-width: 0;
+	margin: 6px -4px 0;
+	cursor: default;
+}
+.zs-controls .zs-spacer {
+	flex: 1;
+	min-width: 4px;
+}
+.zs-controls .zs-ghost {
+	flex: 0 1 auto;
+}
+/* The effort label is short and must stay readable; the model name truncates instead. */
+.zs-controls .zs-effort-btn {
+	flex: none;
+}
+/* Drawing / LaTeX toggles: ghost buttons that light up in the accent colour when on. */
+.zs-controls {
+	container: zs-controls / inline-size;
+}
+.zs-controls .zs-mode {
+	flex: none;
+	padding: 0 6px;
+	transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+.zs-controls .zs-mode[aria-pressed="true"] {
+	color: var(--zs-accent-ink) !important;
+	background: var(--zs-accent-soft);
+	box-shadow: inset 0 0 0 1px var(--zs-accent-line);
+}
+.zs-controls .zs-mode[aria-pressed="true"]:hover:not(:disabled) {
+	background: color-mix(in srgb, var(--zs-accent) 20%, transparent);
+}
+/* In a narrow pane the toggles keep their icon and drop the label. */
+@container zs-controls (max-width: 360px) {
+	.zs-controls .zs-mode .zs-label {
+		display: none;
+	}
+}
+.zs-user-modes {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+	margin-top: 6px;
+}
+.zs-user-mode {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	min-height: 18px;
+	padding: 0 7px 0 5px;
+	border-radius: 999px;
+	font-size: 0.8em;
+	color: var(--zs-accent-ink);
+	background: var(--zs-accent-soft);
+	white-space: normal;
+}
+.zs-user-mode .zs-i {
+	width: 11px;
+	height: 11px;
+}
+
+.zs-send {
+	flex: none;
+	width: 24px;
+	height: 24px;
+	margin-inline-start: 4px;
+	padding: 0;
+	border: none;
+	border-radius: 999px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	color: var(--zs-accent-text) !important;
+	background: var(--zs-accent);
+	transition: filter 0.15s ease;
+}
+.zs-send .zs-i {
+	width: 15px;
+	height: 15px;
+}
+.zs-send:hover:not(:disabled) {
+	filter: brightness(1.1);
+}
+.zs-send:disabled {
+	color: var(--zs-faint) !important;
+	background: var(--zs-line);
+	cursor: default;
+}
+.zs-send.zs-stop {
+	color: var(--zs-text) !important;
+	background: var(--zs-line);
+}
+.zs-send.zs-stop .zs-i {
+	width: 11px;
+	height: 11px;
+}
+
+/* ---- menus (Beaver ContextMenu: overlay surface, strong border, shadow) ---- */
+
+.zs-menu {
+	position: absolute;
+	z-index: 20;
+	min-width: 180px;
+	max-width: min(300px, 100%);
+	max-height: min(420px, 70vh);
+	overflow-y: auto;
+	padding: 4px;
+	border: 1px solid var(--zs-border-strong);
+	border-radius: var(--zs-radius-control);
+	background: var(--zs-overlay);
+	box-shadow: var(--zs-shadow);
+	scrollbar-width: thin;
+}
+.zs-menu-section {
+	padding: 6px 8px 3px;
+	font-size: 0.8em;
+	font-weight: 600;
+	letter-spacing: 0.02em;
+	color: var(--zs-muted);
+	user-select: none;
+}
+.zs-menu-section:not(:first-child) {
+	margin-top: 4px;
+	border-top: 1px solid var(--zs-line);
+	padding-top: 8px;
+}
+.zs-menu-item {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	width: 100%;
+	min-height: 24px;
+	padding: 3px 8px;
+	border: none;
+	border-radius: 4px;
+	text-align: start;
+	font-size: 0.95em !important;
+	color: var(--zs-text) !important;
+	background: transparent;
+}
+.zs-menu-item:hover:not(:disabled),
+.zs-menu-item:focus-visible {
+	background: var(--zs-hover);
+	outline: none;
+}
+.zs-menu-item:disabled {
+	color: var(--zs-faint) !important;
+	cursor: default;
+}
+.zs-menu-item .zs-check {
+	width: 14px;
+	height: 14px;
+	color: var(--zs-accent-ink);
+	visibility: hidden;
+}
+.zs-menu-item[aria-checked="true"] .zs-check {
+	visibility: visible;
+}
+.zs-menu-item[aria-checked="true"] .zs-menu-label {
+	font-weight: 600;
+}
+.zs-menu-text {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+}
+.zs-menu-label {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.zs-menu-desc {
+	font-size: 0.85em;
+	color: var(--zs-muted);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.zs-history-menu {
+	width: min(300px, 100%);
+}
+.zs-history-menu .zs-menu-item {
+	min-height: 36px;
+}
+.zs-menu-note {
+	padding: 4px 8px 6px;
+	font-size: 0.85em;
+	color: var(--zs-muted);
+}

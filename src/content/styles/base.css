@@ -1,0 +1,225 @@
+/*
+ * Zusia.
+ *
+ * Layout and surfaces follow the two established Zotero AI plugins:
+ *  - Beaver (jlegewie/beaver-zotero): raised composer card mixed from Zotero's
+ *    own tokens, 6px control / 10px card radii, 22px ghost icon buttons, round
+ *    send button, quiet answer footer, overlay menus.
+ *  - llm-for-zotero (yilewang/llm-for-zotero): pill quick prompts, model and
+ *    reasoning dropdowns in the composer's control row.
+ * Everything resolves through Zotero's theme tokens, so light and dark follow
+ * Zotero. The only custom colour is --zs-accent (Settings → Appearance).
+ */
+
+.zs-root,
+.zs-prefs {
+	--zs-accent: var(--accent-blue, #4072e5);
+	--zs-accent-text: #fff;
+	--zs-font-size: 13px;
+
+	--zs-text: var(--fill-primary, rgba(0, 0, 0, 0.85));
+	--zs-muted: var(--fill-secondary, rgba(0, 0, 0, 0.55));
+	--zs-faint: var(--fill-tertiary, rgba(0, 0, 0, 0.25));
+	--zs-line: var(--fill-quarternary, rgba(0, 0, 0, 0.1));
+	--zs-hover: var(--fill-quinary, rgba(0, 0, 0, 0.05));
+
+	/* Surfaces, as in Beaver: ground is the pane, raised cards sit one step off it. */
+	--zs-ground: var(--material-sidepane, #f2f2f2);
+	--zs-raised: color-mix(in srgb, var(--material-mix-quarternary, #e5e5e5) 60%, var(--zs-ground));
+	--zs-overlay: var(--material-mix-quarternary, #e5e5e5);
+	--zs-border: color-mix(in srgb, var(--material-mix-quarternary, #e5e5e5) 50%, var(--zs-line));
+	--zs-border-strong: var(--zs-line);
+	--zs-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+
+	--zs-radius-control: 6px;
+	--zs-radius-card: 10px;
+	--zs-radius-root: 12px;
+
+	--zs-accent-soft: color-mix(in srgb, var(--zs-accent) 12%, transparent);
+	--zs-accent-line: color-mix(in srgb, var(--zs-accent) 55%, transparent);
+	--zs-accent-ink: color-mix(in srgb, var(--zs-accent) 80%, var(--zs-text));
+}
+
+.zs-root {
+	/* The item pane sizes sections by their content; without containment a wide
+	   formula or table would widen the whole pane instead of scrolling. */
+	contain: inline-size;
+	position: relative;
+	box-sizing: border-box;
+	width: 100%;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 0 0 6px;
+	color: var(--zs-text);
+	font-size: var(--zs-font-size);
+}
+.zs-root *,
+.zs-prefs * {
+	box-sizing: border-box;
+}
+/* Component display rules must never un-hide an element hidden by the script. */
+.zs-root [hidden],
+.zs-prefs [hidden] {
+	display: none !important;
+}
+.zs-root button,
+.zs-prefs button {
+	appearance: none;
+	margin: 0;
+	font: inherit;
+	color: inherit;
+	cursor: pointer;
+}
+.zs-root button:focus-visible,
+.zs-prefs button:focus-visible {
+	outline: 2px solid var(--zs-accent);
+	outline-offset: 1px;
+}
+.zs-root .zs-i,
+.zs-prefs .zs-i {
+	display: block;
+	flex: none;
+}
+
+/* ---- buttons ---- */
+
+/* Ghost icon button (Beaver .icon-button). */
+.zs-icon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 24px;
+	height: 24px;
+	padding: 0;
+	border: none;
+	border-radius: var(--zs-radius-control);
+	color: var(--zs-muted) !important;
+	background: transparent;
+	transition: background-color 0.15s ease, color 0.15s ease;
+}
+.zs-icon .zs-i {
+	width: 16px;
+	height: 16px;
+}
+.zs-icon:hover:not(:disabled) {
+	color: var(--zs-text) !important;
+	background: var(--zs-hover);
+}
+.zs-icon:disabled {
+	color: var(--zs-faint) !important;
+	cursor: default;
+}
+.zs-icon.zs-small {
+	width: 22px;
+	height: 22px;
+}
+.zs-icon.zs-small .zs-i {
+	width: 14px;
+	height: 14px;
+}
+
+/* Ghost text button (Beaver .variant-ghost). */
+.zs-ghost {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	min-width: 0;
+	height: 24px;
+	padding: 0 7px;
+	border: none;
+	border-radius: var(--zs-radius-control);
+	font-size: 0.92em !important;
+	white-space: nowrap;
+	color: var(--zs-muted) !important;
+	background: transparent;
+	transition: background-color 0.15s ease, color 0.15s ease;
+}
+.zs-ghost .zs-i {
+	width: 14px;
+	height: 14px;
+}
+.zs-ghost:hover:not(:disabled),
+.zs-ghost[aria-expanded="true"] {
+	color: var(--zs-text) !important;
+	background: var(--zs-hover);
+}
+.zs-ghost:disabled {
+	color: var(--zs-faint) !important;
+	cursor: default;
+}
+.zs-ghost .zs-label {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.zs-chevron {
+	width: 10px !important;
+	height: 10px !important;
+	opacity: 0.7;
+}
+
+/* ---- icons: Zotero's own icon set, inlined as SVG (see ICON_FILES) ---- */
+.zs-i {
+	display: inline-block;
+	flex: none;
+	width: 16px;
+	height: 16px;
+}
+.zs-i > svg {
+	display: block;
+	width: 100%;
+	height: 100%;
+}
+.zs-i[data-icon="chevronRight"] { transform: rotate(-90deg); }
+/* Stop is a plain filled square, as in every chat app. */
+.zs-i[data-icon="stop"] {
+	background: currentColor;
+	border-radius: 2px;
+	transform: scale(0.62);
+}
+/* Phosphor Duotone: the solid outline takes the text colour, the soft layer a wash of the accent. */
+.zs-i .zs-duo {
+	fill: var(--zs-accent);
+	opacity: 0.22;
+}
+.zs-send .zs-i .zs-duo,
+.zs-mode[aria-pressed="true"] .zs-i .zs-duo {
+	fill: currentColor;
+	opacity: 0.3;
+}
+.zs-header-icon {
+	width: 15px;
+	height: 15px;
+	margin-inline-end: 5px;
+	color: var(--zs-accent-ink);
+}
+/* The empty chat's mascot: a nerdy cat reading, in the accent colour. */
+.zs-mascot {
+	width: 72px;
+	height: 72px;
+	margin: 0 auto 4px;
+	color: var(--zs-muted);
+	animation: zs-mascot-float 4s ease-in-out infinite;
+}
+.zs-mascot > svg {
+	stroke-width: 1.6;
+}
+.zs-mascot .zs-mascot-spark {
+	fill: var(--zs-accent);
+	animation: zs-mascot-twinkle 2.4s ease-in-out infinite;
+	transform-origin: 55px 9.5px;
+}
+.zs-mascot .zs-mascot-blush {
+	stroke: color-mix(in srgb, var(--accent-red, #db2c3a) 55%, transparent);
+	stroke-width: 2.2;
+}
+@keyframes zs-mascot-float {
+	0%, 100% { transform: translateY(0); }
+	50% { transform: translateY(-3px); }
+}
+@keyframes zs-mascot-twinkle {
+	0%, 100% { transform: scale(0.7); opacity: 0.6; }
+	50% { transform: scale(1.15); opacity: 1; }
+}

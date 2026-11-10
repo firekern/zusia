@@ -10,14 +10,16 @@ Object.assign(Zusia, {
 		window.MozXULElement.insertFTLIfNeeded("zusia.ftl");
 
 		let doc = window.document;
-		// Replace a link left by an older version rather than keeping its styles.
-		doc.querySelectorAll("#zusia-stylesheet").forEach(old => old.remove());
-		let link = doc.createElement("link");
-		link.id = "zusia-stylesheet";
-		link.type = "text/css";
-		link.rel = "stylesheet";
-		link.href = this.stylesheetURL;
-		doc.documentElement.appendChild(link);
+		// Replace links left by an older version rather than keeping their styles.
+		doc.querySelectorAll("#zusia-stylesheet, .zusia-stylesheet").forEach(old => old.remove());
+		for (let href of this.stylesheetURLs) {
+			let link = doc.createElement("link");
+			link.className = "zusia-stylesheet";
+			link.type = "text/css";
+			link.rel = "stylesheet";
+			link.href = href;
+			doc.documentElement.appendChild(link);
+		}
 
 		doc.documentElement.setAttribute(this.VIEW_ATTR, this.getPref("paneView") === "chat" ? "chat" : "details");
 		let onClick = event => this.onSidenavClick(event);
@@ -37,7 +39,7 @@ Object.assign(Zusia, {
 
 	removeFromWindow(window) {
 		let doc = window.document;
-		doc.getElementById("zusia-stylesheet")?.remove();
+		doc.querySelectorAll(".zusia-stylesheet").forEach(link => link.remove());
 		doc.querySelector('[href="zusia.ftl"]')?.remove();
 		doc.documentElement.removeAttribute(this.VIEW_ATTR);
 		let onClick = this._sidenavListeners.get(window);
@@ -73,7 +75,7 @@ Object.assign(Zusia, {
 				icon: this.rootURI + "icons/icon20.svg",
 			},
 			onInit: ({ body }) => {
-				// The chat view's CSS finds our section by this class (see "chat view" in zusia.css).
+				// The chat view's CSS finds our section by this class (see "chat view" in styles/shell.css).
 				body.closest("item-pane-custom-section")?.classList.add("zs-pane");
 			},
 			// The section goes with its window: what was said about the paper is folded into
@@ -120,7 +122,7 @@ Object.assign(Zusia, {
 	// Chat view: Zusia fills the side pane
 	// -----------------------------------------------------------------
 
-	// The item pane API has no full-height section, so in the chat view zusia.css hides
+	// The item pane API has no full-height section, so in the chat view styles/shell.css hides
 	// Zotero's title bar and the other sections around ours (llm-for-zotero does the same).
 	// The view is one attribute per window, as the side nav works the same in the library
 	// and the reader tabs; it only applies where item-details carries zs-chat-ready.
@@ -208,7 +210,7 @@ Object.assign(Zusia, {
 				src: this.rootURI + "prefs.xhtml",
 				label: "Zusia",
 				image: this.rootURI + "icons/icon20.svg",
-				stylesheets: [this.stylesheetURL],
+				stylesheets: this.stylesheetURLs,
 			});
 			this.log("registered settings pane " + this.prefsPaneID);
 		}

@@ -656,9 +656,9 @@ async function run() {
 		check("memory: a background call runs in a new empty folder under the system temp folder, removed after",
 			answered.text === "{}" && spawned && spawned.cwd.startsWith(PathUtils.tempDir) && spawned.children === 0 &&
 			spawned.stdin === "PROMPT" && !(await IOUtils.exists(spawned.cwd)), spawned);
-		let links = [...Zotero.getMainWindow().document.querySelectorAll("#zusia-stylesheet")];
-		check("one stylesheet link, versioned so updates never reuse a cached copy",
-			links.length === 1 && /zusia\.css\?v=/.test(links[0].href), links.map(l => l.href));
+		let links = [...Zotero.getMainWindow().document.querySelectorAll(".zusia-stylesheet")];
+		check("one link per stylesheet, versioned so updates never reuse a cached copy",
+			links.length === CS.STYLES.length && links.every(l => /styles\/[\w-]+\.css\?v=/.test(l.href)), links.map(l => l.href));
 		let win = await waitFor(() => Zotero.getMainWindow() && Zotero.getMainWindow().ZoteroPane && Zotero.getMainWindow(), 30000, "main window");
 		// An item saved while Zotero is still loading the library breaks that load, and the
 		// items tree then stays on "Loading items…" for the whole run.

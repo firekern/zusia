@@ -1,0 +1,269 @@
+/* ---- rich text ---- */
+
+.zs-rich > :first-child { margin-top: 0 !important; }
+.zs-rich > :last-child { margin-bottom: 0 !important; }
+.zs-rich p { margin: 0 0 8px; }
+.zs-rich .zs-h {
+	margin: 14px 0 6px;
+	font-weight: 650;
+	line-height: 1.3;
+}
+.zs-rich .zs-h1 { font-size: 1.15em; }
+.zs-rich .zs-h2 { font-size: 1.07em; }
+.zs-rich .zs-h3 { font-size: 1em; }
+.zs-rich ul,
+.zs-rich ol {
+	margin: 0 0 8px;
+	padding-inline-start: 20px;
+}
+.zs-rich li { margin: 2px 0; }
+.zs-rich li > ul,
+.zs-rich li > ol { margin: 2px 0 0; }
+.zs-rich li::marker { color: var(--zs-muted); }
+.zs-rich strong { font-weight: 650; }
+.zs-rich hr {
+	border: none;
+	border-top: 1px solid var(--zs-line);
+	margin: 12px 0;
+}
+.zs-rich code {
+	font-family: ui-monospace, "JetBrains Mono", "DejaVu Sans Mono", Menlo, monospace;
+	font-size: 0.88em;
+	padding: 1px 4px;
+	border-radius: 4px;
+	background: var(--zs-hover);
+}
+.zs-code {
+	margin: 0 0 10px;
+	border: 1px solid var(--zs-border);
+	border-radius: 8px;
+	background: var(--zs-raised);
+	overflow: hidden;
+}
+.zs-code-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	min-height: 26px;
+	padding: 0 4px 0 10px;
+	border-bottom: 1px solid var(--zs-border);
+}
+.zs-code-lang {
+	font-size: 0.82em;
+	color: var(--zs-muted);
+	text-transform: lowercase;
+}
+.zs-code-copy {
+	height: 22px !important;
+	font-size: 0.85em !important;
+}
+.zs-rich .zs-code pre {
+	margin: 0;
+	border: none;
+	border-radius: 0;
+	background: transparent;
+}
+.zs-rich pre {
+	margin: 0 0 8px;
+	padding: 8px 10px;
+	border-radius: 6px;
+	overflow-x: auto;
+	background: var(--zs-hover);
+	border: 1px solid var(--zs-line);
+}
+.zs-rich pre code {
+	padding: 0;
+	background: none;
+	white-space: pre;
+}
+.zs-rich .zs-quote {
+	margin: 0 0 8px;
+	padding: 2px 0 2px 10px;
+	border-inline-start: 3px solid var(--zs-line);
+	color: var(--zs-muted);
+}
+.zs-rich .zs-quote > :last-child { margin-bottom: 0; }
+.zs-link {
+	color: var(--zs-accent-ink);
+	text-decoration: underline;
+	text-decoration-color: var(--zs-accent-line);
+}
+.zs-plain { white-space: pre-wrap; }
+
+/* ---- tables ---- */
+
+.zs-table-wrap {
+	margin: 0 0 10px;
+	overflow-x: auto;
+	scrollbar-width: none;
+	border: 1px solid var(--zs-line);
+	border-radius: 6px;
+}
+.zs-rich table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 0.93em;
+	line-height: 1.4;
+}
+.zs-rich th,
+.zs-rich td {
+	padding: 5px 9px;
+	text-align: start;
+	vertical-align: middle;
+	overflow-wrap: normal;
+	border-bottom: 1px solid var(--zs-line);
+}
+.zs-rich th + th,
+.zs-rich td + td {
+	border-inline-start: 1px solid var(--zs-line);
+}
+.zs-rich tbody tr:last-child td { border-bottom: none; }
+.zs-rich th {
+	font-weight: 600;
+	white-space: nowrap;
+	background: var(--zs-hover);
+}
+.zs-rich td { min-width: 3em; }
+.zs-rich [data-align="center"] { text-align: center; }
+.zs-rich [data-align="right"] { text-align: end; }
+
+/* Still too wide after fitting: scroll sideways behind a soft fade on the hidden side,
+   with a thin scrollbar only while hovering. */
+.zs-overflow:hover {
+	scrollbar-width: thin;
+}
+.zs-overflow:not(.zs-at-end) {
+	mask-image: linear-gradient(to right, black calc(100% - 28px), transparent);
+}
+.zs-overflow:not(.zs-at-start):not(.zs-at-end) {
+	mask-image: linear-gradient(to right, transparent, black 28px, black calc(100% - 28px), transparent);
+}
+.zs-overflow.zs-at-end:not(.zs-at-start) {
+	mask-image: linear-gradient(to right, transparent, black 28px);
+}
+
+/* ---- LaTeX (native MathML from KaTeX) ---- */
+
+/* Latin Modern Math is bundled so formulas look like LaTeX output on every system. */
+@font-face {
+	font-family: "Claude Sidebar Latin Modern Math";
+	src: url("../lib/latinmodern-math.otf") format("opentype");
+	font-display: swap;
+}
+.zs-root math,
+.zs-prefs math {
+	font-family: "Claude Sidebar Latin Modern Math", "Latin Modern Math", "STIX Two Math", "DejaVu Math TeX Gyre", math;
+	font-size: 1.18em;
+}
+.zs-math { white-space: nowrap; }
+.zs-math code { background: none; padding: 0; }
+.zs-math-block {
+	position: relative;
+	margin: 2px 0 10px;
+}
+.zs-math-scroll {
+	overflow-x: auto;
+	overflow-y: hidden;
+	padding: 4px 0;
+	scrollbar-width: none;
+}
+.zs-math-block math[display="block"] {
+	margin: 0 auto;
+}
+/* A numbered equation keeps its number at the right margin, as in LaTeX. The empty
+   first column mirrors the number's, so the equation stays centred on the line. */
+.zs-math-numbered {
+	display: grid;
+	grid-template-columns: 1fr minmax(0, auto) 1fr;
+	align-items: center;
+	column-gap: 6px;
+}
+.zs-math-numbered > .zs-math-scroll {
+	grid-column: 2;
+}
+.zs-eq-num {
+	grid-column: 3;
+	justify-self: end;
+	white-space: nowrap;
+	font-variant-numeric: tabular-nums;
+	/* Upright even in the italic body of a theorem, like LaTeX's equation numbers. */
+	font-style: normal;
+	color: var(--zs-muted);
+}
+.zs-tex-error {
+	font-family: ui-monospace, monospace;
+	font-size: 0.88em;
+	color: var(--color-invalid, #b81d29);
+	background: none !important;
+}
+.zs-copy-tex {
+	position: absolute;
+	top: 0;
+	inset-inline-end: 0;
+	padding: 1px 6px !important;
+	border: 1px solid var(--zs-line) !important;
+	border-radius: 5px;
+	font-size: 10.5px !important;
+	color: var(--zs-muted) !important;
+	background: var(--zs-overlay);
+	opacity: 0;
+	transition: opacity 0.12s ease;
+}
+.zs-math-block:hover .zs-copy-tex,
+.zs-copy-tex:focus-visible {
+	opacity: 1;
+}
+
+/* Theorem-like environments. */
+.zs-env {
+	margin: 2px 0 10px;
+	padding: 8px 11px;
+	border-radius: 6px;
+	border: 1px solid var(--zs-border);
+	border-inline-start: 3px solid var(--zs-accent);
+	background: var(--zs-raised);
+}
+.zs-env-head {
+	margin-bottom: 4px;
+	font-size: 0.8em;
+	font-weight: 700;
+	letter-spacing: 0.05em;
+	text-transform: uppercase;
+	color: var(--zs-accent-ink);
+}
+.zs-env-title {
+	font-weight: 600;
+	text-transform: none;
+	letter-spacing: 0;
+}
+.zs-env-body > :last-child { margin-bottom: 0; }
+.zs-env-thm .zs-env-body { font-style: italic; }
+.zs-env-thm .zs-env-body math,
+.zs-env-thm .zs-env-body code { font-style: normal; }
+.zs-env-def {
+	border-inline-start-color: var(--accent-teal, #59adc4);
+}
+.zs-env-def .zs-env-head { color: color-mix(in srgb, var(--accent-teal, #59adc4) 65%, var(--zs-text)); }
+.zs-env-rem {
+	border-inline-start-color: var(--zs-faint);
+}
+.zs-env-rem .zs-env-head { color: var(--zs-muted); }
+.zs-env-proof {
+	border-color: transparent;
+	border-inline-start-color: var(--zs-line);
+	background: transparent;
+	padding-block: 2px;
+}
+.zs-env-proof .zs-env-head {
+	color: var(--zs-muted);
+	font-style: italic;
+	text-transform: none;
+	letter-spacing: 0;
+	font-size: 0.95em;
+}
+.zs-qed {
+	text-align: end;
+	line-height: 1;
+	color: var(--zs-muted);
+}
+.zs-li-body > p { margin: 0; }
