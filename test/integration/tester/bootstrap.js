@@ -134,6 +134,9 @@ async function testSidebar(win, CS) {
 	if (sheet) {
 		// Past its fade-in, or the shot shows the chat through a half-opaque sheet.
 		await Zotero.Promise.delay(350);
+		let sheetStyle = win.getComputedStyle(sheet);
+		check("memory sheet: opaque, so the conversation under it does not show through its text",
+			sheetStyle.opacity === "1" && !/^rgba|transparent|color\(/.test(sheetStyle.backgroundColor), [sheetStyle.opacity, sheetStyle.backgroundColor]);
 		await snapshot(win, "zotero-memory-sheet", { x: sheetRect.x, y: sheetRect.y, width: sheetRect.width, height: sheetRect.height });
 		sheet.dispatchEvent(new win.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
 	}

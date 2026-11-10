@@ -226,3 +226,12 @@ test("while there is more below, the conversation is marked so its last lines fa
 	scrolledTo(0);
 	assert.equal(wrap.classList.contains("zs-more-above"), false, "at the top nothing is hidden above");
 });
+
+test("glass: what lies over the chat's text is opaque, whatever opacity the cards have", () => {
+	const { root } = sidebar({ [PREFIX + "appearance"]: JSON.stringify({ style: "glass", glassOpacity: 20 }) });
+	assert.equal(root.style.getPropertyValue("--zs-overlay-pct"), "", "no opacity is handed to menus and sheets");
+	const glass = readFileSync(new URL("../src/content/styles/glass.css", import.meta.url), "utf8");
+	for (const [, value] of glass.matchAll(/--zs-overlay:([^;]*);/g)) {
+		assert.ok(!/transparent|rgba|pct/.test(value), "menus, sheets and the wizard would show the text under them: " + value.trim());
+	}
+});
