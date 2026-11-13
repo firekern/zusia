@@ -1,17 +1,46 @@
 // Drives the demo Zotero like a person would: finds elements through the debugger
 // connection, moves the real pointer and types with cliclick, and records the screen.
+//
+// ZUSIA_REHEARSE=<folder> runs a scene without the pointer and without the recorder,
+// which need Accessibility and Screen Recording permission: clicks and typing are sent
+// to Zotero as events, at the same points, and every mark saves what the window shows
+// into the folder. It tells whether a scene still finds its way through the interface.
 import { spawn, execFileSync } from "node:child_process";
 import { attach } from "./rdp.mjs";
 
 export const WINDOW = { x: 180, y: 130, width: 1440, height: 900 };
 export const PORT = 6200;
+export const REHEARSE = process.env.ZUSIA_REHEARSE || "";
 export const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+// The windows a scene works in, the one in front first.
+const WINDOWS = `[Services.wm.getMostRecentWindow("zotero:pref"), win].filter(Boolean)`;
+
+// avfoundation numbers the screen after the cameras, so it moves when one is added.
+function screenDevice() {
+	let listed;
+	try {
+		listed = execFileSync("ffmpeg", ["-hide_banner", "-f", "avfoundation", "-list_devices", "true", "-i", ""], { stdio: ["ignore", "pipe", "pipe"] }).toString();
+	}
+	catch (error) {
+		// Listing devices is all it was asked to do; ffmpeg still exits with an error.
+		listed = String(error.stderr);
+	}
+	let screen = /\[(\d+)\] Capture screen 0/.exec(listed);
+	if (!screen) {
+		throw new Error("ffmpeg lists no screen to capture:\n" + listed);
+	}
+	return screen[1];
+}
 
 export async function stage() {
 	let zotero = await attach(PORT);
 	let marks = [];
 	let recorder = null;
 	let startedAt = 0;
+	let pointer = { x: 0, y: 0 };
+	// One at a time, in order: a mark does not wait for its picture.
+	let shots = Promise.resolve();
 
 	let api = {
 		zotero,
@@ -48,7 +77,29 @@ export async function stage() {
 
 		async moveTo(target, { dx = 0, dy = 0, ms = 450 } = {}) {
 			let point = "w" in target ? { x: target.x + target.w / 2, y: target.y + target.h / 2 } : target;
-			execFileSync("cliclick", ["-e", String(ms), `m:${Math.round(point.x + dx)},${Math.round(point.y + dy)}`]);
+			pointer = { x: Math.round(point.x + dx), y: Math.round(point.y + dy) };
+			if (!REHEARSE) {
+				execFileSync("cliclick", ["-e", String(ms), `m:${pointer.x},${pointer.y}`]);
+			}
+		},
+
+		// A click where the pointer is. Rehearsed, it goes to whatever Zotero has at that
+		// point of the screen, so a target that is covered or off screen is still missed.
+		async press() {
+			if (!REHEARSE) {
+				execFileSync("cliclick", ["c:."]);
+				return;
+			}
+			let hit = await zotero.evaluate(`for (let w of ${WINDOWS}) {
+					let x = ${pointer.x} - w.mozInnerScreenX, y = ${pointer.y} - w.mozInnerScreenY;
+					if (x < 0 || y < 0 || x >= w.innerWidth || y >= w.innerHeight) continue;
+					for (let type of ["mousemove", "mousedown", "mouseup"]) w.windowUtils.sendMouseEvent(type, x, y, 0, 1, 0);
+					return true;
+				}
+				return false;`);
+			if (!hit) {
+				throw new Error(`a click at ${pointer.x},${pointer.y} is outside Zotero's windows`);
+			}
 		},
 
 		async click(selector, options = {}) {
@@ -56,12 +107,15 @@ export async function stage() {
 			let target = typeof selector === "string" ? await api.rect(selector, options) : selector;
 			await api.moveTo(target, options);
 			await sleep(options.hover ?? 180);
-			execFileSync("cliclick", ["c:."]);
+			await api.press();
 			await sleep(options.after ?? 500);
 		},
 
 		// Drags the pointer, the way a reader selects text.
 		async drag(from, to, ms = 900) {
+			if (REHEARSE) {
+				throw new Error("a rehearsal cannot drag");
+			}
 			api.front();
 			execFileSync("cliclick", ["-e", "400", `m:${Math.round(from.x)},${Math.round(from.y)}`]);
 			await sleep(200);
@@ -122,31 +176,73 @@ export async function stage() {
 				return null;`);
 			await api.moveTo(rect, {});
 			await sleep(hover);
-			execFileSync("cliclick", ["c:."]);
+			await api.press();
 			await sleep(after);
 		},
 
 		async type(text, { perChar = 45 } = {}) {
 			for (let char of text) {
-				execFileSync("cliclick", ["t:" + char]);
+				if (REHEARSE) {
+					// Into the field that has the focus, as a key would go.
+					let typed = await zotero.evaluate(`let field = ${WINDOWS}.map(w => w.document.activeElement).find(el => el && "selectionStart" in el);
+						if (!field) return false;
+						field.setRangeText(${JSON.stringify(char)}, field.selectionStart, field.selectionEnd, "end");
+						field.dispatchEvent(new field.ownerGlobal.InputEvent("input", { bubbles: true }));
+						return true;`);
+					if (!typed) {
+						throw new Error("typing with no text field in focus");
+					}
+				}
+				else {
+					execFileSync("cliclick", ["t:" + char]);
+				}
 				await sleep(perChar);
 			}
 		},
 
 		key(name) {
+			if (REHEARSE) {
+				throw new Error("a rehearsal has no keyboard: " + name);
+			}
 			execFileSync("cliclick", ["kp:" + name]);
 		},
 
 		front() {
-			execFileSync("osascript", ["-e", `tell application "System Events" to set frontmost of (first process whose unix id is ${api.pid}) to true`]);
+			if (!REHEARSE) {
+				execFileSync("osascript", ["-e", `tell application "System Events" to set frontmost of (first process whose unix id is ${api.pid}) to true`]);
+			}
 		},
 
 		mark(name) {
 			marks.push({ name, t: (Date.now() - startedAt) / 1000 });
 			console.log(`  ${marks.at(-1).t.toFixed(1)}s ${name}`);
+			if (REHEARSE) {
+				shots = shots.then(() => api.shot(String(marks.length).padStart(2, "0") + "-" + name.replace(/\W+/g, "-")));
+			}
+		},
+
+		// What the recorder's frame would hold, as Zotero draws it: the main window with
+		// the Settings window over it. Without the pointer, the title bar and the glass blur.
+		async shot(name) {
+			await zotero.evaluate(`let canvas = doc.createElementNS("http://www.w3.org/1999/xhtml", "canvas");
+				canvas.width = ${WINDOW.width * 2}; canvas.height = ${WINDOW.height * 2};
+				let ctx = canvas.getContext("2d");
+				ctx.scale(2, 2);
+				for (let w of ${WINDOWS}.reverse()) {
+					ctx.save();
+					ctx.translate(w.mozInnerScreenX - ${WINDOW.x}, w.mozInnerScreenY - ${WINDOW.y});
+					ctx.drawWindow(w, 0, 0, w.innerWidth, w.innerHeight, "rgb(30,30,30)");
+					ctx.restore();
+				}
+				let blob = await new Promise(resolve => canvas.toBlob(resolve, "image/png"));
+				await IOUtils.write(PathUtils.join(${JSON.stringify(REHEARSE)}, ${JSON.stringify(name)} + ".png"), new Uint8Array(await blob.arrayBuffer()));`);
 		},
 
 		async record(file) {
+			startedAt = Date.now();
+			if (REHEARSE) {
+				return;
+			}
 			// A crashing scene must not leave the screen recorder running.
 			process.on("exit", () => { try { recorder?.kill("SIGINT"); } catch (e) {} });
 			for (let signal of ["SIGINT", "SIGTERM", "uncaughtException", "unhandledRejection"]) {
@@ -158,17 +254,22 @@ export async function stage() {
 			}
 			let crop = `crop=${WINDOW.width * 2}:${WINDOW.height * 2}:${WINDOW.x * 2}:${WINDOW.y * 2}`;
 			recorder = spawn("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-f", "avfoundation", "-capture_cursor", "1",
-				"-framerate", "30", "-pixel_format", "bgr0", "-i", "2:none", "-vf", crop, "-c:v", "libx264", "-preset", "ultrafast",
+				"-framerate", "30", "-pixel_format", "bgr0", "-i", screenDevice() + ":none", "-vf", crop, "-c:v", "libx264", "-preset", "ultrafast",
 				"-crf", "16", "-pix_fmt", "yuv420p", file], { stdio: ["pipe", "inherit", "inherit"] });
 			await sleep(1500);
 			startedAt = Date.now();
 		},
 
 		async stop() {
-			// avfoundation capture ignores "q" on stdin; SIGINT makes ffmpeg finish the file.
-			let closed = new Promise(resolve => recorder.on("close", resolve));
-			recorder.kill("SIGINT");
-			await closed;
+			if (REHEARSE) {
+				await shots;
+			}
+			else {
+				// avfoundation capture ignores "q" on stdin; SIGINT makes ffmpeg finish the file.
+				let closed = new Promise(resolve => recorder.on("close", resolve));
+				recorder.kill("SIGINT");
+				await closed;
+			}
 			zotero.close();
 			return marks;
 		},

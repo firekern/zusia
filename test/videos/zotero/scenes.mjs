@@ -4,14 +4,18 @@
 import { writeFileSync } from "node:fs";
 import { stage, sleep } from "./stage.mjs";
 
-const PAPERS = { attention: 1, resnet: 3, bert: 4, vit: 6, gpt3: 8, adam: 10 };
+// The papers of the demo library (library.js) by their arXiv number. Their item ids
+// depend on the order a library was filled in, so they are looked up before a scene.
+const ARXIV = { attention: "1706.03762", resnet: "1512.03385", bert: "1810.04805", vit: "2010.11929", gpt3: "2005.14165", adam: "1412.6980" };
+const PAPERS = {};
 const LOOK = {
 	style: "glass", accent: "#d42a3c", bubble: "accent", background: "background-1.jpg",
 	imageVisibility: 32, imageBlur: 1, glassOpacity: 60, glassBlur: 14, glow: true, glowStrength: 40, mascot: "cat",
 };
-const PANE = "#zotero-context-pane";
-// Every open tab has its own sidebar; setUp() tags the one on screen.
-const ACTIVE = '[data-zusia-active="1"]';
+// Zusia's panel at the right edge of the window, and the one chat it holds.
+const PANE = "#zusia-dock";
+const PANEL_WIDTH = 520;
+const ACTIVE = `${PANE} .zs-root`;
 const LOG = `doc.querySelector('${ACTIVE} .zs-log')`;
 
 // ---------------------------------------------------------------------------
@@ -21,6 +25,9 @@ async function setUp(s, { paper, page = 0, modes = {}, look = LOOK, onboarded = 
 		let CS = Zotero.Zusia;
 		Zotero.Prefs.set("extensions.zusia.appearance", ${JSON.stringify(JSON.stringify(look))}, true);
 		Zotero.Prefs.set("extensions.zusia.onboarded", ${onboarded}, true);
+		// The notes for people who update would sit above the chat.
+		Zotero.Prefs.set("extensions.zusia.dockTipSeen", true, true);
+		Zotero.Prefs.set("extensions.zusia.sideTipSeen", true, true);
 		Zotero.Prefs.set("extensions.zusia.backend", "claude", true);
 		Zotero.Prefs.set("extensions.zusia.claude.model", "opus", true);
 		Zotero.Prefs.set("extensions.zusia.claude.effort", ${JSON.stringify(effort)}, true);
@@ -33,7 +40,7 @@ async function setUp(s, { paper, page = 0, modes = {}, look = LOOK, onboarded = 
 			if (banner) banner.hidden = banner.collapsed = true;
 		}
 		win.resizeTo(1440, 900); win.moveTo(180, 130);
-		// One paper on screen at a time: stale tabs leave stale sidebars behind.
+		// One paper on screen at a time.
 		for (let tab of [...win.Zotero_Tabs._tabs].filter(t => t.type !== "library")) {
 			win.Zotero_Tabs.close(tab.id);
 		}
@@ -42,25 +49,18 @@ async function setUp(s, { paper, page = 0, modes = {}, look = LOOK, onboarded = 
 		let reader = await Zotero.Reader.open(pdf, { pageIndex: ${page} });
 		await Zotero.Promise.delay(2000);
 		reader._internalReader.navigate({ pageIndex: ${page} });
-		if (win.ZoteroContextPane.collapsed) win.ZoteroContextPane.togglePane();
-		let pane = doc.getElementById("zotero-context-pane");
-		pane.setAttribute("width", "560");
-		pane.style.width = "560px";
+		// The PDF and Zusia's panel, without Zotero's own pane between them.
+		if (!win.ZoteroContextPane.collapsed) win.ZoteroContextPane.togglePane();
+		CS.setPlacement("right");
+		CS.setDockWidth(${PANEL_WIDTH});
+		CS.setDockOpen(true);
+		let dir = CS.contextDirFor(Zotero.Items.get(${paper}));
+		for (let i = 0; i < 60 && CS._views.get(doc.querySelector('${ACTIVE}'))?.ctx.dir !== dir; i++) await Zotero.Promise.delay(150);
+		if (CS._views.get(doc.querySelector('${ACTIVE}'))?.ctx.dir !== dir) throw new Error("the panel does not show the paper");
 		for (let input of doc.querySelectorAll(".zs-input")) input.value = "";
 		await Zotero.Promise.delay(900);
 		return true;`);
 	s.front();
-	await s.click(`${PANE} item-pane-sidenav [data-pane$="zusia-section"]`, { after: 1200 });
-	await s.run(`
-		let reader = Zotero.Reader._readers.find(r => r.tabID === win.Zotero_Tabs.selectedID);
-		let item = Zotero.Items.get(reader.itemID);
-		let dir = Zotero.Zusia.contextDirFor(item);
-		for (let root of doc.querySelectorAll(".zs-root")) {
-			let view = Zotero.Zusia._views.get(root);
-			if (view && view.ctx.dir === dir && root.getBoundingClientRect().width > 100) root.dataset.zusiaActive = "1";
-			else delete root.dataset.zusiaActive;
-		}
-		return doc.querySelectorAll('${ACTIVE}').length;`);
 	await s.moveTo({ x: 700, y: 620 }, { ms: 300 });
 }
 
@@ -369,7 +369,7 @@ const SCENES = {
 		},
 	},
 
-	// Intro 1: from a closed side pane to a drawing and real maths, without dead time.
+	// Intro 1: from a hidden panel to a drawing and real maths, without dead time.
 	introChat: {
 		async setup(s) {
 			await setUp(s, { paper: PAPERS.attention, page: 3, modes: {}, effort: "medium" });
@@ -378,8 +378,8 @@ const SCENES = {
 				await CS.saveSessions(${dirOf(PAPERS.attention)}, {});
 				let view = CS._views.get(doc.querySelector('${ACTIVE}'));
 				CS.renderMessages(view, []);
-				// Start with the side pane closed, so the video shows it appear.
-				if (!win.ZoteroContextPane.collapsed) win.ZoteroContextPane.togglePane();
+				// Start with the panel hidden, so the video shows it appear.
+				CS.setDockOpen(false);
 				await Zotero.Promise.delay(500);
 				return true;`);
 			await s.moveTo({ x: 700, y: 700 }, { ms: 250 });
@@ -387,21 +387,8 @@ const SCENES = {
 		async run(s) {
 			s.mark("start");
 			await sleep(900);
-			let toggle = await s.run(`let r = Zotero.Reader._readers.find(r => r.tabID === win.Zotero_Tabs.selectedID);
-				let w = r._iframeWindow; let b = [...w.document.querySelectorAll("button")].find(b => b.title === "Toggle Context Pane");
-				let rect = b.getBoundingClientRect();
-				return { x: w.mozInnerScreenX + rect.left, y: w.mozInnerScreenY + rect.top, w: rect.width, h: rect.height };`);
-			await s.click(toggle, { after: 900 });
+			await s.click(`${PANE} .zs-dock-open`, { after: 1100 });
 			s.mark("pane");
-			await s.click(`${PANE} item-pane-sidenav [data-pane$="zusia-section"]`, { after: 900 });
-			await s.run(`let reader = Zotero.Reader._readers.find(r => r.tabID === win.Zotero_Tabs.selectedID);
-				let dir = Zotero.Zusia.contextDirFor(Zotero.Items.get(reader.itemID));
-				for (let root of doc.querySelectorAll(".zs-root")) {
-					let view = Zotero.Zusia._views.get(root);
-					if (view && view.ctx.dir === dir && root.getBoundingClientRect().width > 100) root.dataset.zusiaActive = "1";
-					else delete root.dataset.zusiaActive;
-				}`);
-			s.mark("zusia");
 			await s.click(`${ACTIVE} .zs-mode-drawing`, { after: 350 });
 			await s.click(`${ACTIVE} .zs-mode-latex`, { after: 500 });
 			s.mark("modes");
@@ -526,6 +513,12 @@ if (!scene) {
 	process.exit(2);
 }
 let s = await stage();
+Object.assign(PAPERS, await s.run(`let items = await Zotero.Items.getAll(Zotero.Libraries.userLibraryID, true);
+	let ids = {};
+	for (let [name, arxiv] of Object.entries(${JSON.stringify(ARXIV)})) {
+		ids[name] = items.find(item => item.isRegularItem() && item.getField("url").endsWith("/" + arxiv)).id;
+	}
+	return ids;`));
 await scene.setup(s);
 s.front();
 await sleep(1000);

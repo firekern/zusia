@@ -140,9 +140,10 @@ npm run test:zotero          # the checks inside a real, headless Zotero (macOS 
 npm run test:zotero:linux    # the same in Docker, against the official Linux build
 npm run test:zotero:windows  # the same in the Windows build under Wine, in Docker
 ZUSIA_BACKGROUND=path/to/illustration.jpg npm run videos   # re-records the README videos (macOS)
+REHEARSE=1 ZUSIA_BACKGROUND=path/to/illustration.jpg npm run videos   # walks the same scenes without recording
 ```
 
-The videos are recorded in a real Zotero with its own demo profile and library, so your library is never used. The scenes move the real pointer: don't touch the Mac while they run. Needs `ffmpeg`, `cliclick`, the `claude` CLI, and Screen Recording and Accessibility permission for the terminal.
+The videos are recorded in a real Zotero with its own demo profile and library, so your library is never used. The scenes move the real pointer: don't touch the Mac while they run. Needs `ffmpeg`, `cliclick`, the `claude` CLI, and Screen Recording and Accessibility permission for the app the terminal runs in. With `REHEARSE=1` nothing is recorded, the pointer stays where it is and no assistant is called, so neither permission is needed: every scene is walked through with events sent to Zotero and a canned answer, and what the window shows at each step is saved under `~/.cache/zusia-demo/rehearsal/`. Run it after the interface changes, to see that the scenes still find their way.
 
 ## Release
 

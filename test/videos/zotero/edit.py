@@ -11,8 +11,8 @@ The edit decision list:
     {"from": 6, "to": 40, "speed": 8, "focus": "sidebar", "caption": "Claude is thinking (sped up)"}
   ]
 }
-"from"/"to" are seconds in the source; "focus" is "full", "sidebar", "reader", "settings"
-or [x, y, w, h] in source pixels. Captions are rendered here and overlaid.
+"from"/"to" are seconds in the source; "focus" is "full", "sidebar", "composer", "panel",
+"reader", "settings" or [x, y, w, h] in source pixels. Captions are rendered here and overlaid.
 """
 import json
 import subprocess
@@ -22,9 +22,14 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 W, H = 1440, 900  # output size
-FOCUS = {  # 16:10 regions of the 2880x1800 capture, so nothing is letterboxed
+# 16:10 regions of the 2880x1800 capture, so nothing is letterboxed. Zusia's panel is
+# the 520pt column at the right edge, as tall as the window: no region of this shape
+# holds all of it at a size that reads, so there is one for each thing to look at.
+FOCUS = {
 	"full": (0, 0, 2880, 1800),
-	"sidebar": (1400, 300, 1480, 925),
+	"sidebar": (1400, 90, 1480, 925),  # the header and the answer being read
+	"composer": (1400, 875, 1480, 925),  # the message box and the last lines above it
+	"panel": (576, 120, 2304, 1440),  # the whole conversation, while an answer is written
 	"reader": (0, 200, 2160, 1350),
 	"settings": (0, 150, 2400, 1500),
 }
