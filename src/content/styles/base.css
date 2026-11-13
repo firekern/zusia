@@ -79,12 +79,14 @@
 	color: inherit;
 	cursor: pointer;
 }
-/* Zotero's stylesheet on macOS caps every button at 25px high. A menu row with a second
-   line, the error card's title and the wizard's tiles are taller: they were cut to it,
-   and their text ran over the rows around them. The dock's own buttons are outside .zs-root. */
-.zs-root button,
-.zs-prefs button,
-.zs-dock button {
+/* Zotero sizes every button itself: at most 25px high on macOS, exactly 28px on Windows.
+   A menu row with a second line, the error card's title and the wizard's tiles are
+   taller: they were cut to that, and their text ran over the rows around them.
+   :where() keeps this as weak as Zotero's rule, so a height a Zusia class sets still
+   wins; it comes later than Zotero's, which decides between the two. The dock's own
+   buttons are outside .zs-root. */
+:where(.zs-root, .zs-prefs, .zs-dock) button {
+	height: auto;
 	max-height: none;
 }
 .zs-root button:focus-visible,

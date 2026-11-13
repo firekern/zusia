@@ -236,15 +236,16 @@ test("glass: what lies over the chat's text is opaque, whatever opacity the card
 	}
 });
 
-test("no Zusia button keeps the height Zotero caps every button at on macOS", () => {
-	// Zotero's own stylesheet there: button { max-height: 25px }. A menu row with a second
-	// line, the error card's title and the wizard's tiles are taller and were cut to it.
+test("no Zusia button keeps the height Zotero gives every button", () => {
+	// Zotero's own stylesheets: button { max-height: 25px } on macOS, height: 28px on
+	// Windows. A menu row with a second line, the error card's title and the wizard's
+	// tiles are taller and were cut to it.
 	const css = readFileSync(new URL("../src/content/styles/base.css", import.meta.url), "utf8").replace(/\/\*[^]*?\*\//g, "");
-	const lifted = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter(([, , body]) => /max-height:\s*none/.test(body))
-		.flatMap(([, selectors]) => selectors.split(",").map(s => s.trim()));
-	for (const where of [".zs-root button", ".zs-prefs button", ".zs-dock button"]) {
-		assert.ok(lifted.includes(where), where);
-	}
+	// Inside :where(), so the rule is as weak as Zotero's and a height set by a class wins.
+	const rule = /(?:^|\})\s*:where\(\.zs-root, \.zs-prefs, \.zs-dock\) button\s*\{([^}]*)\}/.exec(css);
+	assert.ok(rule, "one rule for every button of the chat, of Settings and of the dock");
+	assert.match(rule[1], /(^|;)\s*height:\s*auto/);
+	assert.match(rule[1], /max-height:\s*none/);
 });
 
 test("the chat stays at its latest message while what it shows settles, unless you scrolled up to read", async () => {
