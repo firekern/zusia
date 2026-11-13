@@ -98,11 +98,21 @@ test("a tag is the only thing that publishes a release, and it is checked agains
 	const release = read(".github/workflows/release.yml");
 	assert.match(release, /tags: \["v\*"\]/, "only tags release");
 	assert.doesNotMatch(release, /branches:/, "no branch ever publishes");
-	assert.match(release, /npm test/, "tests gate the release");
-	assert.match(release, /npm run build/);
 	assert.match(release, /node scripts\/updates\.mjs/);
 	assert.match(release, /gh release create/);
 	assert.match(release, /exit 1/, "a tag that disagrees with the versions fails the job");
+	// The release runs all of CI and publishes the .xpi CI built: the tests, the build and
+	// the run inside Zotero gate it, and what ships is what was checked.
+	assert.match(release, /uses: \.\/\.github\/workflows\/ci\.yml/);
+	assert.match(release, /release:\n\s+needs: checks\n/, "nothing is published before the checks pass");
+	assert.doesNotMatch(release, /npm run build/, "no second build of the same commit");
+	const ci = read(".github/workflows/ci.yml");
+	assert.match(ci, /workflow_call:/, "the release can call it");
+	assert.match(ci, /zotero:\n\s+needs: test-and-build\n/, "the plugin runs inside Zotero once it is built");
+	assert.match(ci, /XPI: 1/, "as the packaged .xpi a user installs");
+	for (const version of ["7.", "8.", "9.", "10."]) {
+		assert.ok(new RegExp('zotero: \\[.*"' + version.replace(".", "\\.")).test(ci), "Zotero " + version + "x is checked");
+	}
 });
 
 test("the update manifest points at the release the tag will create", async () => {

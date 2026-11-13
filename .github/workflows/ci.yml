@@ -1,23 +1,66 @@
 name: CI
 
+# Every push to main and every PR; release.yml calls it before it publishes, so a
+# release is the .xpi these jobs built and checked.
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+# A newer push to the same branch makes the run before it pointless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test-and-build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
       - run: npm ci
       - run: npm test
       - run: npm run build
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: zusia-xpi
           path: zusia.xpi
+          if-no-files-found: error
+
+  # The packaged plugin inside a real Zotero, on every major release the manifest
+  # accepts: Zotero 7 is a much older Gecko than 10.
+  zotero:
+    needs: test-and-build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        zotero: ["7.0.32", "8.0.4", "9.0.2", "10.0.8"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: zusia-xpi
+      - name: Run the checks inside Zotero ${{ matrix.zotero }}
+        env:
+          ZOTERO_VERSION: ${{ matrix.zotero }}
+          XPI: 1
+        run: |
+          # The container runs as its own user, not the runner's, and writes the results here.
+          mkdir -p test/integration/out-linux
+          chmod 777 test/integration/out-linux
+          bash test/integration/linux/run.sh
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: zotero-${{ matrix.zotero }}-results
+          path: test/integration/out-linux
+          retention-days: 7

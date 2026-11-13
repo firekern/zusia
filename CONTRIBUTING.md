@@ -65,8 +65,8 @@ Bump `version` in both `package.json` and `src/manifest.json` (a test keeps them
 git tag v1.1.0 && git push origin v1.1.0
 ```
 
-`release.yml` compares the tag with both versions and fails the job if they disagree, then tests, builds, writes `updates.json` and publishes the GitHub release with the `.xpi` attached. `ci.yml` tests and builds every push and PR but publishes nothing.
+`ci.yml` runs on every push and PR and publishes nothing: the unit tests, the build, then the built `.xpi` inside Zotero 7, 8, 9 and 10 on Linux (`XPI=1 npm run test:zotero:linux`, one job per version; the renders and `results.json` of each are kept for a week as the run's artifacts). `release.yml` compares the tag with both versions and fails if they disagree, runs all of `ci.yml`, then writes `updates.json` and publishes the GitHub release with the `.xpi` those checks ran on.
 
-Before tagging, run the checks no workflow runs: `npm run build && XPI=1 npm run test:zotero` (the packaged plugin in a real Zotero), `npm run test:zotero:linux` and `npm run test:zotero:windows`.
+Before tagging, run the checks no workflow runs: `npm run build && XPI=1 npm run test:zotero` (the packaged plugin in a real Zotero on macOS, where Zotero's own stylesheet differs: it caps every button at 25px) and `npm run test:zotero:windows`.
 
 If Actions cannot run, the same release can be cut by hand after pushing the tag: `npm test && npm run build && node scripts/updates.mjs && gh release create vX.Y.Z zusia.xpi updates.json --title "Zusia vX.Y.Z" --generate-notes`. Zotero's update check reads `updates.json` from the latest release, so it has to be attached.
