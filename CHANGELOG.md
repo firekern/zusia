@@ -10,6 +10,12 @@
 - 🔎 A formula too wide for the panel even at its smallest size is no longer shrunk: it was tiny and still cut off. It keeps the size of the formulas around it and scrolls sideways. Formulas that fit when shrunk still shrink.
 - ∎ The square that ends a proof closes the proof's last line, or sits beside its last equation, instead of taking a line of its own.
 - 🫥 The row of quick prompts above the message box fades at its far end in every layout, so a prompt cut by the edge reads as "more this way"; the send button stays readable while the box is empty.
+- 🐛 **macOS: menu rows with a second line ran over each other.** Zotero caps every button at 25px high there, and Zusia's taller ones were cut to it with their text spilling over the rows around them: *Default* in the model menu, every row of the reasoning-effort and attachment menus, the error card's title when it wraps, the arrows and tiles of the setup wizard. They have their own height now.
+- 🐛 **The chat opens at its latest message.** It stopped short of the end, with the last lines faded as if there were more, when the maths font or a drawing arrived after it had scrolled down. It now stays at the end while what it shows settles and while the message box grows as you type; scrolling up to read still leaves it where you put it.
+- 🐛 **An answer being written looks like a finished one.** Its headings, tables and code were unstyled until the answer ended, and then jumped into place.
+- ⚡ **Less stutter while an answer is written and while the panel's edge is dragged.** Every formula in the answer was put back to full size and fitted again several times a second, and on every frame of a drag; now only a formula whose room changed is fitted, starting from the width already measured.
+- 🪟 Glass style: menus and sheets no longer blur the conversation under them, which their opaque background hid anyway.
+- 🧪 Every push now also runs the packaged plugin inside Zotero 7, 8, 9 and 10 on GitHub, and a release is published only after that, with the very `.xpi` those checks ran on.
 
 ## 1.6.4
 
