@@ -413,6 +413,8 @@ Zusia = {
 	_shownDirs: new WeakMap(),
 	// For each conversation, whether it is held at its latest message, and where it was last.
 	_pins: new WeakMap(),
+	// For each formula, the room it was last fitted to and, if it was too wide for it, its width at full size.
+	_fits: new WeakMap(),
 	// The capturing side-nav click listener added to each main window.
 	_sidenavListeners: new WeakMap(),
 

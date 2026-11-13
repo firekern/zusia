@@ -241,7 +241,7 @@ Object.assign(Zusia, {
 		view.root.dataset.chatting = String(history.length > 0);
 		let quick = view.root.querySelector(".zs-quick");
 		if (quick) {
-			this.markOverflow(quick);
+			this.markOverflow([quick]);
 		}
 		if (!history.length) {
 			this.renderEmptyState(view);
@@ -273,47 +273,93 @@ Object.assign(Zusia, {
 	// A formula slightly wider than the pane is shrunk to fit (not below 72%);
 	// anything still too wide, formulas or tables, scrolls behind a soft edge fade
 	// instead of showing a permanent scrollbar.
-	fitWideContent(container) {
-		for (let scroller of container.querySelectorAll(".zs-math-scroll")) {
-			scroller.style.fontSize = "";
-			// Glyph spacing does not scale exactly, so re-measure a few times.
-			let scale = 1;
-			for (let pass = 0; pass < 4 && scale > 0.72; pass++) {
-				let natural = scroller.scrollWidth;
-				let available = scroller.clientWidth;
-				if (!available || natural <= available + 1) {
-					break;
+	//
+	// This runs on every frame while the panel's edge is dragged and several times a
+	// second while an answer is written, and a width read after a size was written lays
+	// the conversation out again. So: a formula in the room it was last fitted to is left
+	// alone, one that was too wide starts from the width it had at full size instead of
+	// being put back to it, and sizes are written for all before widths are read for all.
+	// `fresh` forgets what was measured: the maths font or the text size changed.
+	fitWideContent(container, { fresh = false } = {}) {
+		const FLOOR = 0.72;
+		let scrollers = [...container.querySelectorAll(".zs-math-scroll")];
+		let rooms = scrollers.map(scroller => scroller.clientWidth);
+		let fits = [];
+		scrollers.forEach((scroller, i) => {
+			let last = fresh ? undefined : this._fits.get(scroller);
+			if (!last || last.room !== rooms[i]) {
+				fits.push({ scroller, room: rooms[i], natural: last?.natural, scale: 1 });
+			}
+		});
+		for (let fit of fits) {
+			if (fit.natural === undefined) {
+				fit.scroller.style.fontSize = "";
+			}
+		}
+		for (let fit of fits) {
+			fit.width = fit.natural ?? fit.scroller.scrollWidth;
+			// A formula narrower than its room is as wide as the room: only one that
+			// overflows at full size says how wide it is.
+			fit.natural = fit.width > fit.room + 1 ? fit.width : undefined;
+		}
+		let open = fits;
+		// Glyph spacing does not scale exactly, so re-measure a few times.
+		for (let pass = 0; pass < 4 && open.length; pass++) {
+			if (pass) {
+				for (let fit of open) {
+					fit.width = fit.scroller.scrollWidth;
 				}
-				scale = Math.max(0.72, Math.floor(scale * (available / natural) * 100 - 1) / 100);
-				scroller.style.fontSize = Math.round(scale * 100) + "%";
 			}
-			if (scale === 0.72 && scroller.scrollWidth > scroller.clientWidth + 1) {
-				let excess = scroller.scrollWidth / scroller.clientWidth;
-				// A few pixels too wide at the floor: it reads better a little smaller than
-				// behind a scrollbar that only moves it by those pixels. Wider than that, it
-				// has to scroll whatever its size, and at full size it at least reads like
-				// the formulas around it.
-				scroller.style.fontSize = excess <= 1.06 ? Math.floor(scale / excess * 100 - 1) + "%" : "";
+			let wide = open.filter(fit => fit.room && fit.width > fit.room + 1);
+			for (let fit of wide) {
+				fit.scale = Math.max(FLOOR, Math.floor(fit.scale * (fit.room / fit.width) * 100 - 1) / 100);
 			}
-			this.markOverflow(scroller);
+			// The first pass also puts back to full size what now fits there.
+			for (let fit of pass ? wide : open) {
+				fit.scroller.style.fontSize = fit.scale === 1 ? "" : Math.round(fit.scale * 100) + "%";
+			}
+			open = wide.filter(fit => fit.scale > FLOOR);
 		}
-		for (let wrap of container.querySelectorAll(".zs-table-wrap")) {
-			this.markOverflow(wrap);
+		let atFloor = fits.filter(fit => fit.scale === FLOOR);
+		for (let fit of atFloor) {
+			fit.width = fit.scroller.scrollWidth;
 		}
+		for (let fit of atFloor) {
+			if (fit.width <= fit.room + 1) {
+				continue;
+			}
+			let excess = fit.width / fit.room;
+			// A few pixels too wide at the floor: it reads better a little smaller than
+			// behind a scrollbar that only moves it by those pixels. Wider than that, it
+			// has to scroll whatever its size, and at full size it at least reads like
+			// the formulas around it.
+			fit.scroller.style.fontSize = excess <= 1.06 ? Math.floor(FLOOR / excess * 100 - 1) + "%" : "";
+		}
+		for (let fit of fits) {
+			// Without room it is not shown, and nothing measured then holds once it is.
+			if (fit.room) {
+				this._fits.set(fit.scroller, { room: fit.room, natural: fit.natural });
+			}
+		}
+		this.markOverflow([...fits.map(fit => fit.scroller), ...container.querySelectorAll(".zs-table-wrap")]);
 	},
 
-	markOverflow(scroller) {
-		let update = () => {
-			let overflow = scroller.scrollWidth > scroller.clientWidth + 1;
-			scroller.classList.toggle("zs-overflow", overflow);
-			scroller.classList.toggle("zs-at-start", scroller.scrollLeft <= 1);
-			scroller.classList.toggle("zs-at-end", scroller.scrollLeft + scroller.clientWidth >= scroller.scrollWidth - 1);
-		};
-		if (!scroller._csOverflowWatched) {
-			scroller._csOverflowWatched = true;
-			scroller.addEventListener("scroll", update, { passive: true });
-		}
-		update();
+	// Measured for all before any is marked, for the same reason as above.
+	markOverflow(scrollers) {
+		let measured = scrollers.map(scroller => ({
+			overflow: scroller.scrollWidth > scroller.clientWidth + 1,
+			atStart: scroller.scrollLeft <= 1,
+			atEnd: scroller.scrollLeft + scroller.clientWidth >= scroller.scrollWidth - 1,
+		}));
+		scrollers.forEach((scroller, i) => {
+			scroller.classList.toggle("zs-overflow", measured[i].overflow);
+			scroller.classList.toggle("zs-at-start", measured[i].atStart);
+			scroller.classList.toggle("zs-at-end", measured[i].atEnd);
+			if (!scroller._csOverflowWatched) {
+				scroller._csOverflowWatched = true;
+				scroller.addEventListener("scroll", () => this.markOverflow([scroller]), { passive: true });
+			}
+		});
 	},
 
 	setBusy(view, busy) {

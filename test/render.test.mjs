@@ -393,3 +393,73 @@ test("a wide formula is shrunk only when that makes it fit; one that must scroll
 	assert.equal(never.style.fontSize, "", "tiny and still cut off is worse than full size and cut off");
 	assert.ok(never.classList.contains("zs-overflow"));
 });
+
+test("fitting the formulas lays the conversation out a few times, not once per formula", () => {
+	const { document, plugin } = env;
+	// A size written and then a width read is one layout of the whole conversation.
+	let dirty = false;
+	let layouts = 0;
+	const read = (value) => {
+		layouts += dirty;
+		dirty = false;
+		return value;
+	};
+	const formula = (natural) => {
+		const scroller = document.createElement("div");
+		scroller.className = "zs-math-scroll";
+		let size = "";
+		Object.defineProperty(scroller.style, "fontSize", {
+			get: () => size,
+			set: (value) => {
+				dirty = dirty || value !== size;
+				size = value;
+			},
+		});
+		Object.defineProperties(scroller, {
+			clientWidth: { get: () => read(room) },
+			// Never narrower than its room, as a real box.
+			scrollWidth: { get: () => read(Math.max(room, Math.round(natural * (parseFloat(size) || 100) / 100))) },
+		});
+		return scroller;
+	};
+	let room = 300;
+	const box = document.createElement("div");
+	const formulas = Array.from({ length: 40 }, (_, i) => formula(250 + i * 15));
+	box.append(...formulas);
+	const fitted = () => {
+		assert.equal(formulas[0].style.fontSize, "", "room " + room);
+		for (const f of formulas.filter(f => f.style.fontSize)) {
+			assert.ok(parseFloat(f.style.fontSize) >= 67 && f.scrollWidth <= room + 1, "room " + room + ": " + f.style.fontSize);
+		}
+		assert.equal(formulas[39].style.fontSize, "", "one that must scroll anyway keeps its size");
+		assert.ok(formulas[39].classList.contains("zs-overflow"));
+	};
+	plugin.fitWideContent(box);
+	assert.ok(layouts <= 6, layouts + " layouts for 40 formulas");
+	assert.ok(formulas.filter(f => f.style.fontSize).length > 5);
+	fitted();
+
+	// An answer being written fits its formulas again several times a second.
+	layouts = 0;
+	plugin.fitWideContent(box);
+	assert.equal(layouts, 0, "nothing changed: nothing is laid out again");
+
+	// The panel's edge being dragged: every formula has another room on every frame.
+	const shrunk = formulas.filter(f => f.style.fontSize).length;
+	room = 280;
+	layouts = 0;
+	plugin.fitWideContent(box);
+	assert.ok(layouts <= 3, layouts + " layouts for a narrower panel");
+	fitted();
+	room = 420;
+	plugin.fitWideContent(box);
+	fitted();
+	assert.ok(formulas.filter(f => f.style.fontSize).length < shrunk + 6, "a formula that fits again is back at full size");
+	assert.equal(formulas[9].style.fontSize, "", "385px wide in 420px");
+
+	// The maths font arrives: what was measured before no longer holds.
+	layouts = 0;
+	plugin.fitWideContent(box, { fresh: true });
+	assert.ok(layouts > 0 && layouts <= 6, layouts + " layouts for a fresh fit");
+	fitted();
+});

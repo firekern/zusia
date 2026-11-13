@@ -443,7 +443,14 @@ Object.assign(Zusia, {
 	},
 
 	refreshRoot(root) {
+		// The size and the font of the text change how wide a formula is; the colours and
+		// the glass, which Settings changes on every move of a slider, do not.
+		let text = () => [root.dataset.font, root.dataset.density, root.dataset.layout, root.style.getPropertyValue("--zs-font-size")].join();
+		let before = text();
 		this.applyAppearance(root);
+		if (text() !== before) {
+			this.fitWideContent(root, { fresh: true });
+		}
 		if (!this.getPref("onboarded") && !root.querySelector(".zs-wizard")) {
 			this.showWizard(root);
 		}
