@@ -8,8 +8,9 @@
 	flex-direction: column;
 	padding: 10px 9px;
 	border-radius: inherit;
+	/* Opaque in every style, so nothing behind it is blurred: a blur under an opaque
+	   sheet is drawn every frame and never seen. */
 	background: var(--zs-overlay);
-	backdrop-filter: blur(var(--zs-blur, 18px)) saturate(160%);
 	animation: zs-fade-in 0.18s ease-out;
 }
 .zs-panel-head {

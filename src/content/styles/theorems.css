@@ -55,6 +55,3 @@
 .zs-back:hover:not(:disabled) {
 	background: color-mix(in srgb, var(--zs-accent) 16%, var(--zs-overlay)) !important;
 }
-.zs-root[data-style="glass"] .zs-back {
-	backdrop-filter: blur(var(--zs-blur, 18px)) saturate(170%);
-}

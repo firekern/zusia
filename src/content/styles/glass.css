@@ -2,8 +2,9 @@
  * Glass style (Settings → Appearance → Style, the default).
  * A soft glow of the accent colour, and optionally the user's image, sit
  * behind the sidebar in .zs-backdrop; cards are translucent over it. Only
- * floating surfaces (composer, menus, jump button) blur what is behind them,
- * so a long conversation stays cheap to scroll. Opacity, blur and glow come
+ * the translucent floating surfaces (composer, jump button) blur what is
+ * behind them, so a long conversation stays cheap to scroll; menus and sheets
+ * are opaque and blur nothing. Opacity, blur and glow come
  * from Settings as --zs-glass-pct, --zs-blur and --zs-glow-strength.
  * ===================================================================== */
 
@@ -136,11 +137,13 @@
 	background: color-mix(in srgb, var(--zs-glass-strong) 40%, transparent);
 }
 
-/* Floating surfaces: frosted. */
+/* Floating surfaces: a bright edge and a soft shadow; the translucent ones are frosted. */
 .zs-root[data-style="glass"] :is(.zs-composer, .zs-menu, .zs-jump) {
 	border: 1px solid var(--zs-glass-edge) !important;
-	backdrop-filter: blur(var(--zs-blur, 18px)) saturate(170%);
 	box-shadow: var(--zs-glass-sheen), var(--zs-glass-shadow);
+}
+.zs-root[data-style="glass"] :is(.zs-composer, .zs-jump) {
+	backdrop-filter: blur(var(--zs-blur, 18px)) saturate(170%);
 }
 .zs-root[data-style="glass"] .zs-composer {
 	background: var(--zs-glass);
@@ -157,7 +160,6 @@
 	padding: 5px;
 	border-radius: var(--zs-radius-card);
 	background: var(--zs-overlay);
-	backdrop-filter: blur(calc(var(--zs-blur, 18px) * 1.5)) saturate(180%);
 }
 .zs-root[data-style="glass"] .zs-menu-item {
 	border-radius: 7px;
