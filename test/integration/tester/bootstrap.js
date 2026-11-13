@@ -171,6 +171,13 @@ async function testSidebar(win, CS) {
 		{ left: menuRect.left, right: menuRect.right, height: menuRect.height, limit: visibleRight() });
 	let agyItems = [...root.querySelectorAll(".zs-menu-item")].filter(i => i.textContent.includes("Gemini"));
 	check("Antigravity models are listed from `agy models`", agyItems.length > 0, agyItems.length);
+	// Zotero's macOS stylesheet caps every button at 25px high, which is one line.
+	let described = [...root.querySelectorAll(".zs-menu-item")].filter(i => i.querySelector(".zs-menu-desc")).map((i) => {
+		let row = i.getBoundingClientRect();
+		let text = i.querySelector(".zs-menu-text").getBoundingClientRect();
+		return { row: [Math.round(row.top), Math.round(row.bottom)], text: [Math.round(text.top), Math.round(text.bottom)], held: text.top >= row.top - 0.5 && text.bottom <= row.bottom + 0.5 };
+	});
+	check("menu rows: a row with a description holds both its lines", described.length > 0 && described.every(d => d.held), described.filter(d => !d.held));
 	await snapshot(win, "zotero-model-menu", { x: paneRect0.x, y: paneRect0.bottom - 700, width: paneRect0.width, height: 700 });
 	let pick = (label) => {
 		let items = [...root.querySelectorAll(".zs-menu-item")];
@@ -587,6 +594,9 @@ async function testDock(win, CS) {
 	let rootRect = root.getBoundingClientRect();
 	let composer = root.querySelector(".zs-composer").getBoundingClientRect();
 	let log = root.querySelector(".zs-log");
+	// What it shows grows after the first scroll to the end: the maths font, a drawing's height.
+	check("dock: the chat opens at its latest message", log.scrollHeight - log.scrollTop - log.clientHeight <= 2,
+		{ scrollHeight: log.scrollHeight, scrollTop: Math.round(log.scrollTop), clientHeight: log.clientHeight });
 	check("dock: the chat fills its height with the composer at the bottom",
 		rootRect.top - dockRect.top < 12 && dockRect.bottom - composer.bottom < 24,
 		{ dock: [Math.round(dockRect.top), Math.round(dockRect.bottom)], root: Math.round(rootRect.top), composer: Math.round(composer.bottom) });

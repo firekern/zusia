@@ -37,7 +37,8 @@ Object.assign(Zusia, {
 		// zs-live marks the answer still being written, for the layouts that show it (Visual's buddy).
 		let turn = this.el(doc, "div", "zs-turn zs-live");
 		let live = this.el(doc, "div", "zs-msg zs-assistant");
-		let content = this.el(doc, "div", "zs-live-content");
+		// zs-rich as on a finished answer: its blocks are styled under that class.
+		let content = this.el(doc, "div", "zs-live-content zs-rich");
 		let typing = this.el(doc, "div", "zs-typing");
 		typing.setAttribute("aria-busy", "true");
 		let spinner = this.el(doc, "span", "zs-spinner");

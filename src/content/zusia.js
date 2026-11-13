@@ -411,6 +411,8 @@ Zusia = {
 	_views: new WeakMap(),
 	// The paper folder each item pane section body showed last.
 	_shownDirs: new WeakMap(),
+	// For each conversation, whether it is held at its latest message, and where it was last.
+	_pins: new WeakMap(),
 	// The capturing side-nav click listener added to each main window.
 	_sidenavListeners: new WeakMap(),
 

@@ -235,3 +235,98 @@ test("glass: what lies over the chat's text is opaque, whatever opacity the card
 		assert.ok(!/transparent|rgba|pct/.test(value), "menus, sheets and the wizard would show the text under them: " + value.trim());
 	}
 });
+
+test("no Zusia button keeps the height Zotero caps every button at on macOS", () => {
+	// Zotero's own stylesheet there: button { max-height: 25px }. A menu row with a second
+	// line, the error card's title and the wizard's tiles are taller and were cut to it.
+	const css = readFileSync(new URL("../src/content/styles/base.css", import.meta.url), "utf8").replace(/\/\*[^]*?\*\//g, "");
+	const lifted = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter(([, , body]) => /max-height:\s*none/.test(body))
+		.flatMap(([, selectors]) => selectors.split(",").map(s => s.trim()));
+	for (const where of [".zs-root button", ".zs-prefs button", ".zs-dock button"]) {
+		assert.ok(lifted.includes(where), where);
+	}
+});
+
+test("the chat stays at its latest message while what it shows settles, unless you scrolled up to read", async () => {
+	const env = loadPlugin({ prefs: { [PREFIX + "onboarded"]: true } });
+	const { window, document, plugin } = env;
+	// jsdom has no layout: the sizes are set here, and reported the way a browser reports them.
+	const observers = [];
+	window.ResizeObserver = class {
+		constructor(callback) {
+			this.callback = callback;
+			this.targets = new Set();
+			observers.push(this);
+		}
+		observe(target) { this.targets.add(target); }
+		unobserve(target) { this.targets.delete(target); }
+	};
+	window.requestAnimationFrame = fn => setTimeout(fn, 0);
+	window.cancelAnimationFrame = clearTimeout;
+	const { root } = openChat(env, { ctx: { dir: "/tmp/x" }, className: "zs-dock" });
+	const log = root.querySelector(".zs-log");
+	const wrap = root.querySelector(".zs-log-wrap");
+	let height = 2000;
+	let top = 0;
+	Object.defineProperties(log, {
+		scrollHeight: { get: () => height },
+		clientHeight: { get: () => 600 },
+		scrollTop: { get: () => top, set: (value) => { top = Math.max(0, Math.min(value, height - 600)); } },
+	});
+	const resized = () => observers.forEach(o => o.callback([{ target: log, contentRect: { width: 300 } }]));
+	const scrolledTo = (value) => {
+		top = value;
+		log.dispatchEvent(new window.Event("scroll"));
+	};
+	const settle = () => new Promise(resolve => setTimeout(resolve, 0));
+
+	plugin.scrollToEnd(log);
+	assert.equal(top, 1400);
+	// A drawing gets its height and the maths font arrives after that first scroll; the
+	// scroll event of the first scroll comes later still, when the end is already further.
+	height = 2114;
+	scrolledTo(1400);
+	resized();
+	assert.equal(top, 1514, "still at the latest message");
+	assert.equal(wrap.classList.contains("zs-more-below"), false);
+
+	scrolledTo(700);
+	height = 2300;
+	resized();
+	assert.equal(top, 700, "scrolled up to read: left there");
+	assert.equal(wrap.classList.contains("zs-more-below"), true, "and the edge says there is more");
+
+	scrolledTo(1700);
+	height = 2500;
+	resized();
+	assert.equal(top, 1900, "back at the end, it follows again");
+
+	// An answer being written follows Settings → Follow the answer, not this.
+	const live = document.createElement("div");
+	live.className = "zs-turn zs-live";
+	log.appendChild(live);
+	await settle();
+	assert.ok(observers.some(o => o.targets.has(live)), "every message is watched for its height");
+	height = 2700;
+	resized();
+	assert.equal(top, 1900);
+	live.remove();
+	await settle();
+	assert.ok(!observers.some(o => o.targets.has(live)), "and no longer once it is gone");
+});
+
+test("an answer still being written is styled like a finished one", () => {
+	const { root, plugin, window } = sidebar();
+	const view = plugin._views.get(root);
+	plugin.showPending(view, {
+		question: "And the inverse?", backend: "claude", startedAt: Date.now(), partial: "## Why roots of unity\n\nBecause.", status: "writing",
+		listeners: new Set(), promise: new Promise(() => {}), steps: [], images: [], modes: [],
+	});
+	// Headings, lists, tables and code are styled under .zs-rich, which the finished answer
+	// carries: without it they were plain text until the answer ended, and then jumped.
+	const heading = root.querySelector(".zs-live .zs-h2");
+	// The live answer counts its seconds on a timer, which would keep the test process alive.
+	window.close();
+	assert.equal(heading.textContent, "Why roots of unity");
+	assert.ok(heading.closest(".zs-rich"));
+});

@@ -56,7 +56,10 @@ Object.assign(Zusia, {
 			log.scrollTo({ top: log.scrollHeight, behavior: "smooth" });
 		});
 		jump.hidden = true;
-		log.addEventListener("scroll", () => this.updateJump(root));
+		log.addEventListener("scroll", () => {
+			this.trackPin(log);
+			this.updateJump(root);
+		});
 		// Refit formulas and tables when the pane is resized or the maths font arrives.
 		let win = doc.defaultView;
 		if (doc.fonts && doc.fonts.addEventListener) {
@@ -67,15 +70,39 @@ Object.assign(Zusia, {
 		if (win && win.ResizeObserver) {
 			let pendingFit = null;
 			let lastWidth = 0;
-			new win.ResizeObserver((entries) => {
-				let width = Math.round(entries[0].contentRect.width);
-				if (width === lastWidth) {
-					return;
+			// Of the conversation and of each message in it: the room changes when the pane or
+			// the message box does, a message's height when the maths font arrives, a drawing
+			// gets its size or a formula is refitted.
+			let sizes = new win.ResizeObserver((entries) => {
+				let own = entries.find(entry => entry.target === log);
+				let width = own ? Math.round(own.contentRect.width) : lastWidth;
+				if (width !== lastWidth) {
+					lastWidth = width;
+					win.cancelAnimationFrame(pendingFit);
+					pendingFit = win.requestAnimationFrame(() => this.fitWideContent(log));
 				}
-				lastWidth = width;
-				win.cancelAnimationFrame(pendingFit);
-				pendingFit = win.requestAnimationFrame(() => this.fitWideContent(log));
-			}).observe(log);
+				// An answer being written follows Settings → Follow the answer instead (ask.js).
+				if (this._pins.get(log)?.pinned && !log.querySelector(".zs-live")) {
+					this.scrollToEnd(log);
+				}
+				// No scroll event says that the end moved away, or came back.
+				this.updateJump(root);
+			});
+			sizes.observe(log);
+			new win.MutationObserver((records) => {
+				for (let record of records) {
+					for (let node of record.addedNodes) {
+						if (node.nodeType === node.ELEMENT_NODE) {
+							sizes.observe(node);
+						}
+					}
+					for (let node of record.removedNodes) {
+						if (node.nodeType === node.ELEMENT_NODE) {
+							sizes.unobserve(node);
+						}
+					}
+				}
+			}).observe(log, { childList: true });
 		}
 		let back = this.ghostButton(doc, "zs-back", "back", "Back", () => this.goBack(root));
 		back.hidden = true;
@@ -270,8 +297,26 @@ Object.assign(Zusia, {
 		}
 	},
 
+	// Going to the latest message holds the conversation there: what it shows may still
+	// grow (see the size observer in renderSkeleton), and the end would move away.
 	scrollToEnd(logEl) {
 		logEl.scrollTop = logEl.scrollHeight;
+		this._pins.set(logEl, { pinned: true, top: logEl.scrollTop });
+	},
+
+	// On every scroll. Content that grows leaves the position where it was, so being away
+	// from the end says nothing: only moving up is someone going back to read.
+	trackPin(logEl) {
+		let pin = this._pins.get(logEl) || { pinned: true, top: 0 };
+		let top = logEl.scrollTop;
+		if (logEl.scrollHeight - top - logEl.clientHeight < 40) {
+			pin.pinned = true;
+		}
+		else if (top < pin.top) {
+			pin.pinned = false;
+		}
+		pin.top = top;
+		this._pins.set(logEl, pin);
 	},
 
 	updateJump(root) {

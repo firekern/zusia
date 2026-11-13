@@ -79,6 +79,14 @@
 	color: inherit;
 	cursor: pointer;
 }
+/* Zotero's stylesheet on macOS caps every button at 25px high. A menu row with a second
+   line, the error card's title and the wizard's tiles are taller: they were cut to it,
+   and their text ran over the rows around them. The dock's own buttons are outside .zs-root. */
+.zs-root button,
+.zs-prefs button,
+.zs-dock button {
+	max-height: none;
+}
 .zs-root button:focus-visible,
 .zs-prefs button:focus-visible {
 	outline: 2px solid var(--zs-accent);
