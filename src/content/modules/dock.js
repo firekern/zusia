@@ -82,7 +82,7 @@ Object.assign(Zusia, {
 		resizer.addEventListener("dblclick", () => this.setDockWidth(this.DOCK_WIDTH.initial));
 		box.append(rail, body, resizer);
 
-		let dock = { box, body, rail, resizer, paperID: null, rendered: false, itemsView: null, treeTimer: null, readerTimer: null, fixed: null, tip: null };
+		let dock = { box, body, rail, resizer, paperID: null, rendered: false, itemsView: null, treeTimer: null, readerTimer: null, fixed: null, tip: null, dragged: null };
 		// Returns nothing: Zotero awaits what a select listener returns before it calls the
 		// next one, and a render can last as long as an answer being written.
 		dock.onSelect = () => {
@@ -109,7 +109,13 @@ Object.assign(Zusia, {
 		win.addEventListener("keydown", dock.onKey, true);
 		// The room beside Zotero's panes changes with the window, and when one of them is
 		// collapsed or dragged: Zotero then rewrites what its fixed panes need on the root.
-		dock.onResize = () => this.updateDock(win);
+		// Only the window's own resize: the reader's windows send theirs up here too, one
+		// for every step the PDF is squeezed by a drag of the dock's edge.
+		dock.onResize = (event) => {
+			if (event.target === win) {
+				this.updateDock(win);
+			}
+		};
 		win.addEventListener("resize", dock.onResize);
 		dock.needs = new win.MutationObserver(() => {
 			let fixed = doc.documentElement.style.getPropertyValue("--width-of-fixed-components");
@@ -254,7 +260,8 @@ Object.assign(Zusia, {
 		this.renderDockTip(win, dock);
 		dock.body.hidden = !open;
 		dock.resizer.hidden = !open;
-		dock.box.style.width = open ? this.dockWidth(win) + "px" : "";
+		// Mid-drag the edge stays under the pointer: the saved width is the one before the drag.
+		dock.box.style.width = open ? (dock.dragged ?? this.dockWidth(win)) + "px" : "";
 		dock.box.classList.toggle("zs-dock-drawer", open && this.dockLimits(win).drawer);
 		if (open) {
 			this.syncDock(win).catch(e => this.logError("syncDock", e));
@@ -334,7 +341,8 @@ Object.assign(Zusia, {
 		if (event.button !== 0) {
 			return;
 		}
-		let { box, resizer } = this._docks.get(win);
+		let dock = this._docks.get(win);
+		let { box, resizer } = dock;
 		let startX = event.screenX;
 		let startWidth = box.getBoundingClientRect().width;
 		// The edge that is dragged faces Zotero's panes: a panel on the right grows leftwards.
@@ -344,6 +352,7 @@ Object.assign(Zusia, {
 			// What is shown is what is saved: the pointer may be far past either limit.
 			width = Math.min(this.dockLimits(win).max, Math.max(this.DOCK_WIDTH.min, startWidth + towardsEnd * (e.screenX - startX)));
 			// The pref is written once, on release; meanwhile only this window follows the pointer.
+			dock.dragged = width;
 			box.style.width = width + "px";
 		};
 		let ended = false;
@@ -356,6 +365,7 @@ Object.assign(Zusia, {
 				resizer.removeEventListener(type, type === "pointermove" ? move : end);
 			}
 			box.classList.remove("zs-dock-resizing");
+			dock.dragged = null;
 			this.setDockWidth(width);
 		};
 		// Captured, or the reader's own document would swallow the moves once the pointer is over it.

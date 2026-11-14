@@ -487,6 +487,48 @@ test("a drag past either limit saves the width that was shown, and ends when the
 	plugin.removePlacement();
 });
 
+test("while its edge is dragged the panel keeps the dragged width, whatever is resized around it", () => {
+	const { plugin, window, dock, prefs } = mainWindow();
+	plugin.applyPlacement();
+	const resizer = dock().querySelector(".zs-dock-resizer");
+	resizer.setPointerCapture = () => {};
+	dock().getBoundingClientRect = () => ({ width: 380 });
+	const pointer = (type, screenX) => {
+		const event = new window.MouseEvent(type, { bubbles: true, cancelable: true, button: 0, screenX });
+		event.pointerId = 1;
+		resizer.dispatchEvent(event);
+	};
+	let updates = 0;
+	const updateDock = plugin.updateDock;
+	plugin.updateDock = function (...args) {
+		updates++;
+		return updateDock.apply(this, args);
+	};
+	pointer("pointerdown", 1000);
+	pointer("pointermove", 940);
+	assert.equal(dock().style.width, "440px");
+
+	// The drag resizes the PDF beside the panel, and in Zotero the resize events of the
+	// reader's own windows bubble up to the main window: they are not the window's.
+	const inner = new window.Event("resize", { bubbles: true });
+	Object.defineProperty(inner, "target", { value: {} });
+	window.dispatchEvent(inner);
+	assert.equal(updates, 0, "a pane resized inside the window is not the window resized");
+	assert.equal(dock().style.width, "440px");
+
+	// Zotero rewriting what its panes need, or the window itself resized, mid-drag.
+	window.dispatchEvent(new window.Event("resize"));
+	assert.equal(updates, 1);
+	assert.equal(dock().style.width, "440px", "the edge stays under the pointer");
+	assert.equal(prefs[PREFIX + "dockWidth"], undefined, "nothing is saved before the release");
+
+	pointer("pointerup", 940);
+	assert.equal(prefs[PREFIX + "dockWidth"], 440);
+	window.dispatchEvent(new window.Event("resize"));
+	assert.equal(dock().style.width, "440px");
+	plugin.removePlacement();
+});
+
 test("when Zotero rebuilds its items tree the dock listens to the new one", async () => {
 	const { plugin, window, state, shown } = mainWindow();
 	plugin.applyPlacement();

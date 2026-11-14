@@ -833,6 +833,28 @@ async function testDockFollows(win, CS) {
 		{ dockLeft: Math.round(dockRect.left), reader: [Math.round(tab.left), Math.round(tab.width)] });
 	await snapshot(win, "zotero-dock-reader");
 
+	// Beside a PDF, a drag of the dock's edge resizes the reader, whose windows then
+	// send resize events up to the main window: the edge must stay under the pointer.
+	let grip = dock.querySelector(".zs-dock-resizer").getBoundingClientRect();
+	let before = dockRect.width;
+	let at = { x: grip.left + grip.width / 2, y: grip.top + 200 };
+	let mouse = (type, buttons) => win.windowUtils.sendMouseEvent(type, at.x, at.y, 0, type === "mousemove" ? 0 : 1, 0, false, 0, 1, true, false, buttons);
+	mouse("mousemove", 0);
+	mouse("mousedown", 1);
+	for (let step = 0; step < 6; step++) {
+		at.x -= 10;
+		mouse("mousemove", 1);
+		await new Promise(resolve => win.requestAnimationFrame(resolve));
+	}
+	await Zotero.Promise.delay(400);
+	let held = dock.getBoundingClientRect().width;
+	mouse("mouseup", 0);
+	await Zotero.Promise.delay(300);
+	check("dock follows: beside a PDF, its edge stays where it is dragged to, held and released",
+		Math.round(held) === Math.round(before) + 60 && CS.getPref("dockWidth") === Math.round(before) + 60,
+		{ before: Math.round(before), held: Math.round(held), saved: CS.getPref("dockWidth") });
+	CS.setDockWidth(Math.round(before));
+
 	let closed = win.ZoteroContextPane.collapsed;
 	CS.setDockOpen(false);
 	CS.askAboutSelection(reader, { text: "PELICAN", pageLabel: "1" }, false);
