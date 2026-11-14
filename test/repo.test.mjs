@@ -28,6 +28,23 @@ test("the README videos are recorded in Zotero and shown with their full-quality
 	assert.ok(exists("test/videos/zotero/record.sh"));
 });
 
+test("the videos can be made without any permission, and the README says how and that they were", () => {
+	const readme = read("README.md");
+	const record = read("test/videos/zotero/record.sh");
+	assert.ok(readme.includes("INSIDE=1 ZUSIA_BACKGROUND="), "the command is in the README");
+	assert.ok(!/recordings on this page were made with the chat in Zotero's item pane/.test(readme), "the videos show the panel, not the item pane");
+	assert.ok(!readme.includes("open the side pane"), "no video opens a side pane any more");
+	// Each mode of record.sh, and the files the one from inside is made of.
+	for (const mode of ["INSIDE", "REHEARSE", "RECUT"]) {
+		assert.ok(record.includes("${" + mode + ":-0}"), mode + " is a mode of record.sh");
+	}
+	for (const file of ["camera.js", "compose.py", "cursors.swift", "forget.js"]) {
+		assert.ok(exists("test/videos/zotero/" + file), file);
+	}
+	// The pointers are Apple's images: made on the machine that records, never kept here.
+	assert.ok(!readdirSync(new URL("./videos/zotero/", import.meta.url)).some(name => name.endsWith(".png")));
+});
+
 test("every bundled third-party file is credited with its licence", () => {
 	const notices = read("THIRD_PARTY_NOTICES.md");
 	const bundled = [
