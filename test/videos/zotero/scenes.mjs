@@ -60,7 +60,7 @@ async function setUp(s, { paper, page = 0, modes = {}, look = LOOK, onboarded = 
 		for (let input of doc.querySelectorAll(".zs-input")) input.value = "";
 		await Zotero.Promise.delay(900);
 		return true;`);
-	s.front();
+	await s.front();
 	await s.moveTo({ x: 700, y: 620 }, { ms: 300 });
 }
 
@@ -236,7 +236,7 @@ const SCENES = {
 			s.mark("start");
 			await sleep(900);
 			await s.click(`${ACTIVE} .zs-input`, { after: 200 });
-			await s.type("State the assumptions and the regret bound of Theorem 4.1, then sketch the proof.", { perChar: 28 });
+			await s.type("State Theorem 4.1 in a theorem box, then sketch its proof as lemmas that refer to each other.", { perChar: 26 });
 			await sleep(400);
 			await s.click(`${ACTIVE} .zs-send`, { after: 300 });
 			s.mark("sent");
@@ -434,7 +434,7 @@ const SCENES = {
 				d.getElementById("prefs-content").scrollTop -= 12;
 				pw.focus();
 				return true;`);
-			s.front();
+			await s.front();
 			await s.moveTo({ x: 700, y: 620 }, { ms: 250 });
 		},
 		async run(s) {
@@ -463,7 +463,7 @@ const SCENES = {
 			s.mark("labels");
 			await s.run(`${PREFS}.close(); let CS = Zotero.Zusia; if (CS._pickBackground) CS.pickBackground = CS._pickBackground;`);
 			await sleep(900);
-			s.front();
+			await s.front();
 			await s.moveTo(await s.rect(`${ACTIVE} .zs-log`), { ms: 500, dx: 150 });
 			await s.run(`let log = ${LOG}; let from = log.scrollTop, to = Math.max(0, from - 420), start = Date.now();
 				while (Date.now() - start < 1800) { let t = (Date.now() - start) / 1800; log.scrollTop = from + (to - from) * t; await new Promise(r => win.requestAnimationFrame(r)); }`);
@@ -520,7 +520,7 @@ Object.assign(PAPERS, await s.run(`let items = await Zotero.Items.getAll(Zotero.
 	}
 	return ids;`));
 await scene.setup(s);
-s.front();
+await s.front();
 await sleep(1000);
 if (!dry) {
 	await s.record(out);
@@ -530,6 +530,6 @@ if (dry) {
 	s.zotero.close();
 	process.exit(0);
 }
-let marks = await s.stop();
+let marks = await s.stop(out);
 writeFileSync(out.replace(/\.\w+$/, ".marks.json"), JSON.stringify(marks, null, 2));
 process.exit(0);

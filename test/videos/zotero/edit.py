@@ -34,6 +34,9 @@ FOCUS = {
 	"settings": (0, 150, 2400, 1500),
 }
 FONT = "/System/Library/Fonts/Supplemental/Arial Bold.ttf"
+# Arial has no key symbols: these are drawn in the system font.
+KEYS = "⌥⌘⇧⌃"
+KEY_FONT = "/System/Library/Fonts/SFNS.ttf"
 
 edl = json.loads(Path(sys.argv[1]).read_text())
 source = Path(edl["source"])
@@ -46,10 +49,21 @@ def caption_png(text, step, path):
 	"""A rounded pill with a step number, sized to the text."""
 	font = ImageFont.truetype(FONT, 34)
 	small = ImageFont.truetype(FONT, 28)
+	keys = ImageFont.truetype(KEY_FONT, 34)
+	keys.set_variation_by_name("Bold")
 	pad_x, pad_y, gap = 26, 18, 16
 	badge = 46 if step else 0
 	measure = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
-	tw = measure.textbbox((0, 0), text, font=font)[2]
+	# The text in runs, each with the font that has its characters.
+	runs = []
+	for char in text:
+		face = keys if char in KEYS else font
+		if runs and runs[-1][1] is face:
+			runs[-1][0] += char
+		else:
+			runs.append([char, face])
+	widths = [measure.textlength(run, font=face) for run, face in runs]
+	tw = round(sum(widths))
 	w = pad_x * 2 + badge + (gap if badge else 0) + tw
 	h = pad_y * 2 + 44
 	image = Image.new("RGBA", (w, h), (0, 0, 0, 0))
@@ -61,7 +75,9 @@ def caption_png(text, step, path):
 		bw = draw.textbbox((0, 0), str(step), font=small)[2]
 		draw.text((x + (badge - bw) / 2, (h - 34) / 2), str(step), font=small, fill="white")
 		x += badge + gap
-	draw.text((x, (h - 44) / 2 + 2), text, font=font, fill="white")
+	for (run, face), width in zip(runs, widths):
+		draw.text((x, (h - 44) / 2 + 2), run, font=face, fill="white")
+		x += width
 	image.save(path)
 	return w, h
 
@@ -80,14 +96,16 @@ for i, segment in enumerate(edl["segments"]):
 		f"pad={W}:{H}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1[v{i}]")
 	labels.append(f"[v{i}]")
 	length = (segment["to"] - segment["from"]) / speed
-	overlays.append((segment.get("caption"), length, segment.get("step", True)))
+	# The message box is at the bottom of its close-up, with its buttons at the left:
+	# there the caption goes to the top, off what is being clicked.
+	overlays.append((segment.get("caption"), length, segment.get("step", True), segment.get("focus") == "composer"))
 
 filters.append("".join(labels) + f"concat=n={len(labels)}:v=1,fps=30[base]")
 
 # Captions ride on the concatenated timeline.
 chain = "[base]"
 clock = 0.0
-for i, (text, length, numbered) in enumerate(overlays):
+for i, (text, length, numbered, top) in enumerate(overlays):
 	if text:
 		if numbered:
 			step += 1
@@ -98,7 +116,7 @@ for i, (text, length, numbered) in enumerate(overlays):
 		start, end = clock + 0.15, clock + length - 0.15
 		filters.append(f"[{index}:v]format=rgba,fade=t=in:st=0:d=0.25:alpha=1,"
 			f"fade=t=out:st={max(0.3, length - 0.4):.2f}:d=0.3:alpha=1,setpts=PTS-STARTPTS+{start:.2f}/TB[c{i}]")
-		filters.append(f"{chain}[c{i}]overlay=40:H-h-40:enable='between(t,{start:.2f},{end:.2f})'[o{i}]")
+		filters.append(f"{chain}[c{i}]overlay=40:{'40' if top else 'H-h-40'}:enable='between(t,{start:.2f},{end:.2f})'[o{i}]")
 		chain = f"[o{i}]"
 	clock += length
 

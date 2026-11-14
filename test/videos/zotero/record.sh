@@ -7,9 +7,19 @@
 # Screen Recording and Accessibility permission for the app the terminal runs in.
 # Don't touch the Mac while it records: the scenes move the real pointer.
 #
+#   INSIDE=1 ZUSIA_BACKGROUND=illustration.jpg npm run videos
+# films the same scenes from inside Zotero instead of off the screen: Zotero draws its
+# own window into every frame, clicks and typing are sent to it as events, and the
+# pointer is drawn into the film afterwards. It needs neither permission nor cliclick,
+# leaves the Mac's pointer alone, and films at twice the size on any display. Keep the
+# demo window uncovered, and the pointer off it, while it runs.
+#
+#   RECUT=1 npm run videos
+# cuts and encodes the last recording again, after a change to the captions or the cuts.
+#
 #   REHEARSE=1 ZUSIA_BACKGROUND=illustration.jpg npm run videos
-# walks the same scenes without the pointer, the recorder or the assistant, so it needs
-# neither permission, and saves what the window shows at every mark of a scene in
+# walks the scenes the same way without filming them and without the assistant, and
+# saves what the window shows at every mark of a scene in
 # ~/.cache/zusia-demo/rehearsal/<scene>/. Run it after the interface changes.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -17,7 +27,7 @@ repo="$(cd "$here/../../.." && pwd)"
 base="$HOME/.cache/zusia-demo"
 raw="$base/raw"
 out="$repo/docs/videos"
-mkdir -p "$base/pdfs" "$raw" "$out"
+mkdir -p "$base/pdfs" "$raw" "$out/candidates"
 
 # The scenes of the README, in the order they are recorded: introStyle restyles the
 # chat introChat leaves behind. For each, the video's name, and the GIF's rate and width.
@@ -34,6 +44,29 @@ video_of() {
 	esac
 }
 for scene in "${scenes[@]}"; do video_of "$scene" > /dev/null; done
+
+# The films of the scenes -> docs/videos/<name>.{gif,mp4}.
+cut() {
+	python3 "$here/build.py" "${scenes[@]}"
+
+	# candidate mp4 -> docs/videos/<name>.{gif,mp4}, the MP4 at the 1280x800 of the first recordings.
+	for scene in "${scenes[@]}"; do
+		read -r name fps width <<< "$(video_of "$scene")"
+		candidate="$out/candidates/$scene.mp4"
+		ffmpeg -hide_banner -loglevel error -y -i "$candidate" -vf "fps=$fps,scale=$width:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=255:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle" "$out/$name.gif"
+		ffmpeg -hide_banner -loglevel error -y -i "$candidate" -vf "scale=1280:800:flags=lanczos" -c:v libx264 -crf 20 -preset slow -pix_fmt yuv420p -movflags +faststart "$out/$name.mp4"
+	done
+	ls -la "$out"
+}
+# RECUT=1 cuts and encodes again the films of the last recording, after a change to
+# the captions or the cuts (build.py, edit.py): nothing is recorded, no one is asked.
+if [ "${RECUT:-0}" = 1 ]; then
+	cut
+	exit 0
+fi
+
+inside=0
+if [ "${INSIDE:-0}" = 1 ] || [ "${REHEARSE:-0}" = 1 ]; then inside=1; fi
 
 for id in 1706.03762 1512.03385 1810.04805 2010.11929 2005.14165 1412.6980; do
 	[ -s "$base/pdfs/$id.pdf" ] || curl -sL -o "$base/pdfs/$id.pdf" "https://arxiv.org/pdf/$id"
@@ -61,6 +94,9 @@ user_pref("devtools.debugger.remote-enabled", true);
 user_pref("devtools.chrome.enabled", true);
 user_pref("devtools.debugger.prompt-connection", false);
 PREFS
+	# Run from inside, the demo window is never in front of the other apps: with this
+	# Zotero lets it be told that it is, so it looks it.
+	[ "$inside" = 0 ] || echo 'user_pref("focusmanager.testmode", true);' >> "$base/profile/user.js"
 	nohup /Applications/Zotero.app/Contents/MacOS/zotero -profile "$base/profile" -no-remote --start-debugger-server 6200 > "$base/zotero.log" 2>&1 &
 	until nc -z 127.0.0.1 6200 2>/dev/null; do sleep 1; done
 	sleep 8
@@ -88,20 +124,17 @@ if [ "${REHEARSE:-0}" = 1 ]; then
 		echo "$scene"
 		ZUSIA_REHEARSE="$shots" node "$here/scenes.mjs" "$scene" "$shots/$scene.mp4"
 	done
+	# The next recording starts by forgetting what was said here.
+	touch "$base/rehearsed"
 	echo "Rehearsed. What each mark showed is in $base/rehearsal/. The demo Zotero is left open, answering with the canned text: quit it before recording."
 	exit 0
 fi
+if [ -e "$base/rehearsed" ]; then
+	inside forget.js ""
+	rm "$base/rehearsed"
+fi
 
 for scene in "${scenes[@]}"; do
-	node "$here/scenes.mjs" "$scene" "$raw/$scene.mp4"
+	ZUSIA_INSIDE="${INSIDE:-0}" node "$here/scenes.mjs" "$scene" "$raw/$scene.mp4"
 done
-python3 "$here/build.py" "${scenes[@]}"
-
-# candidate mp4 -> docs/videos/<name>.{gif,mp4}, the MP4 at the 1280x800 of the first recordings.
-for scene in "${scenes[@]}"; do
-	read -r name fps width <<< "$(video_of "$scene")"
-	candidate="$out/candidates/$scene.mp4"
-	ffmpeg -hide_banner -loglevel error -y -i "$candidate" -vf "fps=$fps,scale=$width:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=255:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle" "$out/$name.gif"
-	ffmpeg -hide_banner -loglevel error -y -i "$candidate" -vf "scale=1280:800:flags=lanczos" -c:v libx264 -crf 20 -preset slow -pix_fmt yuv420p -movflags +faststart "$out/$name.mp4"
-done
-ls -la "$out"
+cut
