@@ -45,6 +45,10 @@ const server = createServer(async (req, res) => {
 		return res.end(JSON.stringify({ model: body.model, input_tokens: Math.ceil(JSON.stringify(body.messages).length / 4) }));
 	}
 	if (req.url === "/api/show") {
+		if (body.model === "memory-error-model") {
+			res.writeHead(500, { "content-type": "application/json" });
+			return res.end(JSON.stringify({ error: "model requires more system memory (16 GiB) than is available (8 GiB)" }));
+		}
 		res.writeHead(200, { "content-type": "application/json" });
 		return res.end(JSON.stringify({ parameters: "num_ctx 16384\ntemperature 0.7", details: { quantization_level: "Q4_K_M" },
 			capabilities: ["completion", "tools", "thinking"], thinking: { values: [false, true, "deep"], default: true } }));

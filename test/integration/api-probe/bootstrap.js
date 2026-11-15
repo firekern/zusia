@@ -56,6 +56,8 @@ async function run() {
 		check("native Ollama NDJSON handles fragmented UTF-8", native.text === "Profilo caffè verificato");
 		check("native Ollama counters and timing are collected", native.metrics?.completionTokens > 0 && native.metrics?.generationMs > 0 && native.metrics?.cachedTokens === 0);
 		check("native Ollama capabilities and model-defined thinking values are detected", CS.getAPIConfig("ollama").tools && CS.apiReasoningChoices("ollama").some(c => c.id === "deep"));
+		let nativeMemoryError = await CS.runBackend("ollama", { ...request, model: "memory-error-model" });
+		check("native Ollama HTTP error strings produce a memory recovery action", nativeMemoryError.diagnostic?.code === "memory" && nativeMemoryError.diagnostic?.action === "settings");
 		let runtime = CS._apiRuntimeProfiles.get(CS.apiProfileKey(ollama, "smoke-model"));
 		check("Ollama provider profile reads actual context and quantization", runtime.contextTokens === 16384 && runtime.quantization === "Q4_K_M");
 		ollama.tools = true;

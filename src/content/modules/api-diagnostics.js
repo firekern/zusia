@@ -7,7 +7,7 @@ Object.assign(Zusia, {
 		let code = error?.code;
 		if (!code) {
 			if (status === 401 || status === 403 || /enter an API key|OS key store/i.test(message)) code = "auth";
-			else if (/out of memory|insufficient.*memory|CUDA.*memory|not enough.*(VRAM|memory)|allocation.*fail/i.test(message)) code = "memory";
+			else if (/out of memory|insufficient.*memory|CUDA.*memory|not enough.*(VRAM|memory)|allocation.*fail|requires more (?:system )?memory|failed to allocate.*(?:buffer|memory)/i.test(message)) code = "memory";
 			else if (/context.*(limit|budget|window|full)|exceed.*context/i.test(message)) code = "context";
 			else if (/model.*changed|changed.*model/i.test(message)) code = "model_changed";
 			else if (/ended before|interrupted.*response|incomplete.*(stream|answer)/i.test(message)) code = "incomplete";

@@ -101,7 +101,7 @@ Object.assign(Zusia, {
 
 	apiError(status, text, headers = {}) {
 		let message = "";
-		try { let body = JSON.parse(text); message = body.error?.message || body.detail || body.message || ""; }
+		try { let body = JSON.parse(text); message = typeof body.error === "string" ? body.error : body.error?.message || body.detail || body.message || ""; }
 		catch (e) {}
 		if (typeof message !== "string") message = "";
 		let key = (headers.Authorization || "").replace(/^Bearer /, "");

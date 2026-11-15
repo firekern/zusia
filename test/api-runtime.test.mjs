@@ -78,6 +78,28 @@ test("diagnostics distinguish auth, memory, unavailable model, context and trunc
 	}
 });
 
+test("native Ollama HTTP error strings retain useful details, classify memory failures and redact credentials", () => {
+	const p = env("ollama").plugin;
+	const memory = p.apiError(500, JSON.stringify({ error: "model requires more system memory (16 GiB) than is available (8 GiB)" }));
+	assert.equal(p.apiDiagnostic(memory).code, "memory"); assert.match(memory.message, /requires more system memory/);
+	const auth = p.apiError(401, JSON.stringify({ error: "invalid fixture-secret" }), { Authorization: "Bearer fixture-secret" });
+	assert.equal(p.apiDiagnostic(auth).code, "auth"); assert.ok(!auth.message.includes("fixture-secret"));
+});
+
+test("a busy tokenizer permits an explicit fallback and is retried on the next request", async () => {
+	const e = env(); let busy = true;
+	server(e, call => {
+		if (call.path.endsWith("/count_tokens")) return busy ? { status: 503, json: { detail: "Cannot count while another generation is in progress" } } : { json: { input_tokens: 100, model } };
+		if (call.path.endsWith("/chat/completions")) return { json: { choices: [{ message: { content: "Answer" }, finish_reason: "stop" }] } };
+		return metadata(call);
+	});
+	let result = await e.plugin.runAPIBackend("unsloth", req());
+	assert.equal(result.text, "Answer"); assert.equal(result.metrics.budgetSource, "conservative estimate"); assert.match(result.metrics.tokenizerFallback, /HTTP 503/);
+	busy = false;
+	result = await e.plugin.runAPIBackend("unsloth", req());
+	assert.equal(result.text, "Answer"); assert.equal(result.metrics.budgetSource, "provider tokenizer");
+});
+
 test("native tokenizer expands useful document excerpts and recounts the complete prompt before completion", async () => {
 	const e = env(); let promptTokens = 0;
 	const calls = server(e, call => {

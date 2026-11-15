@@ -23,7 +23,7 @@ Object.assign(Zusia, {
 				this._apiTokenizerUnavailable = this._apiTokenizerUnavailable || new Map();
 				this._apiTokenizerUnavailable.set(key, Date.now());
 			}
-			return { ...estimate, fallback: "Prompt-token counting is unavailable; the conservative budget is active." };
+			return { ...estimate, fallback: "Prompt-token counting is unavailable" + (error.status ? " (HTTP " + error.status + ")" : "") + "; the conservative budget is active." };
 		}
 	},
 
