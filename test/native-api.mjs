@@ -2,13 +2,14 @@
 // No provider, installed model, real API key or personal Zotero data is used.
 import { createServer } from "node:http";
 import { spawn, execFileSync } from "node:child_process";
-import { mkdir, copyFile, writeFile, readFile } from "node:fs/promises";
+import { mkdir, copyFile, writeFile, readFile, readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
 import { createWriteStream } from "node:fs";
 import path from "node:path";
 const root = fileURLToPath(new URL("../", import.meta.url));
-const out = path.join(root, "test", "out", "native-api-" + Date.now());
+const out = process.env.ZUSIA_API_OUT ? path.resolve(process.env.ZUSIA_API_OUT) : path.join(root, "test", "out", "native-api-" + Date.now());
+if (existsSync(out) && (await readdir(out)).length) throw new Error("Native API probe output must be a new or empty directory.");
 const profile = path.join(out, "profile");
 await mkdir(path.join(profile, "extensions"), { recursive: true });
 await mkdir(path.join(out, "data"));
@@ -58,6 +59,10 @@ const server = createServer(async (req, res) => {
 	let data = "";
 	for await (const chunk of req) data += chunk;
 	const body = JSON.parse(data);
+	if (body.messages?.some(m => m.content === "Upgrade authentication probe") && req.headers.authorization !== "Bearer synthetic-upgrade-key") {
+		res.writeHead(401, { "content-type": "application/json" });
+		return res.end(JSON.stringify({ error: "Synthetic upgrade credential did not reach the provider" }));
+	}
 	if (body.messages?.some(m => m.content === "Expired capability probe") && body.enable_thinking !== false) {
 		res.writeHead(400, { "content-type": "application/json" });
 		return res.end(JSON.stringify({ detail: "Prepared Thinking off must survive discovery-cache expiry" }));
@@ -80,6 +85,14 @@ const server = createServer(async (req, res) => {
 			capabilities: ["completion", "tools", "thinking"], thinking: { values: [false, true, "deep"], default: true } }));
 	}
 	requests.push(body);
+	if (/^http-(401|403|404|429|500|503)$/.test(body.model)) {
+		res.writeHead(Number(body.model.slice(5)), { "content-type": "application/json" });
+		return res.end(JSON.stringify({ error: "Synthetic HTTP failure" }));
+	}
+	if (body.model === "incomplete-model") {
+		res.writeHead(200, { "content-type": "text/event-stream" });
+		return res.end('data: {"choices":[{"delta":{"content":"Partial synthetic answer"},"finish_reason":null}]}\n\n');
+	}
 	if (req.url === "/api/chat") {
 		if (!body.messages.length) {
 			ollamaContext = body.options?.num_ctx || 16384;
@@ -166,6 +179,16 @@ try {
 		await new Promise((resolve, reject) => { child.on("error", reject); child.on("exit", resolve); });
 		const restarted = JSON.parse(await readFile(path.join(out, "restart-results.json"), "utf8"));
 		result.checks.push(...restarted.checks);
+	}
+	if (result.checks.every(c => c.ok) && process.env.ZUSIA_API_UPGRADE_XPI) {
+		for (const phase of ["upgrade-seed", "upgrade"]) {
+			await copyFile(phase === "upgrade-seed" ? process.env.ZUSIA_API_UPGRADE_XPI : path.join(root, "zusia.xpi"), path.join(profile, "extensions", "zusia@firekern.github.io.xpi"));
+			await writeFile(path.join(profile, "user.js"), prefs + "\n" + Object.entries({ ...extras, "extensions.zusia-api-probe.phase": phase }).map(([key, value]) => `user_pref(${JSON.stringify(key)}, ${JSON.stringify(value)});`).join("\n"));
+			child = launch();
+			await new Promise((resolve, reject) => { child.on("error", reject); child.on("exit", resolve); });
+			const upgraded = JSON.parse(await readFile(path.join(out, phase + "-results.json"), "utf8"));
+			result.checks.push(...upgraded.checks);
+		}
 	}
 	logStream.end();
 	const tools = requests.find(r => r.messages.some(m => m.role === "tool"));

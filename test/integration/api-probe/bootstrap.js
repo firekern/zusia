@@ -8,6 +8,41 @@ async function run() {
 		for (let i = 0; !Zotero.Zusia && i < 200; i++) await Zotero.Promise.delay(100);
 		let CS = Zotero.Zusia;
 		if (!CS) throw new Error("Packaged plugin did not start");
+		let phase = Zotero.Prefs.get("extensions.zusia-api-probe.phase", true);
+		if (phase === "upgrade-seed" || phase === "upgrade") {
+			let snapshotPath = PathUtils.join(out, "upgrade-snapshot.json"), historyPath = PathUtils.join(out, "upgrade-chat.json");
+			let key = "synthetic-upgrade-key", config = { baseURL: Zotero.Prefs.get("extensions.zusia-api-probe.url", true), auth: "bearer",
+				contextTokens: 32768, outputTokens: 2048, profiles: {}, stream: false };
+			let scope = CS.apiProfileKey(config, "smoke-model");
+			config.profiles[scope] = { mode: "custom", overrides: { contextTokens: 32768, temperature: 0.2 } };
+			if (phase === "upgrade-seed") {
+				CS.setPref("unsloth.api", JSON.stringify(config)); CS.setAPIModel("unsloth", "smoke-model");
+				CS.setPref("backend", "unsloth"); CS.setPref("unsloth.effort", "thinking:false");
+				let credentialMode = await CS.setAPIKey("unsloth", config, key);
+				await IOUtils.writeUTF8(historyPath, JSON.stringify([{ role: "user", text: "Synthetic upgrade history" }, { role: "assistant", text: "Preserved answer" }]));
+				await IOUtils.writeUTF8(snapshotPath, JSON.stringify({ version: CS.version, credentialMode }));
+				Services.prefs.savePrefFile(null);
+				await IOUtils.writeUTF8(PathUtils.join(out, "upgrade-seed-results.json"), JSON.stringify({ checks: [{ name: "previous package seeds a real Zotero profile", ok: true }], version: CS.version }));
+			}
+			else {
+				let snapshot = JSON.parse(await IOUtils.readUTF8(snapshotPath));
+				check("upgrade runs a different packaged version", CS.version !== snapshot.version);
+				check("upgrade preserves assistant and scoped model selection", CS.getPref("backend") === "unsloth" && CS.getModel("unsloth") === "smoke-model");
+				let restored = CS.getAPIConfig("unsloth");
+				check("upgrade preserves endpoint and custom provider profile", restored.baseURL === config.baseURL && restored.auth === "bearer" && JSON.stringify(restored.profiles) === JSON.stringify(config.profiles));
+				check("upgrade preserves cold reasoning preference", CS.getEffort("unsloth", { deferCapabilities: true }) === "thinking:false");
+				let history = JSON.parse(await IOUtils.readUTF8(historyPath));
+				check("upgrade preserves synthetic chat history", history[0].text === "Synthetic upgrade history" && history[1].text === "Preserved answer");
+				let restoredKey = await CS.getAPIKey("unsloth", config), persistent = snapshot.credentialMode.includes("OS key store");
+				check("upgrade follows the advertised credential persistence mode", persistent ? restoredKey === key : restoredKey === "" && snapshot.credentialMode.includes("after restarting"));
+				if (!persistent) await CS.setAPIKey("unsloth", config, key);
+				let response = await CS.runBackend("unsloth", { model: CS.getModel("unsloth"), effort: CS.getEffort("unsloth", { deferCapabilities: true }), messages: [{ role: "user", content: "Upgrade authentication probe" }] });
+				check("upgraded package authenticates and answers", !response.error && response.text === "JSON verified");
+				await CS.setAPIKey("unsloth", config, "");
+				await IOUtils.writeUTF8(PathUtils.join(out, "upgrade-results.json"), JSON.stringify({ checks, from: snapshot.version, to: CS.version, credentialMode: snapshot.credentialMode }, null, 2));
+			}
+			Zotero.Utilities.Internal.quit(); return;
+		}
 		if (Zotero.Prefs.get("extensions.zusia-api-probe.phase", true) === "restart") {
 			check("scoped model selection survives a native Zotero restart", CS.getModel("unsloth") === "smoke-model");
 			CS._apiCapabilities?.clear();
@@ -51,6 +86,19 @@ async function run() {
 		let racing = await Promise.all(["race-A", "race-B"].map(model => CS.runBackend("unsloth", { model,
 			apiConfig: { ...config, baseURL: raceURL, stream: false }, messages: [{ role: "user", content: "Concurrent model probe" }] })));
 		check("native concurrent model switches preserve both answers", racing[0].text === "Answer race-A" && racing[1].text === "Answer race-B");
+		let stress = await Promise.all(Array.from({ length: 20 }, (_, i) => {
+			let model = "race-" + (i % 3);
+			return CS.runBackend("unsloth", { model, apiConfig: { ...config, baseURL: raceURL, stream: false },
+				messages: [{ role: "user", content: "Queued model switch " + i }] }).then(result => ({ result, model }));
+		}));
+		check("20 queued native model switches preserve every answer", stress.every(({ result, model }) => !result.error && result.text === "Answer " + model));
+		check("native stress releases all connection leases and request controls", !CS._apiConnections?.size && !CS._apiRequestControls?.size && !CS._unslothLoads?.size);
+		for (let [status, code] of [[401, "auth"], [403, "auth"], [404, "model"], [429, "rate_limit"], [500, "request"], [503, "request"]]) {
+			let failed = await CS.runBackend("openai", { model: "http-" + status, apiConfig: config, messages: [{ role: "user", content: "Synthetic failure" }] });
+			check("native HTTP " + status + " produces its recovery diagnostic", failed.diagnostic?.code === code && !!failed.error);
+		}
+		let incomplete = await CS.runBackend("openai", { model: "incomplete-model", apiConfig: config, messages: [{ role: "user", content: "Synthetic interruption" }] });
+		check("native incomplete SSE preserves partial text and offers retry", incomplete.partialText === "Partial synthetic answer" && incomplete.diagnostic?.code === "incomplete" && incomplete.diagnostic?.action === "retry");
 		let stopped = false, kill;
 		let cancelled = await CS.runBackend("openai", { ...request, model: "cancel-model", onSpawn: handle => { kill = () => handle.kill(); },
 			onProgress: update => { if (update.text && !stopped) { stopped = true; kill(); } } });

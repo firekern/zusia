@@ -23,5 +23,5 @@ docker build --quiet ${platform[@]+"${platform[@]}"} --target zotero --build-arg
 # not passed on: the container has stub CLIs and no logins.
 docker run --rm --init ${platform[@]+"${platform[@]}"} \
 	-v "$repo:/zusia:ro" -v "$out:/zusia/test/integration/out-linux" \
-	-e OUT=/zusia/test/integration/out-linux -e TIMEOUT -e DARK -e XPI \
-	"$image" bash /zusia/test/integration/run.sh
+	-e OUT=/zusia/test/integration/out-linux -e TIMEOUT -e DARK -e XPI -e NATIVE_API \
+	"$image" bash /zusia/test/integration/linux/entry.sh

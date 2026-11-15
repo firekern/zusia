@@ -53,6 +53,7 @@ jobs:
         env:
           ZOTERO_VERSION: ${{ matrix.zotero }}
           XPI: 1
+          NATIVE_API: 1
         run: |
           # The container runs as its own user, not the runner's, and writes the results here.
           mkdir -p test/integration/out-linux

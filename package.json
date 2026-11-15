@@ -7,6 +7,7 @@
 	"scripts": {
 		"vendor": "node scripts/vendor.mjs",
 		"test:api:zotero": "node test/native-api.mjs",
+		"test:api:live": "node test/live-api.mjs",
 		"test": "node --test test/*.test.mjs",
 		"build": "bash build.sh",
 		"shots": "bash test/screenshots.sh",
