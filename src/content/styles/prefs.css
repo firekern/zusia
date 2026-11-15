@@ -86,6 +86,15 @@
 .zs-row-stack .zs-row-hint {
 	grid-column: auto;
 }
+.zs-agent-body > .zs-api-profile,
+.zs-api-profile + .zs-row,
+.zs-api-profile-overrides > .zs-row:first-child {
+	border-top: 1px solid var(--zs-stroke);
+}
+.zs-api-profile input::placeholder {
+	color: var(--zs-muted);
+	opacity: 1;
+}
 .zs-row-control {
 	display: flex;
 	align-items: center;
@@ -273,7 +282,7 @@
 }
 .zs-swatch-custom {
 	overflow: hidden;
-	background: conic-gradient(#f55, #fc3, #5d5, #3cf, #66f, #e5e, #f55);
+	background: conic-gradient(#f55, #fc3, #5d5, #3cf, #66f, #e5e, #f55); /* taste-skill-ignore: functional custom colour-picker swatch */
 }
 .zs-swatch-custom input {
 	position: absolute;

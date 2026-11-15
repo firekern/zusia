@@ -18,19 +18,46 @@ execFileSync(process.platform === "win32" ? "python" : "python3", ["-c",
 	path.join(root, "test", "integration", "api-probe"), path.join(profile, "extensions", "zusia-api-probe@firekern.github.io.xpi")], { windowsHide: true });
 const requests = [];
 const sockets = new Set();
+let ollamaContext = 16384;
 const server = createServer(async (req, res) => {
+	if (req.url === "/api/ps") {
+		res.writeHead(200, { "content-type": "application/json" });
+		return res.end(JSON.stringify({ models: [{ name: "smoke-model:latest", context_length: ollamaContext, details: { quantization_level: "Q4_K_M" } }] }));
+	}
 	if (req.url === "/v1/models") {
 		res.writeHead(200, { "content-type": "application/json" });
 		return res.end(JSON.stringify({ data: [{ id: "smoke-model", loaded: true }] }));
 	}
-	if (req.url === "/api/inference/status") {
+	if (req.url.split("?")[0] === "/api/inference/status") {
 		res.writeHead(200, { "content-type": "application/json" });
-		return res.end(JSON.stringify({ active_model: "smoke-model", loaded: ["smoke-model"] }));
+		return res.end(JSON.stringify({ active_model: "smoke-model", loaded: ["smoke-model"], context_length: 32768 }));
 	}
+	if (req.url.startsWith("/api/settings/openai-auto-switch/overrides") || req.url === "/v1/props") {
+        res.writeHead(200, { "content-type": "application/json" });
+        return res.end(JSON.stringify(req.url === "/v1/props" ? { default_generation_settings: { n_ctx: 32768 } } : { resolved: {} }));
+    }
 	let data = "";
 	for await (const chunk of req) data += chunk;
 	const body = JSON.parse(data);
+	if (req.url === "/api/show") {
+		res.writeHead(200, { "content-type": "application/json" });
+		return res.end(JSON.stringify({ parameters: "num_ctx 16384\ntemperature 0.7", details: { quantization_level: "Q4_K_M" } }));
+	}
 	requests.push(body);
+	if (req.url === "/api/chat") {
+		if (!body.messages.length) {
+			ollamaContext = body.options?.num_ctx || 16384;
+			res.writeHead(200, { "content-type": "application/json" });
+			return res.end(JSON.stringify({ done: true }));
+		}
+		res.writeHead(200, { "content-type": "application/x-ndjson; charset=utf-8" });
+		let value = body.tools && !body.messages.some(m => m.role === "tool") ?
+			{ message: { tool_calls: [{ function: { name: "read_pages", arguments: { pages: [1] } } }] }, done: true } :
+			{ message: { content: "Profilo caffè verificato" }, done: true };
+		let bytes = Buffer.from(JSON.stringify(value) + "\n");
+		for (let i = 0; i < bytes.length; i += 7) { res.write(bytes.subarray(i, i + 7)); await new Promise(resolve => setTimeout(resolve, 2)); }
+		return res.end();
+	}
 	if (!body.stream) {
 		res.writeHead(200, { "content-type": "application/json" });
 		return res.end(JSON.stringify({ choices: [{ message: { content: "JSON verified" }, finish_reason: "stop" }] }));

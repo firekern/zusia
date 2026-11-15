@@ -8,6 +8,7 @@ Object.assign(Zusia, {
 		let info = this.BACKENDS[backend];
 		let config = this.getAPIConfig(backend);
 		let toggles = {};
+		let syncProfiles = () => {};
 		let details = this.el(doc, "details", "zs-agent");
 		details.dataset.backend = backend;
 		let summary = this.el(doc, "summary");
@@ -26,6 +27,7 @@ Object.assign(Zusia, {
 			this.setPref(backend + ".api", JSON.stringify(config));
 			status.textContent = "Configuration changed · check connection";
 			details.dataset.found = "false";
+			syncProfiles();
 		};
 		let field = (label, value, change, hint, type = "text") => {
 			let input = this.el(doc, "input", "zs-field");
@@ -105,6 +107,12 @@ Object.assign(Zusia, {
 		};
 		refill(this.getModels(backend).filter(m => m.id));
 		body.appendChild(this.row(doc, "Server models", choose));
+		let nativeProfiles = backend === "unsloth" || backend === "ollama";
+		if (nativeProfiles) {
+			let controls = this.buildAPIProfileControls(doc, backend, () => config, save);
+			body.appendChild(controls.panel);
+			syncProfiles = controls.refresh;
+		}
 		let check = button("Check connection and list models", async () => {
 			if (!urlField.reportValidity()) return;
 			let checkedURL = this.normalizeAPIURL(config.baseURL);
@@ -121,11 +129,12 @@ Object.assign(Zusia, {
 		});
 		let connectionActions = this.el(doc, "div", "zs-api-actions");
 		connectionActions.appendChild(check);
-		if (backend === "unsloth") {
+		if (nativeProfiles) {
 			let loading = null;
 			let load = button("Load model", async () => {
 				if (loading) { loading.cancelled = true; loading.abort?.(); return; }
 				if (!urlField.reportValidity()) return;
+				if (![...body.querySelectorAll("input")].filter(input => !input.closest("[hidden]")).every(input => input.reportValidity())) return;
 				let target = model.value.trim();
 				let snapshot = { ...config };
 				let current = () => model.value.trim() === target && config.baseURL === snapshot.baseURL;
@@ -134,13 +143,14 @@ Object.assign(Zusia, {
 				status.textContent = "Preparing model…";
 				message.textContent = "";
 				try {
-					await this.ensureUnslothModel(target, snapshot, { control, onProgress: update => {
-						if (current()) message.textContent = update.status === "loading the model in Unsloth" ? "Loading " + target + "…" : "";
+					await this.prepareAPIModel(backend, target, snapshot, { control, onProgress: update => {
+						if (current()) message.textContent = /^loading/.test(update.status) ? "Loading " + target + "…" : "";
 					} });
 					if (!current()) return;
 					if (control.cancelled) { status.textContent = "Model loading cancelled"; message.textContent = ""; return; }
 					status.textContent = "Model ready";
-					message.textContent = target + " is loaded in Unsloth. You can ask about your paper.";
+					message.textContent = target + " is loaded. You can ask about your paper.";
+					syncProfiles();
 					details.dataset.found = "true";
 					let models = await this.loadAPIModels(backend);
 					if (current()) refill(models);
@@ -160,6 +170,7 @@ Object.assign(Zusia, {
 			["Context window (tokens)", "contextTokens", 8192, 2097152, "Set this to the context actually configured on your server. Zusia uses a conservative input estimate."],
 			["Maximum output (tokens)", "outputTokens", 256, 65536, "Space reserved for the response, including reasoning on models that count it."],
 		]) {
+			if (nativeProfiles && prop === "contextTokens") continue;
 			let number = field(label, config[prop], (value, input) => {
 				let n = Number(value);
 				if (Number.isInteger(n) && n >= min && n <= max) { save({ [prop]: n }); input.setCustomValidity(""); }
@@ -180,5 +191,87 @@ Object.assign(Zusia, {
 		}
 		details.append(summary, body);
 		return details;
+	},
+
+	buildAPIProfileControls(doc, backend, getConfig, save) {
+		let panel = this.el(doc, "div", "zs-api-profile");
+		let extra = this.el(doc, "div", "zs-api-profile-overrides");
+		let fields = {};
+		let current = () => this.apiProfileSettings(getConfig(), this.getModel(backend));
+		let update = changes => {
+			let config = getConfig(), key = this.apiProfileKey(config, this.getModel(backend));
+			let previous = config.profiles[key] || {};
+			save({ profiles: { ...config.profiles, [key]: { ...previous, ...changes } } });
+		};
+		let mode = this.select(doc, [["provider", "Use provider profile"], ["custom", "Customize in Zusia"]], current().mode, value => update({ mode: value }));
+		panel.appendChild(this.row(doc, "Model settings", mode, "Saved separately for each endpoint and model. Empty overrides keep the provider's settings."));
+		let info = this.el(doc, "div", "zs-row-hint", "Read the provider profile to see its settings. The effective context is checked before each answer.");
+		info.setAttribute("role", "status");
+		info.setAttribute("aria-live", "polite");
+		let show = profile => {
+			info.textContent = [profile.profileContextTokens ? "Profile: " + profile.profileContextTokens.toLocaleString() + " context tokens" : "Provider automatic context",
+				profile.profileQuantization && profile.profileQuantization !== profile.quantization ? "Profile weights: " + profile.profileQuantization : "",
+				profile.contextTokens ? "Running: " + profile.contextTokens.toLocaleString() + " tokens per request" : "Not loaded",
+				profile.parallelSlots ? "Parallel slots: " + profile.parallelSlots : "",
+				"Weights: " + profile.quantization, "KV cache: " + profile.cacheTypeKV,
+				profile.profileCacheTypeKV && profile.profileCacheTypeKV !== profile.cacheTypeKV ? "Profile KV: " + profile.profileCacheTypeKV : "",
+				profile.savedProfile === false ? "Saved presets are not exposed by this server version" : ""].filter(Boolean).join(" · ");
+		};
+		let inspect = this.el(doc, "button", "zs-button", "Read provider profile");
+		inspect.type = "button";
+		inspect.addEventListener("click", async () => {
+			let config = getConfig(), model = this.getModel(backend);
+			if (!model) { info.textContent = "Choose a model first."; return; }
+			inspect.disabled = true; info.textContent = "Reading provider profile…";
+			try {
+				let profile = await this.inspectAPIProfile(backend, model, config);
+				if (model === this.getModel(backend) && config.baseURL === getConfig().baseURL) show(profile);
+			}
+			catch (e) { if (model === this.getModel(backend) && config.baseURL === getConfig().baseURL) info.textContent = e.message; }
+			finally { inspect.disabled = false; }
+		});
+		panel.appendChild(this.row(doc, "Provider profile", [inspect, info], null, { stack: true }));
+		let field = (label, prop, min, max, step = "1") => {
+			let input = this.el(doc, "input", "zs-field");
+			input.type = min === null ? "text" : "number";
+			input.placeholder = "Provider profile";
+			if (min !== null) { input.min = min; input.max = max; input.step = step; }
+			input.addEventListener("change", () => {
+				let values = { ...current().overrides }, text = input.value.trim();
+				if (text === "") delete values[prop];
+				else {
+					let value = min === null ? text : Number(text);
+					let cleaned = this.cleanAPIProfileOverrides({ [prop]: value });
+					if (cleaned[prop] === undefined) { input.setCustomValidity("Enter a valid value, or leave empty to follow the provider."); input.reportValidity(); return; }
+					values[prop] = cleaned[prop];
+				}
+				input.setCustomValidity(""); update({ overrides: values });
+			});
+			fields[prop] = input;
+			extra.appendChild(this.row(doc, label, input));
+		};
+		field("Context override (tokens)", "contextTokens", 8192, 2097152);
+		if (backend === "unsloth") {
+			field("GGUF variant", "ggufVariant", null, null);
+			let choices = [["", "Provider profile"], ...["f16", "bf16", "q8_0", "q4_0", "q4_1", "q5_0", "q5_1", "iq4_nl", "f32"].map(value => [value, value])];
+			fields.cacheTypeKV = this.select(doc, choices, "", value => { let values = { ...current().overrides }; if (value) values.cacheTypeKV = value; else delete values.cacheTypeKV; update({ overrides: values }); });
+			extra.appendChild(this.row(doc, "KV cache quantization", fields.cacheTypeKV));
+			field("GPU layers (-1 = automatic)", "gpuLayers", -1, 1024);
+			field("Parallel slots", "parallelSlots", 1, 64);
+		}
+		else extra.appendChild(this.row(doc, "Weight quantization", this.el(doc, "div", "zs-row-hint", "Follows the selected Ollama model/tag. GPU and KV cache settings stay in Ollama.")));
+		for (let args of [["Temperature", "temperature", 0, 2, "0.01"], ["Top P", "topP", 0, 1, "0.01"], ["Top K", "topK", 0, 10000], ["Min P", "minP", 0, 1, "0.01"], ["Repetition penalty", "repeatPenalty", 0, 2, "0.01"]]) field(...args);
+		panel.appendChild(extra);
+		let refresh = () => {
+			let profile = current();
+			mode.value = profile.mode; mode.disabled = !this.getModel(backend);
+			extra.hidden = profile.mode !== "custom";
+			for (let [prop, input] of Object.entries(fields)) { input.value = profile.overrides[prop] ?? ""; input.setCustomValidity?.(""); }
+			let runtime = this._apiRuntimeProfiles?.get(this.apiProfileKey(getConfig(), this.getModel(backend)));
+			if (runtime) show(runtime);
+			else info.textContent = "Read the provider profile to see its settings. The effective context is checked before each answer.";
+		};
+		refresh();
+		return { panel, refresh };
 	},
 });

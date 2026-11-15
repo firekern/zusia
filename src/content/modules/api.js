@@ -31,6 +31,7 @@ Object.assign(Zusia, {
 			reasoning: capabilitiesMatch && saved.reasoning === true,
 			capabilityModel: saved.capabilityModel || "",
 			stream: saved.stream !== false,
+			profiles: saved.profiles && typeof saved.profiles === "object" ? saved.profiles : {},
 		};
 	},
 
@@ -133,7 +134,8 @@ Object.assign(Zusia, {
 		}
 		if (xhr.status < 200 || xhr.status >= 300) throw this.apiError(xhr.status, xhr.responseText, headers);
 		consume(xhr);
-		if (parsingError) throw new Error(parsingError.message?.startsWith("API HTTP ") ? parsingError.message : "Invalid API stream. Check the endpoint's Chat Completions and SSE support.");
+		if (parsingError) throw new Error(parsingError.message?.startsWith("API HTTP ") ? parsingError.message : backend === "ollama" ?
+			"Invalid Ollama NDJSON stream. Check the model and native API connection." : "Invalid API stream. Check the endpoint's Chat Completions and SSE support.");
 		return xhr;
 	},
 
@@ -171,7 +173,7 @@ Object.assign(Zusia, {
 		let operation = previous.catch(() => {}).then(async () => {
 			if (control.cancelled) return null;
 			let status = async () => {
-				let xhr = await this.apiHTTPRequest("unsloth", native, "/status", {
+				let xhr = await this.apiHTTPRequest("unsloth", native, "/status?model=" + encodeURIComponent(model), {
 					headers, onCancel: cancel => { control.abort = cancel; if (control.cancelled) cancel(); },
 				});
 				try { return JSON.parse(xhr.responseText); }
@@ -179,11 +181,17 @@ Object.assign(Zusia, {
 			};
 			let ready = value => value?.loaded?.includes(model) || value?.active_model === model || value?.model_identifier === model;
 			let current = await status();
-			if (control.cancelled || ready(current)) return current;
+			if (control.cancelled) return null;
+			let profile = await this.readUnslothProfile(model, config, { headers, control, status: current });
+			if (control.cancelled) return null;
+			if (this.unslothProfileMatches(model, profile, config)) {
+				this.rememberUnslothProfile(model, config, profile);
+				current._zusiaProfile = profile; return current;
+			}
 			onProgress({ status: "loading the model in Unsloth", step: { kind: "load", target: model, label: "Loading " + model } });
 			let loadID = "zusia-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2);
 			await this.apiHTTPRequest("unsloth", native, "/load", {
-				headers, body: { model_path: model, max_seq_length: config.contextTokens, n_parallel: 1, load_request_id: loadID },
+				headers, body: { model_path: model, ...profile.load, load_request_id: loadID },
 				onCancel: cancel => {
 					control.abort = () => {
 						// A scoped cancel can stop only this load, never unload a model
@@ -201,6 +209,8 @@ Object.assign(Zusia, {
 			if (control.cancelled) return null;
 			current = await status();
 			if (!ready(current)) throw new Error("Unsloth did not load the selected model. Check the available memory and model settings, then try again.");
+			current._zusiaProfile = profile;
+			this.rememberUnslothProfile(model, config, { ...profile, status: current });
 			let cache = this._apiModels?.unsloth;
 			if (cache?.baseURL === baseURL) {
 				for (let entry of cache.models) {
@@ -226,6 +236,7 @@ Object.assign(Zusia, {
 	},
 
 	async apiCompletion(backend, config, body, headers, control, onProgress = () => {}) {
+		if (backend === "ollama") return this.ollamaCompletion(config, body, headers, control, onProgress);
 		let text = "";
 		let finish = null;
 		let received = false;
@@ -418,6 +429,8 @@ Object.assign(Zusia, {
 			let headers = await this.apiHeaders(backend, config);
 			let model = request.model;
 			if (!model) throw new Error("Choose an exact API model ID in Settings → Zusia → Assistants.");
+			config = await this.prepareAPIModel(backend, model, config, { headers, control, onProgress: request.onProgress });
+			if (control.cancelled) return { text: "" };
 			let messages = request.messages || this.buildAPIMessages(request, config);
 			if (request.images?.length) {
 				if (!config.vision) throw new Error("Enable image input for this model in Settings, or remove the attachment.");
@@ -430,13 +443,15 @@ Object.assign(Zusia, {
 				if (this.apiInputSize(messages) + this.apiInputSize(tools) + config.outputTokens > config.contextTokens) {
 					throw new Error("The context budget is full. Increase the context window or ask a more focused question.");
 				}
-				if (backend === "unsloth" && round === 0) {
-					await this.ensureUnslothModel(model, config, { headers, control, onProgress: request.onProgress });
-					if (control.cancelled) return { text: "" };
-				}
 				let limitField = new URL(config.baseURL).hostname === "api.openai.com" ? "max_completion_tokens" : "max_tokens";
 				let body = { model, messages, stream: config.stream, [limitField]: config.outputTokens };
 				if (request.effort) body.reasoning_effort = request.effort;
+				let overrides = this.apiProfileSettings(config, model).overrides;
+				if (backend === "unsloth") {
+					for (let [from, to] of [["temperature", "temperature"], ["topP", "top_p"], ["topK", "top_k"], ["minP", "min_p"], ["repeatPenalty", "repetition_penalty"]]) {
+						if (overrides[from] !== undefined) body[to] = overrides[from];
+					}
+				}
 				if (tools.length && round < 4) body.tools = tools;
 				// Unsloth has its own optional execution loop. Only Zusia's document tools
 				// should run here, even when the server was launched with tools enabled.
@@ -451,7 +466,8 @@ Object.assign(Zusia, {
 					if (!call.id || ids.has(call.id)) throw new Error("The model returned invalid tool call IDs.");
 					ids.add(call.id);
 				}
-				messages.push({ role: "assistant", content: result.text || null, tool_calls: result.calls });
+				messages.push({ role: "assistant", content: result.text || null, tool_calls: result.calls,
+					...(result.reasoning ? { reasoning_content: result.reasoning } : {}) });
 				let remaining = Math.max(200, config.contextTokens - config.outputTokens - this.apiInputSize(messages) - 2500);
 				for (let call of result.calls) {
 					let content;
