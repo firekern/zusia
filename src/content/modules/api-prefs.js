@@ -8,6 +8,18 @@ Object.assign(Zusia, {
 		let info = this.BACKENDS[backend];
 		let config = this.getAPIConfig(backend);
 		let toggles = {};
+		let capabilityHints = {};
+		let displayedModel = () => model.checkValidity() ? model.value.trim() : "";
+		let refreshCapabilities = () => {
+			let current = this.applyAPICapabilities(backend, config, displayedModel());
+			for (let [prop, hint] of Object.entries(capabilityHints)) {
+				let declared = current.detectedCapabilities?.[prop];
+				hint.textContent = declared === true ? "Provider reports support." : declared === false ? "Provider reports no support. Enable only if you have verified compatibility." : "Support is unknown. Load the model or read its provider profile to detect it.";
+				let key = this.safeAPIProfileKey(config, displayedModel());
+				toggles[prop].value = current.capabilities[key]?.[prop] || "auto";
+				toggles[prop].disabled = !key || !displayedModel();
+			}
+		};
 		let syncProfiles = () => {};
 		let details = this.el(doc, "details", "zs-agent");
 		details.dataset.backend = backend;
@@ -28,6 +40,7 @@ Object.assign(Zusia, {
 			status.textContent = "Configuration changed · check connection";
 			details.dataset.found = "false";
 			syncProfiles();
+			refreshCapabilities();
 		};
 		let field = (label, value, change, hint, type = "text") => {
 			let input = this.el(doc, "input", "zs-field");
@@ -45,6 +58,8 @@ Object.assign(Zusia, {
 					for (let prop of ["tools", "vision", "reasoning"]) toggles[prop]?.setAttribute("aria-checked", "false");
 				}
 				input.value = baseURL; input.setCustomValidity(""); message.textContent = "";
+					model.value = this.getModel(backend);
+					model.setCustomValidity(""); syncProfiles(); refreshCapabilities();
 			}
 			catch (e) { input.setCustomValidity(e.message); message.textContent = e.message; }
 		}, "Include /v1. Requests go directly to this endpoint; no CLI login is used.");
@@ -82,8 +97,10 @@ Object.assign(Zusia, {
 
 		let setModel = value => {
 			value = value.trim();
-			if (value !== this.getModel(backend)) {
-				this.setPref(backend + ".model", value);
+			let previous = this.getModel(backend);
+			try { this.setAPIModel(backend, value); model.setCustomValidity(""); }
+			catch (e) { model.setCustomValidity(e.message); message.textContent = e.message; syncProfiles(); refreshCapabilities(); return; }
+			if (value !== previous) {
 				save({ tools: false, vision: false, reasoning: false, capabilityModel: value });
 				for (let prop of ["tools", "vision", "reasoning"]) toggles[prop]?.setAttribute("aria-checked", "false");
 			}
@@ -103,13 +120,13 @@ Object.assign(Zusia, {
 			for (let m of models) {
 				let option = this.el(doc, "option"); option.value = m.id; choices.appendChild(option);
 			}
-			choose.refill([["", "Choose a discovered model"], ...models.map(m => [m.id, m.id + (m.loaded ? " · loaded" : backend === "unsloth" && m.loaded === false ? " · loads on send" : "")])], this.getModel(backend));
+			choose.refill([["", "Choose a discovered model"], ...models.map(m => [m.id, m.id + (m.loaded ? " · loaded" : backend === "unsloth" && m.loaded === false ? " · loads on send" : "")])], displayedModel());
 		};
 		refill(this.getModels(backend).filter(m => m.id));
 		body.appendChild(this.row(doc, "Server models", choose));
 		let nativeProfiles = backend === "unsloth" || backend === "ollama";
 		if (nativeProfiles) {
-			let controls = this.buildAPIProfileControls(doc, backend, () => config, save);
+			let controls = this.buildAPIProfileControls(doc, backend, () => config, save, refreshCapabilities, displayedModel);
 			body.appendChild(controls.panel);
 			syncProfiles = controls.refresh;
 		}
@@ -123,6 +140,10 @@ Object.assign(Zusia, {
 				refill(models); details.dataset.found = "true";
 				status.textContent = "Connected · " + models.length + " model" + (models.length === 1 ? "" : "s");
 				message.textContent = models.length ? "Select a model above. Connection check completed without generating an answer." : "The server returned no models. Load a chat model in your server.";
+				if (nativeProfiles && models.some(m => m.id === displayedModel())) {
+					await this.inspectAPIProfile(backend, displayedModel(), config);
+					if (checkedURL === this.normalizeAPIURL(config.baseURL)) { syncProfiles(); refreshCapabilities(); }
+				}
 			}
 			catch (e) { details.dataset.found = "false"; status.textContent = "Connection check failed"; message.textContent = e.message; }
 			finally { check.disabled = false; }
@@ -136,6 +157,7 @@ Object.assign(Zusia, {
 				if (!urlField.reportValidity()) return;
 				if (![...body.querySelectorAll("input")].filter(input => !input.closest("[hidden]")).every(input => input.reportValidity())) return;
 				let target = model.value.trim();
+				this.setAPIModel(backend, target);
 				let snapshot = { ...config };
 				let current = () => model.value.trim() === target && config.baseURL === snapshot.baseURL;
 				let control = loading = { cancelled: false, abort: null };
@@ -151,6 +173,7 @@ Object.assign(Zusia, {
 					status.textContent = "Model ready";
 					message.textContent = target + " is loaded. You can ask about your paper.";
 					syncProfiles();
+					refreshCapabilities();
 					details.dataset.found = "true";
 					let models = await this.loadAPIModels(backend);
 					if (current()) refill(models);
@@ -184,22 +207,37 @@ Object.assign(Zusia, {
 			["Image input", "vision", "Enable only for a vision model. Attached images are sent to this API."],
 			["Reasoning effort", "reasoning", "Enable only if this model accepts reasoning_effort (low, medium, high). Otherwise Zusia omits it."],
 		]) {
+			if (nativeProfiles && prop !== "stream") {
+				let key = this.safeAPIProfileKey(config, displayedModel());
+				let select = this.select(doc, [["auto", "Detect from provider"], ["on", "Enable explicitly"], ["off", "Disable"]], config.capabilities[key]?.[prop] || "auto", value => {
+					let key = this.safeAPIProfileKey(config, displayedModel());
+					if (!key || !displayedModel()) return;
+					save({ capabilities: { ...config.capabilities, [key]: { ...config.capabilities[key], [prop]: value } } });
+				});
+				select.setAttribute("aria-label", label);
+				toggles[prop] = select;
+				let hint = capabilityHints[prop] = this.el(doc, "div", "zs-row-hint");
+				body.appendChild(this.row(doc, label, [select, hint], null, { stack: true }));
+				continue;
+			}
 			let toggle = this.switchControl(doc, config[prop], value => save({ [prop]: value, capabilityModel: this.getModel(backend) }));
 			toggles[prop] = toggle;
 			toggle.setAttribute("aria-label", label);
 			body.appendChild(this.row(doc, label, toggle, hint));
 		}
+		refreshCapabilities();
 		details.append(summary, body);
 		return details;
 	},
 
-	buildAPIProfileControls(doc, backend, getConfig, save) {
+	buildAPIProfileControls(doc, backend, getConfig, save, onRead = () => {}, getModel = () => this.getModel(backend)) {
 		let panel = this.el(doc, "div", "zs-api-profile");
 		let extra = this.el(doc, "div", "zs-api-profile-overrides");
 		let fields = {};
-		let current = () => this.apiProfileSettings(getConfig(), this.getModel(backend));
+		let current = () => this.apiProfileSettings(getConfig(), getModel());
 		let update = changes => {
-			let config = getConfig(), key = this.apiProfileKey(config, this.getModel(backend));
+			let config = getConfig(), key = this.safeAPIProfileKey(config, getModel());
+			if (!key || !getModel()) return;
 			let previous = config.profiles[key] || {};
 			save({ profiles: { ...config.profiles, [key]: { ...previous, ...changes } } });
 		};
@@ -213,21 +251,21 @@ Object.assign(Zusia, {
 				profile.profileQuantization && profile.profileQuantization !== profile.quantization ? "Profile weights: " + profile.profileQuantization : "",
 				profile.contextTokens ? "Running: " + profile.contextTokens.toLocaleString() + " tokens per request" : "Not loaded",
 				profile.parallelSlots ? "Parallel slots: " + profile.parallelSlots : "",
-				"Weights: " + profile.quantization, "KV cache: " + profile.cacheTypeKV,
+				"Weights: " + (profile.quantization || "Unknown"), "KV cache: " + (profile.cacheTypeKV || "Provider default"),
 				profile.profileCacheTypeKV && profile.profileCacheTypeKV !== profile.cacheTypeKV ? "Profile KV: " + profile.profileCacheTypeKV : "",
 				profile.savedProfile === false ? "Saved presets are not exposed by this server version" : ""].filter(Boolean).join(" · ");
 		};
 		let inspect = this.el(doc, "button", "zs-button", "Read provider profile");
 		inspect.type = "button";
 		inspect.addEventListener("click", async () => {
-			let config = getConfig(), model = this.getModel(backend);
+			let config = getConfig(), model = getModel();
 			if (!model) { info.textContent = "Choose a model first."; return; }
 			inspect.disabled = true; info.textContent = "Reading provider profile…";
 			try {
 				let profile = await this.inspectAPIProfile(backend, model, config);
-				if (model === this.getModel(backend) && config.baseURL === getConfig().baseURL) show(profile);
+				if (model === getModel() && config.baseURL === getConfig().baseURL) { show(profile); onRead(); }
 			}
-			catch (e) { if (model === this.getModel(backend) && config.baseURL === getConfig().baseURL) info.textContent = e.message; }
+			catch (e) { if (model === getModel() && config.baseURL === getConfig().baseURL) info.textContent = e.message; }
 			finally { inspect.disabled = false; }
 		});
 		panel.appendChild(this.row(doc, "Provider profile", [inspect, info], null, { stack: true }));
@@ -264,10 +302,11 @@ Object.assign(Zusia, {
 		panel.appendChild(extra);
 		let refresh = () => {
 			let profile = current();
-			mode.value = profile.mode; mode.disabled = !this.getModel(backend);
+			mode.value = profile.mode; mode.disabled = !getModel() || !this.safeAPIProfileKey(getConfig(), getModel());
+			inspect.disabled = mode.disabled;
 			extra.hidden = profile.mode !== "custom";
 			for (let [prop, input] of Object.entries(fields)) { input.value = profile.overrides[prop] ?? ""; input.setCustomValidity?.(""); }
-			let runtime = this._apiRuntimeProfiles?.get(this.apiProfileKey(getConfig(), this.getModel(backend)));
+			let runtime = this._apiRuntimeProfiles?.get(this.safeAPIProfileKey(getConfig(), getModel()));
 			if (runtime) show(runtime);
 			else info.textContent = "Read the provider profile to see its settings. The effective context is checked before each answer.";
 		};

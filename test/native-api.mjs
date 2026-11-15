@@ -30,7 +30,8 @@ const server = createServer(async (req, res) => {
 	}
 	if (req.url.split("?")[0] === "/api/inference/status") {
 		res.writeHead(200, { "content-type": "application/json" });
-		return res.end(JSON.stringify({ active_model: "smoke-model", loaded: ["smoke-model"], context_length: 32768 }));
+		return res.end(JSON.stringify({ active_model: "smoke-model", loaded: ["smoke-model"], context_length: 32768,
+			supports_tools: true, is_vision: false, supports_reasoning: true, reasoning_style: "enable_thinking" }));
 	}
 	if (req.url.startsWith("/api/settings/openai-auto-switch/overrides") || req.url === "/v1/props") {
         res.writeHead(200, { "content-type": "application/json" });
@@ -39,9 +40,14 @@ const server = createServer(async (req, res) => {
 	let data = "";
 	for await (const chunk of req) data += chunk;
 	const body = JSON.parse(data);
+	if (req.url === "/v1/chat/count_tokens") {
+		res.writeHead(200, { "content-type": "application/json" });
+		return res.end(JSON.stringify({ model: body.model, input_tokens: Math.ceil(JSON.stringify(body.messages).length / 4) }));
+	}
 	if (req.url === "/api/show") {
 		res.writeHead(200, { "content-type": "application/json" });
-		return res.end(JSON.stringify({ parameters: "num_ctx 16384\ntemperature 0.7", details: { quantization_level: "Q4_K_M" } }));
+		return res.end(JSON.stringify({ parameters: "num_ctx 16384\ntemperature 0.7", details: { quantization_level: "Q4_K_M" },
+			capabilities: ["completion", "tools", "thinking"], thinking: { values: [false, true, "deep"], default: true } }));
 	}
 	requests.push(body);
 	if (req.url === "/api/chat") {
@@ -54,13 +60,14 @@ const server = createServer(async (req, res) => {
 		let value = body.tools && !body.messages.some(m => m.role === "tool") ?
 			{ message: { tool_calls: [{ function: { name: "read_pages", arguments: { pages: [1] } } }] }, done: true } :
 			{ message: { content: "Profilo caffè verificato" }, done: true };
+		Object.assign(value, { model: body.model, prompt_eval_count: 100, eval_count: 20, prompt_eval_cached_count: 0, eval_duration: 500000000, load_duration: 1000000 });
 		let bytes = Buffer.from(JSON.stringify(value) + "\n");
 		for (let i = 0; i < bytes.length; i += 7) { res.write(bytes.subarray(i, i + 7)); await new Promise(resolve => setTimeout(resolve, 2)); }
 		return res.end();
 	}
 	if (!body.stream) {
 		res.writeHead(200, { "content-type": "application/json" });
-		return res.end(JSON.stringify({ choices: [{ message: { content: "JSON verified" }, finish_reason: "stop" }] }));
+		return res.end(JSON.stringify({ model: body.model, choices: [{ message: { content: "JSON verified" }, finish_reason: "stop" }], usage: { prompt_tokens: 120, completion_tokens: 10 } }));
 	}
 	res.writeHead(200, { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-cache" });
 	let event;
@@ -77,7 +84,7 @@ const server = createServer(async (req, res) => {
 		res.write(bytes.subarray(i, i + 7));
 		await new Promise(resolve => setTimeout(resolve, 4));
 	}
-	if (body.model !== "cancel-model") res.end("data: [DONE]\r\n\r\n");
+	if (body.model !== "cancel-model") res.end('data: {"choices":[],"usage":{"prompt_tokens":120,"completion_tokens":10,"prompt_tokens_details":{"cached_tokens":0}}}\r\n\r\ndata: [DONE]\r\n\r\n');
 });
 server.on("connection", socket => { sockets.add(socket); socket.on("close", () => sockets.delete(socket)); });
 await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
@@ -91,12 +98,16 @@ const extras = {
 await writeFile(path.join(profile, "user.js"), prefs + "\n" + Object.entries(extras).map(([key, value]) => `user_pref(${JSON.stringify(key)}, ${JSON.stringify(value)});`).join("\n"));
 const executable = process.env.ZOTERO_BIN || (process.platform === "win32" ? "C:\\Program Files\\Zotero\\zotero.exe" : "/Applications/Zotero.app/Contents/MacOS/zotero");
 const appINI = path.join(path.dirname(executable), "app", "application.ini");
-const child = spawn(executable, [...(existsSync(appINI) ? ["-app", appINI] : []), "-profile", profile, "-no-remote", "-ZoteroDebugText"], {
-	windowsHide: true, env: { ...process.env, MOZ_HEADLESS: "1", MOZ_HEADLESS_WIDTH: "1200", MOZ_HEADLESS_HEIGHT: "900" },
-});
 const logStream = createWriteStream(path.join(out, "zotero-debug.log"));
-child.stdout.on("data", chunk => logStream.write(chunk));
-child.stderr.on("data", chunk => logStream.write(chunk));
+function launch() {
+	let proc = spawn(executable, [...(existsSync(appINI) ? ["-app", appINI] : []), "-profile", profile, "-no-remote", "-ZoteroDebugText"], {
+		windowsHide: true, env: { ...globalThis.process.env, MOZ_HEADLESS: "1", MOZ_HEADLESS_WIDTH: "1200", MOZ_HEADLESS_HEIGHT: "900" },
+	});
+	proc.stdout.on("data", chunk => logStream.write(chunk));
+	proc.stderr.on("data", chunk => logStream.write(chunk));
+	return proc;
+}
+let child = launch();
 const stop = () => {
 	if (process.platform === "win32" && child.pid) {
 		try { execFileSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" }); }
@@ -107,8 +118,15 @@ const stop = () => {
 const timer = setTimeout(stop, 120000);
 try {
 	await new Promise((resolve, reject) => { child.on("error", reject); child.on("exit", resolve); });
-	logStream.end();
 	const result = JSON.parse(await readFile(path.join(out, "results.json"), "utf8"));
+	if (result.checks.every(c => c.ok)) {
+		await writeFile(path.join(profile, "user.js"), prefs + "\n" + Object.entries({ ...extras, "extensions.zusia-api-probe.phase": "restart" }).map(([key, value]) => `user_pref(${JSON.stringify(key)}, ${JSON.stringify(value)});`).join("\n"));
+		child = launch();
+		await new Promise((resolve, reject) => { child.on("error", reject); child.on("exit", resolve); });
+		const restarted = JSON.parse(await readFile(path.join(out, "restart-results.json"), "utf8"));
+		result.checks.push(...restarted.checks);
+	}
+	logStream.end();
 	const tools = requests.find(r => r.messages.some(m => m.role === "tool"));
 	result.checks.push({ name: "tool result contains the current paper", ok: tools?.messages.some(m => m.role === "tool" && m.content.includes("Attention uses")) });
 	result.checks.push({ name: "Unsloth server tools explicitly disabled", ok: requests.some(r => r.stream === false && r.enable_tools === false && r.enabled_tools?.length === 0) });

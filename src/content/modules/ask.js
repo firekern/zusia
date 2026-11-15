@@ -125,11 +125,14 @@ Object.assign(Zusia, {
 			this.editPrompt(view, pending.question, pending.images);
 		}
 		if (result.error) {
+			let diagnostic = result.diagnostic;
 			logEl.querySelector(".zs-empty")?.remove();
 			this.appendUser(view, pending.question, pending.images, pending.modes);
-			this.appendError(view, result.error, {
-				title: label + " could not answer",
-				expanded: this.isAPIBackend(backend),
+			if (result.partialText) this.appendAssistant(view, { text: result.partialText, incomplete: true });
+			this.appendError(view, result.error + (diagnostic?.help ? "\n\n" + diagnostic.help : ""), {
+				title: diagnostic?.title || label + " could not answer",
+				expanded: this.isAPIBackend(pending.backend),
+				recovery: diagnostic?.action === "settings" ? { label: diagnostic.actionLabel, run: () => this.openSettings() } : null,
 				retry: () => {
 					logEl.querySelectorAll(".zs-error").forEach(n => n.remove());
 					this.renderMessages(view, history);
@@ -230,6 +233,7 @@ Object.assign(Zusia, {
 			}
 
 			let meta = { backend, model: pending.model || undefined, effort: pending.effort || undefined };
+			if (result.metrics) meta.metrics = result.metrics;
 			if ((pending.steps && pending.steps.length) || pending.thoughtMs) {
 				meta.activity = { steps: pending.steps || [], thoughtMs: Math.round(pending.thoughtMs || 0) };
 			}
@@ -240,7 +244,7 @@ Object.assign(Zusia, {
 				result = { text: pending.partial.trim(), sessionId: result.sessionId, stopped: true };
 			}
 			else if (!result.text) {
-				return { error: result.error || label + " returned no text." };
+				return { error: result.error || label + " returned no text.", diagnostic: result.diagnostic, partialText: result.partialText };
 			}
 			let turnPage = Number.isInteger(files.currentPage) ? files.currentPage : files.selectedPage;
 			// The PDF page the question was asked on, 1-based like the markers, which the

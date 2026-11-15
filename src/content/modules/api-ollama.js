@@ -31,10 +31,13 @@ Object.assign(Zusia, {
 		let payload = { model: body.model, messages: this.ollamaMessages(body.messages), stream: body.stream,
 			options: { ...config.runtimeProfile?.options, num_predict: config.outputTokens } };
 		if (body.tools) payload.tools = body.tools;
-		if (body.reasoning_effort) payload.think = body.reasoning_effort;
-		let text = "", reasoning = "", finish = null, calls = [];
+		if (body.think !== undefined) payload.think = body.think;
+		let text = "", reasoning = "", finish = null, calls = [], metrics = {}, startedAt = Date.now(), actualModel;
 		let accept = value => {
 			if (value.error) throw this.apiError(200, JSON.stringify({ error: { message: value.error } }), headers);
+			metrics = { ...metrics, ...this.apiUsage(value, "ollama") };
+			if (typeof value.model === "string") actualModel = value.model;
+			if ((value.message?.content || value.message?.thinking) && metrics.firstTokenMs === undefined) metrics.firstTokenMs = Date.now() - startedAt;
 			if (typeof value.message?.content === "string") {
 				text += value.message.content;
 				onProgress({ text, status: "writing", thinking: false });
@@ -76,6 +79,7 @@ Object.assign(Zusia, {
 		}
 		if (!finish) throw new Error("The Ollama response ended before a complete answer. Retry the question.");
 		if (finish === "length") throw new Error("The model reached its output or context limit. Increase the output budget or shorten the question.");
-		return { text, reasoning, calls, finish };
+		metrics.responseMs = Date.now() - startedAt;
+		return { text, reasoning, calls, finish, metrics, actualModel };
 	},
 });

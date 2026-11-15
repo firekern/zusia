@@ -10,6 +10,11 @@ Object.assign(Zusia, {
 	},
 
 	setPref(name, value) {
+		let api = name.match(/^(ollama|unsloth|openai)\.(model|api)$/);
+		if (api) {
+			if (api[2] === "model") this.rememberAPISelection(api[1], value);
+			else value = this.mergeAPISelections(api[1], value);
+		}
 		Zotero.Prefs.set(this.PREF_PREFIX + name, value, true);
 	},
 
@@ -30,12 +35,13 @@ Object.assign(Zusia, {
 	},
 
 	getModel(backend) {
+		if (this.isAPIBackend(backend)) return this.apiSelectedModel(backend);
 		return this.getPref(backend + ".model") || "";
 	},
 
 	getEffort(backend) {
-		if (this.isAPIBackend(backend) && !this.getAPIConfig(backend).reasoning) return "";
 		let effort = this.getPref(backend + ".effort") || "";
+		if (this.isAPIBackend(backend)) return this.apiReasoningChoices(backend).some(c => c.id === effort) ? effort : "";
 		return this.BACKENDS[backend].efforts.includes(effort) ? effort : "";
 	},
 

@@ -5,8 +5,13 @@ Object.assign(Zusia, {
 		return this.normalizeAPIURL(config.baseURL) + "\n" + model;
 	},
 
+	// Invalid saved preferences must remain editable. Network paths stay strict.
+	safeAPIProfileKey(config, model) {
+		try { return this.apiProfileKey(config, model); } catch (e) { return ""; }
+	},
+
 	apiProfileSettings(config, model) {
-		let entry = config.profiles?.[this.apiProfileKey(config, model)];
+		let entry = config.profiles?.[this.safeAPIProfileKey(config, model)];
 		return { mode: entry?.mode === "custom" ? "custom" : "provider",
 			overrides: entry?.mode === "custom" ? this.cleanAPIProfileOverrides(entry.overrides) : {} };
 	},
@@ -136,6 +141,7 @@ Object.assign(Zusia, {
 	},
 
 	async effectiveUnslothProfile(model, config, status, options = {}) {
+		this.rememberAPICapabilities("unsloth", model, config, status);
 		let props = await this.providerJSON("unsloth", config, "/props", { ...options, optional: true });
 		let context = props?.default_generation_settings?.n_ctx;
 		if (!Number.isInteger(context) || context <= 0) {
@@ -152,6 +158,7 @@ Object.assign(Zusia, {
 		if (!Number.isInteger(runtime.contextTokens) || runtime.contextTokens <= 0) throw new Error("The provider did not report the model's effective context window. Check its profile and server version.");
 		this._apiRuntimeProfiles = this._apiRuntimeProfiles || new Map();
 		this._apiRuntimeProfiles.set(this.apiProfileKey(config, model), { ...runtime, checkedAt: Date.now() });
+		this.publishAPIState(backend, config, model, { loaded: true, actualModel: model, runtime, diagnostic: null });
 		return runtime;
 	},
 
@@ -165,6 +172,7 @@ Object.assign(Zusia, {
 		let native = this.nativeAPIConfig(config, "/api");
 		let show = await this.providerJSON("ollama", native, "/show", { headers, control, body: { model } });
 		if (control?.cancelled) return null;
+		this.rememberAPICapabilities("ollama", model, config, show);
 		let parameters = {};
 		for (let line of (show.parameters || "").split("\n")) {
 			let match = line.match(/^\s*(num_ctx|temperature|top_p|top_k|min_p|repeat_penalty)\s+(-?\d+(?:\.\d+)?)\s*$/);
@@ -186,18 +194,19 @@ Object.assign(Zusia, {
 			let list = await this.providerJSON("ollama", profile.native, "/ps", { headers, control });
 			return list?.models?.find(entry => this.ollamaModelMatches(entry.name || entry.model, model));
 		};
-		let current = await running();
+		let current = await running(), preloadLoadMs;
 		let desired = profile.options.num_ctx || profile.parameters.num_ctx;
 		if (!current || !desired || current.context_length !== desired) {
 			onProgress({ status: "loading the model in Ollama" });
-			await this.providerJSON("ollama", profile.native, "/chat", { headers, control, body: { model, messages: [], stream: false, options: profile.options } });
+			let preloaded = await this.providerJSON("ollama", profile.native, "/chat", { headers, control, body: { model, messages: [], stream: false, options: profile.options } });
+			preloadLoadMs = this.apiUsage(preloaded || {}, "ollama").loadMs;
 			if (control?.cancelled) return null;
 			current = await running();
 		}
 		if (!current) throw new Error("Ollama did not load the selected model.");
 		let runtime = this.recordAPIProfile("ollama", model, config, { contextTokens: current.context_length,
 			quantization: current.details?.quantization_level || profile.show.details?.quantization_level || "Model tag",
-			cacheTypeKV: "Ollama server setting", source: "Ollama model/tag", options: profile.options });
+			cacheTypeKV: "Ollama server setting", source: "Ollama model/tag", options: profile.options, preloadLoadMs });
 		return runtime;
 	},
 
@@ -213,7 +222,7 @@ Object.assign(Zusia, {
 		else return config;
 		if (options.control?.cancelled) return config;
 		if (runtime.contextTokens < 8192) throw new Error("The provider is running this model with " + runtime.contextTokens + " context tokens. Increase its profile to at least 8192 tokens, or set a context override in Zusia.");
-		return { ...config, contextTokens: Math.min(runtime.contextTokens, 2097152), runtimeProfile: runtime };
+		return this.applyAPICapabilities(backend, { ...config, contextTokens: Math.min(runtime.contextTokens, 2097152), runtimeProfile: runtime }, model);
 	},
 
 	async inspectAPIProfile(backend, model, config) {

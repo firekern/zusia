@@ -128,10 +128,11 @@ Object.assign(Zusia, {
 		}
 		let bubble = this.el(view.doc, "div", "zs-msg zs-assistant");
 		this.renderRich(view.doc, bubble, msg.text);
-		if (msg.stopped) {
-			bubble.appendChild(this.el(view.doc, "div", "zs-stopped", "Stopped"));
+		if (msg.stopped || msg.incomplete) {
+			bubble.appendChild(this.el(view.doc, "div", "zs-stopped", msg.incomplete ? "Incomplete response" : "Stopped"));
 		}
 		turn.appendChild(bubble);
+		if (msg.metrics) turn.appendChild(this.renderAPIMetrics(view.doc, msg.metrics));
 		if (options.footer) {
 			turn.appendChild(this.renderFooter(view, msg, options));
 		}
@@ -516,6 +517,13 @@ Object.assign(Zusia, {
 		if ((!question && !images.length) || this._pending.has(view.ctx.dir)) {
 			return;
 		}
+		let backend = this.getBackend();
+		if (this.isAPIBackend(backend) && !this.getModel(backend)) {
+			let diagnostic = this.apiDiagnostic(this.apiFailure("model", "Choose a model before sending this question."));
+			this.appendError(view, diagnostic.message, { title: diagnostic.title, expanded: true,
+				recovery: { label: diagnostic.actionLabel, run: () => this.openSettings() } });
+			return;
+		}
 		if (view.input.value.trim() === question) {
 			view.input.value = "";
 			this.autoGrow(view.input);
@@ -525,7 +533,6 @@ Object.assign(Zusia, {
 			this.renderAttachments(view);
 		}
 
-		let backend = this.getBackend();
 		let pending = {
 			question,
 			images,

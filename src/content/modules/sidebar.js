@@ -152,7 +152,16 @@ Object.assign(Zusia, {
 		context.hidden = true;
 		let attachments = this.el(doc, "div", "zs-attachments");
 		attachments.hidden = true;
-		composer.append(context, attachments, input, controls);
+		let runtime = this.el(doc, "div", "zs-api-runtime");
+		runtime.hidden = true;
+		let state = this.el(doc, "details");
+		state.append(this.el(doc, "summary"), this.el(doc, "div", "zs-api-runtime-detail"));
+		let refresh = this.iconButton(doc, "zs-api-runtime-refresh", "Refresh model status", "retry", () => {
+			refresh.disabled = true;
+			this.refreshAPIRuntime(this.getBackend(), { force: true }).finally(() => { refresh.disabled = false; });
+		});
+		runtime.append(state, refresh);
+		composer.append(context, runtime, attachments, input, controls);
 		root.append(header, paperCard, logWrap, quick, composer);
 		root.addEventListener("keydown", event => this.handleShortcut(root, event));
 		// A sheet or the wizard lies over the chat and needs room even when the chat is
@@ -198,7 +207,8 @@ Object.assign(Zusia, {
 		}
 		let effortButton = root.querySelector(".zs-effort-btn");
 		if (effortButton) {
-			effortButton.setLabel(this.EFFORTS[effort].label);
+			let choice = this.isAPIBackend(backend) ? this.apiReasoningChoices(backend).find(c => c.id === effort) : this.EFFORTS[effort];
+			effortButton.setLabel(choice?.label || "Provider default");
 			effortButton.hidden = this.isAPIBackend(backend) && !this.getAPIConfig(backend).reasoning;
 		}
 		let shown = this.getModeButtons();
@@ -212,6 +222,7 @@ Object.assign(Zusia, {
 			input.placeholder = "Ask " + info.label + " about this paper…";
 		}
 		root.querySelector(".zs-menu")?.refresh?.();
+		this.renderAPIRuntime(root);
 	},
 
 	async checkInstalledBackends(root) {
@@ -251,7 +262,9 @@ Object.assign(Zusia, {
 						desc: this.isAPIBackend(key) || !model.id ? model.desc : "",
 						checked: key === current && model.id === this.getModel(key),
 						onSelect: () => {
-							this.setPref(key + ".model", model.id);
+							if (this.isAPIBackend(key) && !model.id) { this.closeMenu(root); this.openSettings(); return; }
+							if (this.isAPIBackend(key)) this.setAPIModel(key, model.id);
+							else this.setPref(key + ".model", model.id);
 							this.setPref("backend", key);
 							this.closeMenu(root);
 							this.updateControls(root);
@@ -282,13 +295,14 @@ Object.assign(Zusia, {
 			let backend = this.getBackend();
 			let current = this.getEffort(backend);
 			this.menuSection(doc, menu, "Reasoning effort · " + this.BACKENDS[backend].label);
-			for (let effort of this.BACKENDS[backend].efforts) {
+			let choices = this.isAPIBackend(backend) ? this.apiReasoningChoices(backend) : this.BACKENDS[backend].efforts.map(id => ({ id, ...this.EFFORTS[id] }));
+			for (let choice of choices) {
 				this.menuItem(doc, menu, {
-					label: this.EFFORTS[effort].label,
-					desc: this.EFFORTS[effort].desc,
-					checked: effort === current,
+					label: choice.label,
+					desc: choice.desc,
+					checked: choice.id === current,
 					onSelect: () => {
-						this.setPref(backend + ".effort", effort);
+						this.setPref(backend + ".effort", choice.id);
 						this.closeMenu(root);
 						this.updateControls(root);
 					},
@@ -435,7 +449,7 @@ Object.assign(Zusia, {
 		return card;
 	},
 
-	appendError(view, text, { title, retry, expanded } = {}) {
+	appendError(view, text, { title, retry, expanded, recovery } = {}) {
 		let { doc } = view;
 		let card = this.el(doc, "div", "zs-msg zs-error");
 		card.setAttribute("role", "alert");
@@ -449,6 +463,7 @@ Object.assign(Zusia, {
 		let details = this.el(doc, "div", "zs-error-details");
 		details.appendChild(this.el(doc, "div", "zs-error-text", text));
 		let actions = this.el(doc, "div", "zs-error-actions");
+		if (recovery) actions.appendChild(this.ghostButton(doc, "zs-error-recovery", "settings", recovery.label, recovery.run));
 		if (retry) {
 			actions.appendChild(this.ghostButton(doc, "zs-error-retry", "retry", "Try again", retry));
 		}

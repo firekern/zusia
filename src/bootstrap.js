@@ -19,6 +19,7 @@ async function startup({ id, version, rootURI }) {
 		Services.scriptloader.loadSubScript(rootURI + "content/modules/" + name + ".js");
 	}
 	Zusia.init({ id, version, rootURI });
+	Zusia.initializeAPIConnections();
 	// The settings pane runs in the Settings window and reaches the plugin through Zotero.
 	Zotero.Zusia = Zusia;
 	Zusia.addToAllWindows();
@@ -27,6 +28,7 @@ async function startup({ id, version, rootURI }) {
 	Zusia.registerReaderHooks();
 	Zusia.watchPrefs();
 	Zusia.watchReading();
+	Zusia.startAPIMonitoring();
 	await Zusia.registerPrefsPane();
 
 	log("Startup complete");
@@ -34,12 +36,18 @@ async function startup({ id, version, rootURI }) {
 
 function onMainWindowLoad({ window }) {
 	Zusia.addToWindow(window);
+	Zusia.startAPIMonitoring(window);
 	if (Zusia.docked()) {
 		Zusia.addDock(window);
 	}
 }
 
 function onMainWindowUnload({ window }) {
+	if (Zusia._apiMonitorWindow === window) {
+		Zusia.stopAPIMonitoring();
+		let next = Zotero.getMainWindows().find(win => win !== window && !win.closed);
+		if (next) Zusia.startAPIMonitoring(next);
+	}
 	Zusia.removeDock(window);
 	Zusia.removeFromWindow(window);
 }
@@ -51,6 +59,7 @@ function shutdown() {
 	}
 	// Before the pane goes: closing it would queue memory jobs for the papers it showed.
 	Zusia.stopJobs();
+	Zusia.stopAPIMonitoring();
 	Zusia.unwatchPrefs();
 	Zusia.unwatchReading();
 	Zusia.removePlacement();

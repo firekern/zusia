@@ -34,6 +34,7 @@ const line = value => JSON.stringify(value) + "\r\n";
 function nativeUnsloth(e, { saved = {}, status = {}, context = 32768, profileStatus = 200, fitContext } = {}) {
 	let current = { loaded: [], context_length: 32768, ...status };
 	return server(e, call => {
+		if (call.path === "/v1/chat/count_tokens") return { status: 404, json: { detail: "No tokenizer in this profile-only fixture" } };
 		if (call.path === "/api/inference/status") return json(current);
 		if (call.path === "/v1/models") return json({ data: [{ id: model, quant: "Q4_K_M" }] });
 		if (call.path === "/api/settings/openai-auto-switch/overrides") return { status: profileStatus, json: { resolved: saved, resolved_key: model + ":Q4_K_M" } };

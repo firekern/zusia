@@ -8,6 +8,13 @@ async function run() {
 		for (let i = 0; !Zotero.Zusia && i < 200; i++) await Zotero.Promise.delay(100);
 		let CS = Zotero.Zusia;
 		if (!CS) throw new Error("Packaged plugin did not start");
+		if (Zotero.Prefs.get("extensions.zusia-api-probe.phase", true) === "restart") {
+			check("scoped model selection survives a native Zotero restart", CS.getModel("unsloth") === "smoke-model");
+			let response = await CS.runBackend("unsloth", { model: CS.getModel("unsloth"), messages: [{ role: "user", content: "Restart probe" }], onProgress() {}, onSpawn() {} });
+			check("restored native connection generates after restart", response.text === "JSON verified" && response.metrics?.budgetSource === "provider tokenizer");
+			await IOUtils.writeUTF8(PathUtils.join(out, "restart-results.json"), JSON.stringify({ checks }, null, 2));
+			Zotero.Utilities.Internal.quit(); return;
+		}
 		check("packaged plugin starts", true);
 		let config = { baseURL: Zotero.Prefs.get("extensions.zusia-api-probe.url", true), auth: "none", contextTokens: 32768,
 			outputTokens: 2048, tools: false, vision: false, stream: true, capabilityModel: "smoke-model" };
@@ -21,6 +28,7 @@ async function run() {
 			onSpawn() {}, onProgress() {} };
 		let result = await CS.runBackend("openai", request);
 		check("native SSE parser receives fragmented UTF-8 answer", result.text === "Verified café (p. 1)");
+		check("native SSE captures the final usage-only event", result.metrics?.promptTokens === 120 && result.metrics?.cachedTokens === 0);
 		if (result.error) throw new Error(result.error);
 		config.tools = true;
 		let withTools = await CS.runBackend("openai", { ...request, apiConfig: config });
@@ -28,10 +36,11 @@ async function run() {
 		if (withTools.error) throw new Error(withTools.error);
 		let json = await CS.runBackend("unsloth", { ...request, apiConfig: { ...config, tools: false, stream: false } });
 		check("non-streaming Unsloth preset works with server tools disabled", json.text === "JSON verified");
+		check("native Unsloth tokenizer controls the context budget", json.metrics?.budgetSource === "provider tokenizer");
 		let stopped = false, kill;
 		let cancelled = await CS.runBackend("openai", { ...request, model: "cancel-model", onSpawn: handle => { kill = () => handle.kill(); },
 			onProgress: update => { if (update.text && !stopped) { stopped = true; kill(); } } });
-		check("Stop aborts the native HTTP stream", stopped && !!cancelled.error);
+		check("Stop aborts the native HTTP stream", stopped && cancelled.cancelled && cancelled.stopped);
 		let doc = Zotero.getMainWindow().document;
 		let panel = CS.buildAPIAssistant(doc, "openai");
 		check("API settings render in native Gecko", panel.querySelectorAll("input").length === 5 && panel.querySelectorAll('[role="switch"]').length === 4);
@@ -40,11 +49,13 @@ async function run() {
 		check("native credential replacement works", await CS.getAPIKey("openai", config) === "native-test-key-two");
 		await CS.setAPIKey("openai", config, "");
 		check("native credential removal works", await CS.getAPIKey("openai", config) === "");
-		CS.setPref("ollama.model", "smoke-model");
 		let ollama = { ...config, tools: false, profiles: {} };
 		CS.setPref("ollama.api", JSON.stringify(ollama));
+		CS.setAPIModel("ollama", "smoke-model");
 		let native = await CS.runBackend("ollama", request);
 		check("native Ollama NDJSON handles fragmented UTF-8", native.text === "Profilo caffè verificato");
+		check("native Ollama counters and timing are collected", native.metrics?.completionTokens > 0 && native.metrics?.generationMs > 0 && native.metrics?.cachedTokens === 0);
+		check("native Ollama capabilities and model-defined thinking values are detected", CS.getAPIConfig("ollama").tools && CS.apiReasoningChoices("ollama").some(c => c.id === "deep"));
 		let runtime = CS._apiRuntimeProfiles.get(CS.apiProfileKey(ollama, "smoke-model"));
 		check("Ollama provider profile reads actual context and quantization", runtime.contextTokens === 16384 && runtime.quantization === "Q4_K_M");
 		ollama.tools = true;
@@ -54,13 +65,28 @@ async function run() {
 		check("native Ollama context override and document tool loop work", custom.text === "Profilo caffè verificato" && CS._apiRuntimeProfiles.get(CS.apiProfileKey(ollama, "smoke-model")).contextTokens === 32768);
 		let nativePanel = CS.buildAPIAssistant(doc, "ollama");
 		check("provider profile controls render in native Gecko", !!nativePanel.querySelector(".zs-api-profile") && !nativePanel.querySelector(".zs-api-profile-overrides").hidden);
+		check("native settings show automatic capabilities with explicit overrides", nativePanel.querySelector('select[aria-label="Document tools"]')?.value === "on");
+		let body = CS.el(doc, "div"); doc.documentElement.appendChild(body);
+		CS.setPref("backend", "ollama"); CS.renderSkeleton(doc, body);
+		let root = body.querySelector(".zs-root");
+		await CS.refreshAPIRuntime("ollama", { force: true });
+		check("native chat displays actual model context", !root.querySelector(".zs-api-runtime").hidden && root.querySelector(".zs-api-runtime").textContent.includes((32768).toLocaleString()));
+		let stats = CS.renderAPIMetrics(doc, native.metrics);
+		check("native chat renders metrics and conservative fallback honestly", stats.textContent.includes("output tokens") && stats.textContent.includes("conservative estimate"));
+		body.remove();
 		for (let backend of ["unsloth", "ollama"]) {
 			let svg = await CS.loadIcon(doc, CS.BACKEND_ICONS[backend]);
 			check(backend + " provider icon loads from the packaged XPI", svg?.localName === "svg" && svg.childElementCount > 0);
 		}
+		CS.setPref("unsloth.api", JSON.stringify({ ...config, tools: false, stream: false }));
+		CS.setAPIModel("unsloth", "smoke-model");
+		Zotero.Prefs.set("extensions.zusia.unsloth.model", "", true);
+		check("scoped selection tolerates a missing legacy scalar", CS.getModel("unsloth") === "smoke-model");
+		Services.prefs.savePrefFile(null);
 	}
 	catch (e) { checks.push({ name: String(e), ok: false, stack: e.stack }); }
-	await IOUtils.writeUTF8(PathUtils.join(out, "results.json"), JSON.stringify({ checks }, null, 2));
+	let resultName = Zotero.Prefs.get("extensions.zusia-api-probe.phase", true) === "restart" ? "restart-results.json" : "results.json";
+	await IOUtils.writeUTF8(PathUtils.join(out, resultName), JSON.stringify({ checks }, null, 2));
 	Zotero.Utilities.Internal.quit();
 }
 function startup() { run(); }

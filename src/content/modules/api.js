@@ -1,8 +1,8 @@
 "use strict";
 
 Object.assign(Zusia, {
-	// OpenAI Chat Completions is the shared wire protocol of Ollama, Unsloth and
-	// compatible servers. All network access stays in Zotero's privileged HTTP layer.
+	// Unsloth and compatible servers use OpenAI Chat Completions; Ollama has a
+	// native adapter. All network access stays in Zotero's privileged HTTP layer.
 	isAPIBackend(backend) {
 		return this.BACKENDS[backend]?.transport === "http";
 	},
@@ -21,7 +21,7 @@ Object.assign(Zusia, {
 		let saved = this.getJSONPref(backend + ".api", {}) || {};
 		let capabilitiesMatch = saved.capabilityModel === this.getModel(backend);
 		let integer = (value, fallback, min, max) => Number.isInteger(value) && value >= min && value <= max ? value : fallback;
-		return {
+		let config = {
 			baseURL: saved.baseURL || this.BACKENDS[backend]?.baseURL || "http://127.0.0.1:8080/v1",
 			auth: saved.auth === "none" ? "none" : saved.auth === "bearer" ? "bearer" : backend === "ollama" ? "none" : "bearer",
 			contextTokens: integer(saved.contextTokens, 32768, 8192, 2097152),
@@ -32,7 +32,10 @@ Object.assign(Zusia, {
 			capabilityModel: saved.capabilityModel || "",
 			stream: saved.stream !== false,
 			profiles: saved.profiles && typeof saved.profiles === "object" ? saved.profiles : {},
+			capabilities: saved.capabilities && typeof saved.capabilities === "object" ? saved.capabilities : {},
+			capabilityPreferences: { tools: capabilitiesMatch && saved.tools === true, vision: capabilitiesMatch && saved.vision === true, reasoning: capabilitiesMatch && saved.reasoning === true },
 		};
+		return this.applyAPICapabilities(backend, config, this.getModel(backend));
 	},
 
 	apiCredentialRealm(backend, config) {
@@ -107,7 +110,9 @@ Object.assign(Zusia, {
 		let help = status === 401 || status === 403 ? "Check the API key and access permissions." :
 			status === 404 ? "Check the base URL and exact model ID; make sure the model is available on the server." :
 			status === 429 ? "The server reported a rate limit. Try again later." : "Check the server and model settings.";
-		return new Error("API HTTP " + status + ". " + help + (message ? " " + message : ""));
+		let error = new Error("API HTTP " + status + ". " + help + (message ? " " + message : ""));
+		error.status = status;
+		return error;
 	},
 
 	async apiHTTPRequest(backend, config, path, { body, headers, onChunk, onCancel } = {}) {
@@ -243,22 +248,30 @@ Object.assign(Zusia, {
 
 	async apiCompletion(backend, config, body, headers, control, onProgress = () => {}) {
 		if (backend === "ollama") return this.ollamaCompletion(config, body, headers, control, onProgress);
-		let text = "";
+		let text = "", reasoning = "", metrics = {}, startedAt = Date.now(), actualModel;
 		let finish = null;
 		let received = false;
 		let calls = new Map();
 		let accept = value => {
 			if (value.error) throw this.apiError(200, JSON.stringify(value), headers);
+			metrics = { ...metrics, ...this.apiUsage(value, backend) };
+			if (typeof value.model === "string") actualModel = value.model;
 			let choice = value.choices?.find(c => !c.index || c.index === 0);
 			if (!choice) return;
 			received = true;
 			finish = choice.finish_reason || finish;
 			let delta = choice.delta || choice.message || {};
+			if ((delta.content || delta.reasoning_content || delta.reasoning) && metrics.firstTokenMs === undefined) metrics.firstTokenMs = Date.now() - startedAt;
 			if (typeof delta.content === "string") {
 				text += delta.content;
 				onProgress({ text, status: "writing", thinking: false });
 			}
-			if (delta.reasoning_content || delta.reasoning) onProgress({ status: "thinking", thinking: true });
+			if (delta.reasoning_content || delta.reasoning) {
+				let part = delta.reasoning_content || delta.reasoning;
+				if (typeof part === "string") reasoning += part;
+				if (reasoning.length > 1024 * 1024) throw new Error("API reasoning exceeded its limit.");
+				onProgress({ status: "thinking", thinking: true });
+			}
 			for (let [i, part] of (delta.tool_calls || []).entries()) {
 				let index = part.index ?? i;
 				let call = calls.get(index) || { id: "", type: "function", function: { name: "", arguments: "" } };
@@ -278,13 +291,16 @@ Object.assign(Zusia, {
 			onCancel: cancel => { control.abort = cancel; if (control.cancelled) cancel(); },
 		});
 		if (!body.stream) {
-			try { accept(JSON.parse(xhr.responseText)); }
+			let value;
+			try { value = JSON.parse(xhr.responseText); }
 			catch (e) { throw new Error("Invalid API response. Check the endpoint's Chat Completions support."); }
+			accept(value);
 		}
 		if (!received || !finish) throw new Error("The API response ended before a complete answer. Retry the question.");
 		if (finish === "length") throw new Error("The model reached its output or context limit. Increase the output budget or shorten the question.");
 		if (finish === "content_filter") throw new Error("The provider filtered this response.");
-		return { text, calls: [...calls.values()], finish };
+		metrics.responseMs = Date.now() - startedAt;
+		return { text, reasoning, calls: [...calls.values()], finish, metrics, actualModel };
 	},
 
 	// A UTF-8 byte per token is intentionally conservative across languages. This
@@ -330,7 +346,8 @@ Object.assign(Zusia, {
 
 	buildAPIMessages(request, config) {
 		let { files, question, history = [] } = request;
-		let limit = config.contextTokens - config.outputTokens - 2000;
+		let scale = config.budgetScale || 1;
+		let limit = Math.floor((config.contextTokens - config.outputTokens - 2000) * scale);
 		if (limit < 2000) throw new Error("The context window must leave at least 2,000 tokens for the document and instructions.");
 		let system = this.apiSystemPrompt(config.tools);
 		if (new TextEncoder().encode(system).length > limit * 0.6) system = this.apiCompactPrompt(config.tools);
@@ -429,42 +446,66 @@ Object.assign(Zusia, {
 
 	async runAPIBackend(backend, request) {
 		let control = { cancelled: false, abort: null };
+		let startedAt = Date.now(), metrics = { rounds: 0 }, partialText = "";
 		request.onSpawn?.({ kill: () => { control.cancelled = true; control.abort?.(); } });
 		try {
 			let config = request.apiConfig || this.getAPIConfig(backend);
-			let headers = await this.apiHeaders(backend, config);
 			let model = request.model;
 			if (!model) throw new Error("Choose an exact API model ID in Settings → Zusia → Assistants.");
+			this.normalizeAPIURL(config.baseURL);
+			let headers = await this.apiHeaders(backend, config);
 			config = await this.prepareAPIModel(backend, model, config, { headers, control, onProgress: request.onProgress });
-			if (control.cancelled) return { text: "" };
-			let messages = request.messages || this.buildAPIMessages(request, config);
+			if (control.cancelled) return { text: "", cancelled: true, stopped: true };
+			metrics.preparationMs = Date.now() - startedAt;
+			metrics.contextTokens = config.contextTokens;
+			if (config.runtimeProfile?.preloadLoadMs !== undefined) metrics.loadMs = config.runtimeProfile.preloadLoadMs;
+			metrics.outputBudget = config.outputTokens;
+			let tools = config.tools && !request.messages ? this.apiTools() : [];
+			let options = { headers, control, effort: request.effort };
+			let prepared = await this.prepareAPIMessages(backend, request, config, tools, options);
+			if (control.cancelled) return { text: "", cancelled: true, stopped: true };
+			let messages = prepared.messages;
 			if (request.images?.length) {
 				if (!config.vision) throw new Error("Enable image input for this model in Settings, or remove the attachment.");
 				let last = messages.at(-1);
 				last.content = [{ type: "text", text: last.content }, ...await Promise.all(request.images.map(path => this.apiImagePart(path)))];
 			}
-			let tools = config.tools && !request.messages ? this.apiTools() : [];
 			for (let round = 0; round <= 4; round++) {
-				if (control.cancelled) return { text: "" };
-				if (this.apiInputSize(messages) + this.apiInputSize(tools) + config.outputTokens > config.contextTokens) {
+				if (control.cancelled) return { text: "", cancelled: true, stopped: true };
+				let roundTools = round < 4 ? tools : [];
+				let measured = round === 0 && !request.images?.length ? prepared.measured : await this.measureAPIInput(backend, config, model, messages, roundTools, options);
+				metrics.lastInputTokens = measured.tokens; metrics.budgetSource = measured.source;
+				metrics.tokenizerFallback = measured.fallback;
+				if (measured.tokens + config.outputTokens > config.contextTokens) {
 					throw new Error("The context budget is full. Increase the context window or ask a more focused question.");
 				}
 				let limitField = new URL(config.baseURL).hostname === "api.openai.com" ? "max_completion_tokens" : "max_tokens";
 				let body = { model, messages, stream: config.stream, [limitField]: config.outputTokens };
-				if (request.effort) body.reasoning_effort = request.effort;
+				if (body.stream && (backend === "unsloth" || new URL(config.baseURL).hostname === "api.openai.com")) body.stream_options = { include_usage: true };
+				Object.assign(body, this.apiReasoningFields(backend, config, model, request.effort));
 				let overrides = this.apiProfileSettings(config, model).overrides;
 				if (backend === "unsloth") {
 					for (let [from, to] of [["temperature", "temperature"], ["topP", "top_p"], ["topK", "top_k"], ["minP", "min_p"], ["repeatPenalty", "repetition_penalty"]]) {
 						if (overrides[from] !== undefined) body[to] = overrides[from];
 					}
 				}
-				if (tools.length && round < 4) body.tools = tools;
+				if (roundTools.length) body.tools = roundTools;
 				// Unsloth has its own optional execution loop. Only Zusia's document tools
 				// should run here, even when the server was launched with tools enabled.
 				if (backend === "unsloth") Object.assign(body, { enable_tools: false, enabled_tools: [] });
-				let result = await this.apiCompletion(backend, config, body, headers, control, request.onProgress);
-				if (control.cancelled) return { text: result.text };
-				if (!result.calls.length) return { text: result.text.trim() };
+				partialText = "";
+				let result = await this.apiCompletion(backend, config, body, headers, control, update => {
+					if (typeof update.text === "string") partialText = update.text;
+					request.onProgress?.(update);
+				});
+				this.mergeAPIUsage(metrics, result.metrics || {}); metrics.rounds++;
+				if (control.cancelled) return { text: result.text, cancelled: true, stopped: true };
+				if (!result.calls.length) {
+					metrics.totalMs = Date.now() - startedAt;
+					let actualModel = result.actualModel || model;
+					this.publishAPIState(backend, config, model, { loaded: true, actualModel, runtime: config.runtimeProfile || null, metrics, diagnostic: null });
+					return { text: result.text.trim(), metrics };
+				}
 				if (!tools.length || round === 4 || result.calls.length > 8) throw new Error("The model exceeded the document tool limit. Try a more focused question.");
 				request.onProgress?.({ text: "", status: "reading the paper" });
 				let ids = new Set();
@@ -474,7 +515,7 @@ Object.assign(Zusia, {
 				}
 				messages.push({ role: "assistant", content: result.text || null, tool_calls: result.calls,
 					...(result.reasoning ? { reasoning_content: result.reasoning } : {}) });
-				let remaining = Math.max(200, config.contextTokens - config.outputTokens - this.apiInputSize(messages) - 2500);
+				let remaining = Math.max(200, config.contextTokens - config.outputTokens * 2 - measured.tokens - 2500);
 				for (let call of result.calls) {
 					let content;
 					try { content = this.executeAPITool(call.function.name, JSON.parse(call.function.arguments || "{}"), request.files); }
@@ -484,6 +525,15 @@ Object.assign(Zusia, {
 				}
 			}
 		}
-		catch (e) { return { text: "", error: e.message || "API request failed." }; }
+		catch (e) {
+			if (control.cancelled) return { text: partialText, cancelled: true, stopped: true };
+			let diagnostic = this.apiDiagnostic(partialText && /connection interrupted/i.test(e.message) ? this.apiFailure("incomplete", e.message) : e);
+			try {
+				let config = request.apiConfig || this.getAPIConfig(backend);
+				this.publishAPIState(backend, config, request.model || "", { loaded: null, diagnostic });
+			}
+			catch (ignored) {}
+			return { text: "", error: diagnostic.message, diagnostic, partialText };
+		}
 	},
 });

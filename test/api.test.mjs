@@ -16,9 +16,9 @@ function http(e, replies) {
 	e.window.Zotero.HTTP = { request: async (method, url, options) => {
 		// Generic wire tests serve native profile metadata with neutral defaults;
         // strict profile/adapter behaviour is covered in api-profiles.test.mjs.
-        let auxiliary = url.includes('/settings/openai-auto-switch/overrides') || url.endsWith('/props');
+		let auxiliary = url.includes('/settings/openai-auto-switch/overrides') || url.endsWith('/props') || url.endsWith('/chat/count_tokens');
         if (!auxiliary) calls.push({ method, url, options, body: options.body && JSON.parse(options.body) });
-		const reply = auxiliary ? { json: url.endsWith('/props') ? { default_generation_settings: { n_ctx: 32768 } } : { resolved: {} } } : replies.shift();
+		const reply = auxiliary ? url.endsWith('/chat/count_tokens') ? { status: 404, json: { detail: "Token counting not supported by this fixture" } } : { json: url.endsWith('/props') ? { default_generation_settings: { n_ctx: 32768 } } : { resolved: {} } } : replies.shift();
 		if (!reply) throw new Error("unexpected HTTP call");
 		const xhr = new e.window.EventTarget();
 		Object.assign(xhr, { status: reply.status || 200, responseText: "", getResponseHeader: () => reply.json ? "application/json" : "text/event-stream" });

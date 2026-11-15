@@ -1,7 +1,7 @@
 {
 	"name": "zusia",
 	"private": true,
-	"version": "1.7.0-beta.4",
+	"version": "1.7.0-beta.5",
 	"description": "Zusia, a study buddy for Zotero: CLI assistants and OpenAI-compatible APIs, including Ollama and Unsloth.",
 	"type": "module",
 	"scripts": {
