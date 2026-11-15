@@ -61,7 +61,10 @@ Object.assign(Zusia, {
 		let old = await this.apiCredentialLogin(realm);
 		if (!key) {
 			this._apiKeys.delete(realm);
-			if (old) await Services.logins.removeLoginAsync(old);
+			if (old) {
+				let manager = Services.logins;
+				await (manager.removeLoginAsync || manager.removeLogin).call(manager, old);
+			}
 			return "Key removed.";
 		}
 		if (/[\r\n]/.test(key)) throw new Error("An API key must be a single line.");
@@ -74,7 +77,10 @@ Object.assign(Zusia, {
 		let encrypted = await Zotero.OSKeyStore.encrypt(key);
 		let LoginInfo = new Components.Constructor("@mozilla.org/login-manager/loginInfo;1", Components.interfaces.nsILoginInfo, "init");
 		let login = new LoginInfo("chrome://zusia", null, realm, "API Key", encrypted, "", "");
-		if (old) await Services.logins.modifyLoginAsync(old, login);
+		if (old) {
+			let manager = Services.logins;
+			await (manager.modifyLoginAsync || manager.modifyLogin).call(manager, old, login);
+		}
 		else await Services.logins.addLoginAsync(login);
 		this._apiKeys.delete(realm);
 		return "Key saved in the OS key store.";

@@ -280,6 +280,28 @@ test("API persistent credentials use encryption and their own login realm", asyn
 	assert.equal(stored, null);
 });
 
+test("native Zotero synchronous login-manager methods can replace and remove encrypted API keys", async () => {
+	const e = env();
+	let stored = null;
+	e.window.Services.logins = {
+		findLogins: () => stored ? [stored] : [],
+		addLoginAsync: async login => { stored = login; },
+		modifyLogin: (old, login) => { stored = login; },
+		removeLogin: () => { stored = null; },
+	};
+	e.window.Components = { interfaces: { nsILoginInfo: {} }, Constructor: function () {
+		return function (host, form, realm, username, password) { return { host, realm, password }; };
+	} };
+	e.window.Zotero.OSKeyStore = { encrypt: async key => "encrypted:" + key, decrypt: async text => text.slice(10) };
+	await e.plugin.setAPIKey("openai", config, "first-test-key");
+	await e.plugin.setAPIKey("openai", config, "replacement-test-key");
+	assert.equal(await e.plugin.getAPIKey("openai", config), "replacement-test-key");
+	assert.equal(stored.password, "encrypted:replacement-test-key");
+	await e.plugin.setAPIKey("openai", config, "");
+	assert.equal(stored, null);
+	assert.ok(!JSON.stringify(e.prefs).includes("replacement-test-key"));
+});
+
 test("OpenAI's endpoint receives max_completion_tokens for modern reasoning models", async () => {
 	const e = env({ baseURL: "https://api.openai.com/v1", stream: false });
 	const calls = http(e, [{ json: { choices: [{ message: { content: "answer" }, finish_reason: "stop" }] } }]);

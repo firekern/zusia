@@ -35,6 +35,11 @@ async function run() {
 		let doc = Zotero.getMainWindow().document;
 		let panel = CS.buildAPIAssistant(doc, "openai");
 		check("API settings render in native Gecko", panel.querySelectorAll("input").length === 5 && panel.querySelectorAll('[role="switch"]').length === 4);
+		await CS.setAPIKey("openai", config, "native-test-key-one");
+		await CS.setAPIKey("openai", config, "native-test-key-two");
+		check("native credential replacement works", await CS.getAPIKey("openai", config) === "native-test-key-two");
+		await CS.setAPIKey("openai", config, "");
+		check("native credential removal works", await CS.getAPIKey("openai", config) === "");
 		CS.setPref("ollama.model", "smoke-model");
 		let ollama = { ...config, tools: false, profiles: {} };
 		CS.setPref("ollama.api", JSON.stringify(ollama));
