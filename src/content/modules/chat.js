@@ -541,7 +541,7 @@ Object.assign(Zusia, {
 			backend,
 			apiConfig: this.isAPIBackend(backend) ? this.getAPIConfig(backend) : null,
 			model: this.getModel(backend),
-			effort: this.getEffort(backend),
+			effort: this.getEffort(backend, { deferCapabilities: true }),
 			startedAt: Date.now(),
 			partial: "",
 			status: "",

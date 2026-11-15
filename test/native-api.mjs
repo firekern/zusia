@@ -22,7 +22,8 @@ let ollamaContext = 16384;
 const server = createServer(async (req, res) => {
 	if (req.url === "/api/ps") {
 		res.writeHead(200, { "content-type": "application/json" });
-		return res.end(JSON.stringify({ models: [{ name: "smoke-model:latest", context_length: ollamaContext, details: { quantization_level: "Q4_K_M" } }] }));
+		return res.end(JSON.stringify({ models: [{ name: "smoke-model:latest", context_length: ollamaContext, details: { quantization_level: "Q4_K_M" } },
+			{ name: "small-context-model:latest", context_length: 8192, details: { quantization_level: "Q4_K_M" } }] }));
 	}
 	if (req.url === "/v1/models") {
 		res.writeHead(200, { "content-type": "application/json" });
@@ -45,6 +46,10 @@ const server = createServer(async (req, res) => {
 		return res.end(JSON.stringify({ model: body.model, input_tokens: Math.ceil(JSON.stringify(body.messages).length / 4) }));
 	}
 	if (req.url === "/api/show") {
+		if (body.model === "small-context-model") {
+			res.writeHead(200, { "content-type": "application/json" });
+			return res.end(JSON.stringify({ parameters: "num_ctx 8192", capabilities: ["completion"] }));
+		}
 		if (body.model === "memory-error-model") {
 			res.writeHead(500, { "content-type": "application/json" });
 			return res.end(JSON.stringify({ error: "model requires more system memory (16 GiB) than is available (8 GiB)" }));
@@ -60,14 +65,25 @@ const server = createServer(async (req, res) => {
 			res.writeHead(200, { "content-type": "application/json" });
 			return res.end(JSON.stringify({ done: true }));
 		}
+		let prompt = body.messages.at(-1)?.content || "";
+		if ((prompt === "Ollama cold reasoning probe" && body.think !== "deep") || (body.model === "small-context-model" && Buffer.byteLength(JSON.stringify(body.messages)) + 512 + 2048 > 8192)) {
+			res.writeHead(400, { "content-type": "application/json" });
+			return res.end(JSON.stringify({ error: "Fixture rejected an invalid reasoning choice or background context budget" }));
+		}
 		res.writeHead(200, { "content-type": "application/x-ndjson; charset=utf-8" });
 		let value = body.tools && !body.messages.some(m => m.role === "tool") ?
 			{ message: { tool_calls: [{ function: { name: "read_pages", arguments: { pages: [1] } } }] }, done: true } :
 			{ message: { content: "Profilo caffè verificato" }, done: true };
+		if (prompt.includes("<conversation_turns>")) value.message = { content: '{"summary":"Native memory updated."}' };
+		else if (prompt.includes("<section_text>") || prompt.includes("<section_gists>")) value.message = { content: "Native section summary." };
 		Object.assign(value, { model: body.model, prompt_eval_count: 100, eval_count: 20, prompt_eval_cached_count: 0, eval_duration: 500000000, load_duration: 1000000 });
 		let bytes = Buffer.from(JSON.stringify(value) + "\n");
 		for (let i = 0; i < bytes.length; i += 7) { res.write(bytes.subarray(i, i + 7)); await new Promise(resolve => setTimeout(resolve, 2)); }
 		return res.end();
+	}
+	if (body.messages.some(m => m.content === "Restart probe") && body.enable_thinking !== false) {
+		res.writeHead(400, { "content-type": "application/json" });
+		return res.end(JSON.stringify({ detail: "Fixture requires the saved cold-start thinking:false choice" }));
 	}
 	if (!body.stream) {
 		res.writeHead(200, { "content-type": "application/json" });

@@ -39,9 +39,14 @@ Object.assign(Zusia, {
 		return this.getPref(backend + ".model") || "";
 	},
 
-	getEffort(backend) {
+	getEffort(backend, { deferCapabilities = false } = {}) {
 		let effort = this.getPref(backend + ".effort") || "";
-		if (this.isAPIBackend(backend)) return this.apiReasoningChoices(backend).some(c => c.id === effort) ? effort : "";
+		if (this.isAPIBackend(backend)) {
+			// A pending request keeps the saved intent through cold-start discovery.
+			// apiReasoningFields validates it against the prepared endpoint/model.
+			if (deferCapabilities) return typeof effort === "string" && /^[\w.:-]{1,64}$/.test(effort) ? effort : "";
+			return this.apiReasoningChoices(backend).some(c => c.id === effort) ? effort : "";
+		}
 		return this.BACKENDS[backend].efforts.includes(effort) ? effort : "";
 	},
 

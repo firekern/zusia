@@ -10,8 +10,12 @@ async function run() {
 		if (!CS) throw new Error("Packaged plugin did not start");
 		if (Zotero.Prefs.get("extensions.zusia-api-probe.phase", true) === "restart") {
 			check("scoped model selection survives a native Zotero restart", CS.getModel("unsloth") === "smoke-model");
-			let response = await CS.runBackend("unsloth", { model: CS.getModel("unsloth"), messages: [{ role: "user", content: "Restart probe" }], onProgress() {}, onSpawn() {} });
+			CS._apiCapabilities?.clear();
+			let effort = CS.getEffort("unsloth", { deferCapabilities: true });
+			check("saved reasoning survives restart before capability discovery", effort === "thinking:false" && CS.getEffort("unsloth") === "");
+			let response = await CS.runBackend("unsloth", { model: CS.getModel("unsloth"), effort, messages: [{ role: "user", content: "Restart probe" }], onProgress() {}, onSpawn() {} });
 			check("restored native connection generates after restart", response.text === "JSON verified" && response.metrics?.budgetSource === "provider tokenizer");
+			check("saved Thinking off is applied on the first native request", response.text === "JSON verified" && !response.error);
 			await IOUtils.writeUTF8(PathUtils.join(out, "restart-results.json"), JSON.stringify({ checks }, null, 2));
 			Zotero.Utilities.Internal.quit(); return;
 		}
@@ -68,6 +72,11 @@ async function run() {
 		let nativePanel = CS.buildAPIAssistant(doc, "ollama");
 		check("provider profile controls render in native Gecko", !!nativePanel.querySelector(".zs-api-profile") && !nativePanel.querySelector(".zs-api-profile-overrides").hidden);
 		check("native settings show automatic capabilities with explicit overrides", nativePanel.querySelector('select[aria-label="Document tools"]')?.value === "on");
+		CS.setPref("ollama.effort", "deep");
+		CS._apiCapabilities.clear();
+		let cold = await CS.runBackend("ollama", { model: "smoke-model", effort: CS.getEffort("ollama", { deferCapabilities: true }),
+			messages: [{ role: "user", content: "Ollama cold reasoning probe" }] });
+		check("native Ollama preserves a named reasoning choice through cold discovery", !cold.error && cold.text === "Profilo caffè verificato");
 		let body = CS.el(doc, "div"); doc.documentElement.appendChild(body);
 		CS.setPref("backend", "ollama"); CS.renderSkeleton(doc, body);
 		let root = body.querySelector(".zs-root");
@@ -76,12 +85,32 @@ async function run() {
 		let stats = CS.renderAPIMetrics(doc, native.metrics);
 		check("native chat renders metrics and conservative fallback honestly", stats.textContent.includes("output tokens") && stats.textContent.includes("conservative estimate"));
 		body.remove();
+		let budgetDir = PathUtils.join(out, "small-context-memory");
+		await Zotero.File.createDirectoryIfMissingAsync(budgetDir);
+		let history = Array.from({ length: 12 }, (_, i) => ({ role: i % 2 ? "assistant" : "user", text: "Study discussion and evidence. ".repeat(200) }));
+		await CS.writeAtomic(PathUtils.join(budgetDir, "chat.json"), JSON.stringify(history));
+		CS.setPref("ollama.api", JSON.stringify({ ...config, profiles: {}, stream: false }));
+		CS.setAPIModel("ollama", "small-context-model");
+		let jobsWereStopped = CS._jobsStopped; CS._jobsStopped = true;
+		try {
+			await CS.consolidateMemory({ dir: budgetDir });
+			check("native memory batch fits 8192 despite the legacy 32768 context", (await CS.loadMemory(budgetDir)).coveredThrough >= 1 && !CS._memoryFailed.has(budgetDir));
+			let pages = ["Section evidence. ".repeat(2000)], entry = { id: "section", title: "Section", start: 0, end: 0, level: 1 };
+			CS._structures.set(budgetDir, { structure: { pageCount: 1, outline: [entry], labels: [], confidence: 0 } });
+			await Zotero.File.createDirectoryIfMissingAsync(PathUtils.join(budgetDir, "cache"));
+			await CS.writeAtomic(PathUtils.join(budgetDir, "cache", "pages.json"), JSON.stringify({ pages }));
+			CS.setPref("memory.gists", true);
+			await CS.gistSection({ dir: budgetDir }, "section");
+			check("native section gist fits 8192 and retains prose output", (await CS.loadGists(budgetDir)).sections.section?.text === "Native section summary.");
+		}
+		finally { CS._jobsStopped = jobsWereStopped; }
 		for (let backend of ["unsloth", "ollama"]) {
 			let svg = await CS.loadIcon(doc, CS.BACKEND_ICONS[backend]);
 			check(backend + " provider icon loads from the packaged XPI", svg?.localName === "svg" && svg.childElementCount > 0);
 		}
 		CS.setPref("unsloth.api", JSON.stringify({ ...config, tools: false, stream: false }));
 		CS.setAPIModel("unsloth", "smoke-model");
+		CS.setPref("unsloth.effort", "thinking:false");
 		Zotero.Prefs.set("extensions.zusia.unsloth.model", "", true);
 		check("scoped selection tolerates a missing legacy scalar", CS.getModel("unsloth") === "smoke-model");
 		Services.prefs.savePrefFile(null);

@@ -28,7 +28,9 @@ Object.assign(Zusia, {
 	},
 
 	async prepareAPIMessages(backend, request, config, tools, options) {
-		let messages = request.messages || this.buildAPIMessages(request, config);
+		// Background batches are built only after native model preparation, using
+		// the same effective context that guards the completion below.
+		let messages = typeof request.messages === "function" ? request.messages(config) : request.messages || this.buildAPIMessages(request, config);
 		let measured = await this.measureAPIInput(backend, config, request.model, messages, tools, options);
 		// Use a measured sample to give the document more room, then count the
 		// complete candidate again. A failed recount always restores the baseline.

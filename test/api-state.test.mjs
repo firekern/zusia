@@ -165,3 +165,17 @@ test("Load model selects the model visible in Settings even if another window ch
 	await new Promise(resolve => setTimeout(resolve, 0));
 	assert.equal(prepared, model); assert.equal(p.getModel("unsloth"), model);
 });
+
+test("a cold-start request keeps the saved reasoning choice until native capabilities are known", async () => {
+	const { plugin: p } = env();
+	p.setPref("unsloth.effort", "thinking:false");
+	p.initializeAPIConnections();
+	assert.equal(p.getEffort("unsloth"), "", "the menu cannot claim support before discovery");
+	assert.equal(p.getEffort("unsloth", { deferCapabilities: true }), "thinking:false", "the pending request retains the saved intent");
+	let config = p.getAPIConfig("unsloth");
+	p.rememberAPICapabilities("unsloth", model, config, { supports_reasoning: true, reasoning_style: "enable_thinking" });
+	config = p.applyAPICapabilities("unsloth", config, model);
+	assert.equal(p.apiReasoningFields("unsloth", config, model, p.getEffort("unsloth", { deferCapabilities: true })).enable_thinking, false);
+	assert.equal(Object.keys(p.apiReasoningFields("unsloth", { ...config, baseURL: "http://different/v1" }, model, "thinking:false")).length, 0);
+	assert.equal(Object.keys(p.apiReasoningFields("unsloth", config, "different-model", "thinking:false")).length, 0);
+});

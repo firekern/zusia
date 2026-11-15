@@ -232,3 +232,30 @@ test("the final bounded tool round counts the exact schema that is actually sent
 	const result = await e.plugin.runAPIBackend("unsloth", req());
 	assert.equal(result.text, "Final answer"); assert.equal(result.metrics.rounds, 5); assert.equal(result.metrics.lastInputTokens, 100);
 });
+
+for (const effort of ["thinking:false", "not-supported"]) {
+	test(`the first chat request validates saved ${effort} after native discovery`, async () => {
+		const e = env(), p = e.plugin;
+		p.setPref("unsloth.effort", effort);
+		assert.equal(p.getEffort("unsloth"), "");
+		const { view } = openChat(e);
+		const calls = server(e, call => {
+			if (call.path === "/api/inference/status") return { json: { active_model: model, loaded: [model], gguf_variant: "Q4_K_M", context_length: 8192,
+				supports_reasoning: true, reasoning_style: "enable_thinking", supports_tools: false, is_vision: false } };
+			if (call.path.endsWith("/count_tokens")) return { json: { model, input_tokens: 20 } };
+			if (call.path.endsWith("/chat/completions")) return { json: { choices: [{ message: { content: "Cold-start answer" }, finish_reason: "stop" }] } };
+			return metadata(call);
+		});
+		p.showPending = () => {};
+		p.ask = async (_ctx, _question, pending) => p.runBackend(pending.backend, { model: pending.model, apiConfig: pending.apiConfig,
+			effort: pending.effort, messages: [{ role: "user", content: "Cold-start question" }] });
+		p.startRequest(view, "Cold-start question");
+		const result = await p._pending.get(view.ctx.dir).promise;
+		assert.equal(result.text, "Cold-start answer", result.error);
+		for (const call of calls.filter(c => c.path.endsWith("/count_tokens") || c.path.endsWith("/chat/completions"))) {
+			assert.equal(call.body.enable_thinking, effort === "thinking:false" ? false : undefined);
+			assert.equal(call.body.reasoning_effort, undefined);
+		}
+		e.window.close();
+	});
+}

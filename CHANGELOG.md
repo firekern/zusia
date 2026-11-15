@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- API stability: preserve the saved reasoning choice through cold-start capability discovery. Build background memory batches and section summaries after checking the model's effective context, including small contexts and unavailable tokenizers.
+
 - API backends: Ollama, Unsloth and custom OpenAI-compatible Chat Completions endpoints alongside the existing CLI logins. Includes model discovery, SSE streaming, Stop, images and optional bounded document tools, and background reading memory. API keys use the OS key store where available and session-only storage on older Zotero versions.
 
 - ➡️ **The panel is on the right, and you choose the side.** Zusia's panel now sits at the right edge of the window. **Settings → Zusia → Chat → *Where the chat is*** has three choices: Left, Right, or the item pane. Changing sides keeps the conversation as it is.
