@@ -1,7 +1,7 @@
 {
 	"manifest_version": 2,
 	"name": "Zusia",
-	"version": "1.7.0-beta.1",
+	"version": "1.7.0-beta.2",
 	"description": "Zusia, a study buddy for Zotero: use Claude Code, Codex, Antigravity, Ollama, Unsloth or an OpenAI-compatible API.",
 	"applications": {
 		"zotero": {

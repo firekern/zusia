@@ -23,6 +23,10 @@ const server = createServer(async (req, res) => {
 		res.writeHead(200, { "content-type": "application/json" });
 		return res.end(JSON.stringify({ data: [{ id: "smoke-model", loaded: true }] }));
 	}
+	if (req.url === "/api/inference/status") {
+		res.writeHead(200, { "content-type": "application/json" });
+		return res.end(JSON.stringify({ active_model: "smoke-model", loaded: ["smoke-model"] }));
+	}
 	let data = "";
 	for await (const chunk of req) data += chunk;
 	const body = JSON.parse(data);

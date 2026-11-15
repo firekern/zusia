@@ -66,6 +66,106 @@ test("API discovery returns exact model ids and ignores a cache from another end
 	assert.ok(!e.plugin.getModels("ollama").some(m => m.id === "qwen-local"));
 });
 
+test("Unsloth loads the selected model on its native API before generating, preserving proxy prefix and credentials", async () => {
+	const e = env();
+	const cfg = { ...config, auth: "bearer", baseURL: "http://localhost:8888/studio/v1" };
+	await e.plugin.setAPIKey("unsloth", cfg, "local-test-key");
+	const calls = http(e, [
+		{ json: { active_model: "old-model", loaded: ["old-model"] } },
+		{ json: { status: "loaded" } },
+		{ json: { active_model: "local-model", loaded: ["local-model"] } },
+		{ chunks: [sse(answer("Model ready")), sse(done())] },
+	]);
+	const updates = [];
+	const r = await e.plugin.runAPIBackend("unsloth", { ...request(), apiConfig: cfg, onProgress: u => updates.push(u) });
+	assert.equal(r.text, "Model ready");
+	assert.deepEqual(calls.map(c => c.url), ["/api/inference/status", "/api/inference/load", "/api/inference/status", "/v1/chat/completions"].map(path => "http://localhost:8888/studio" + path));
+	assert.equal(calls[1].body.model_path, "local-model");
+	assert.equal(calls[1].body.max_seq_length, 32768);
+	assert.equal(calls[1].body.n_parallel, 1);
+	assert.match(calls[1].body.load_request_id, /^zusia-/);
+	assert.ok(calls.every(c => c.options.headers.Authorization === "Bearer local-test-key"));
+	assert.ok(updates.some(u => u.status === "loading the model in Unsloth"));
+	assert.equal(calls[3].body.enable_tools, false);
+});
+
+test("Unsloth reuses a loaded model without changing Studio's global switch-by-request setting", async () => {
+	const e = env();
+	const calls = http(e, [
+		{ json: { active_model: "local-model", loaded: ["local-model"] } },
+		{ chunks: [sse(answer("Already ready")), sse(done())] },
+	]);
+	const r = await e.plugin.runAPIBackend("unsloth", { ...request(), apiConfig: config });
+	assert.equal(r.text, "Already ready");
+	assert.equal(calls.length, 2);
+	assert.ok(!calls.some(c => /load|settings/.test(c.url)));
+});
+
+test("Unsloth load failures prevent generation and a later request can recover", async () => {
+	const e = env();
+	const calls = http(e, [
+		{ json: { loaded: [] } },
+		{ status: 503, json: { detail: "Insufficient GPU memory" } },
+		{ json: { loaded: ["local-model"] } },
+		{ chunks: [sse(answer("Recovered")), sse(done())] },
+	]);
+	const failed = await e.plugin.runAPIBackend("unsloth", { ...request(), apiConfig: config });
+	assert.match(failed.error, /Insufficient GPU memory/);
+	assert.equal(calls.length, 2);
+	const recovered = await e.plugin.runAPIBackend("unsloth", { ...request(), apiConfig: config });
+	assert.equal(recovered.text, "Recovered");
+});
+
+test("Stop cancels only Zusia's own Unsloth load and never starts a completion", async () => {
+	const e = env();
+	const calls = [];
+	let rejectLoad, loading, kill;
+	const started = new Promise(resolve => { loading = resolve; });
+	e.window.Zotero.HTTP = { request: async (method, url, options) => {
+		const body = options.body && JSON.parse(options.body);
+		calls.push({ url, body });
+		if (url.endsWith("/load")) {
+			const promise = new Promise((resolve, reject) => { rejectLoad = reject; });
+			options.cancellerReceiver(() => rejectLoad(new Error("cancelled")));
+			loading();
+			return promise;
+		}
+		return { status: 200, responseText: JSON.stringify(url.endsWith("/status") ? { loaded: [] } : { status: "unloaded" }) };
+	} };
+	const running = e.plugin.runAPIBackend("unsloth", { ...request(), apiConfig: config, onSpawn: handle => { kill = () => handle.kill(); } });
+	await started;
+	kill();
+	await running;
+	const load = calls.find(c => c.url.endsWith("/load"));
+	const cancel = calls.find(c => c.url.endsWith("/unload"));
+	assert.equal(cancel.body.cancel_load_request_id, load.body.load_request_id);
+	assert.equal(cancel.body.model_path, "local-model");
+	assert.ok(!calls.some(c => c.url.includes("/chat/completions")));
+	assert.equal(cancel.body.force_cancel_active, undefined);
+});
+
+test("Unsloth verifies the selected model after a successful load response", async () => {
+	const e = env();
+	const calls = http(e, [{ json: { loaded: [] } }, { json: { status: "loaded" } }, { json: { loaded: ["wrong-model"] } }]);
+	const result = await e.plugin.runAPIBackend("unsloth", { ...request(), apiConfig: config });
+	assert.match(result.error, /did not load the selected model/);
+	assert.equal(calls.length, 3);
+});
+
+test("Unsloth settings can load a model without generating an answer", async () => {
+	const e = env();
+	e.prefs[P + "unsloth.model"] = "local-model";
+	e.prefs[P + "unsloth.api"] = JSON.stringify(config);
+	const calls = http(e, [{ json: { loaded: [] } }, { json: {} }, { json: { loaded: ["local-model"] } }, { json: { data: [{ id: "local-model", loaded: true }] } }]);
+	const panel = e.plugin.buildAPIAssistant(e.document, "unsloth");
+	e.document.body.appendChild(panel);
+	const load = [...panel.querySelectorAll("button")].find(b => b.textContent === "Load model");
+	load.click();
+	await new Promise(resolve => setImmediate(resolve));
+	assert.equal(panel.querySelector(".zs-agent-status").textContent, "Model ready");
+	assert.ok(!calls.some(c => c.url.includes("/chat/completions")));
+});
+
 test("API streaming handles fragmented SSE, CRLF, reasoning and preserves the selected model", async () => {
 	const e = env();
 	const stream = ": keepalive\r\n\r\n" + sse({ choices: [{ delta: { reasoning_content: "private thought" } }] }) + sse(answer("Caffè ")) + sse(answer("works")) + sse(done()) + "data: [DONE]\r\n\r\n";

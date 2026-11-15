@@ -98,7 +98,7 @@ Object.assign(Zusia, {
 		if (key) message = message.split(key).join("[redacted]");
 		message = message.replace(/sk-[\w-]+/g, "[redacted]").slice(0, 400);
 		let help = status === 401 || status === 403 ? "Check the API key and access permissions." :
-			status === 404 ? "Check the base URL and exact model ID; in Unsloth the model may need to be loaded first." :
+			status === 404 ? "Check the base URL and exact model ID; make sure the model is available on the server." :
 			status === 429 ? "The server reported a rate limit. Try again later." : "Check the server and model settings.";
 		return new Error("API HTTP " + status + ". " + help + (message ? " " + message : ""));
 	},
@@ -146,11 +146,74 @@ Object.assign(Zusia, {
 		catch (e) { throw new Error("The models endpoint did not return JSON. Check that the URL ends in /v1."); }
 		if (!Array.isArray(payload.data)) throw new Error("The models endpoint must return an OpenAI-compatible data array.");
 		let models = payload.data.filter(m => typeof m.id === "string" && m.id.trim()).map(m => ({
-			id: m.id, label: m.id, desc: m.loaded === true ? "Loaded" : "", loaded: m.loaded === true,
+			id: m.id, label: m.id,
+			desc: m.loaded === true ? "Loaded" : backend === "unsloth" && m.loaded === false ? "Loads when you send a message" : "",
+			loaded: typeof m.loaded === "boolean" ? m.loaded : undefined,
 		}));
 		this._apiModels = this._apiModels || {};
 		this._apiModels[backend] = { baseURL, models };
 		return models;
+	},
+
+	// Model lifecycle is provider-specific, outside the OpenAI chat protocol. Keep
+	// the native URL on the configured origin (including any reverse-proxy prefix),
+	// and authenticate with the original chat endpoint's credential realm.
+	async ensureUnslothModel(model, config, { headers, control = { cancelled: false }, onProgress = () => {} } = {}) {
+		if (!model) throw new Error("Choose an Unsloth model first.");
+		let baseURL = this.normalizeAPIURL(config.baseURL);
+		if (!baseURL.endsWith("/v1")) throw new Error("The Unsloth API base URL must end in /v1 to load models.");
+		let native = { ...config, baseURL: baseURL.slice(0, -3) + "/api/inference" };
+		headers = headers || await this.apiHeaders("unsloth", config);
+		this._unslothLoads = this._unslothLoads || new Map();
+		// Serialize loads from different paper tabs/settings. A failed or stopped
+		// attempt must not poison later loads, and queued cancellations do no work.
+		let previous = this._unslothLoads.get(baseURL) || Promise.resolve();
+		let operation = previous.catch(() => {}).then(async () => {
+			if (control.cancelled) return null;
+			let status = async () => {
+				let xhr = await this.apiHTTPRequest("unsloth", native, "/status", {
+					headers, onCancel: cancel => { control.abort = cancel; if (control.cancelled) cancel(); },
+				});
+				try { return JSON.parse(xhr.responseText); }
+				catch (e) { throw new Error("Unsloth returned invalid model status. Check the Studio API connection."); }
+			};
+			let ready = value => value?.loaded?.includes(model) || value?.active_model === model || value?.model_identifier === model;
+			let current = await status();
+			if (control.cancelled || ready(current)) return current;
+			onProgress({ status: "loading the model in Unsloth", step: { kind: "load", target: model, label: "Loading " + model } });
+			let loadID = "zusia-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2);
+			await this.apiHTTPRequest("unsloth", native, "/load", {
+				headers, body: { model_path: model, max_seq_length: config.contextTokens, n_parallel: 1, load_request_id: loadID },
+				onCancel: cancel => {
+					control.abort = () => {
+						// A scoped cancel can stop only this load, never unload a model
+						// which has become resident or was started outside Zusia.
+						try { cancel(); }
+						finally {
+							this.apiHTTPRequest("unsloth", native, "/unload", {
+								headers, body: { model_path: model, cancel_load_request_id: loadID },
+							}).catch(() => {});
+						}
+					};
+					if (control.cancelled) control.abort();
+				},
+			});
+			if (control.cancelled) return null;
+			current = await status();
+			if (!ready(current)) throw new Error("Unsloth did not load the selected model. Check the available memory and model settings, then try again.");
+			let cache = this._apiModels?.unsloth;
+			if (cache?.baseURL === baseURL) {
+				for (let entry of cache.models) {
+					entry.loaded = current.loaded?.includes(entry.id) || current.active_model === entry.id;
+					entry.desc = entry.loaded ? "Loaded" : "Loads when you send a message";
+				}
+			}
+			onProgress({ status: "reading the paper" });
+			return current;
+		});
+		this._unslothLoads.set(baseURL, operation);
+		try { return await operation; }
+		finally { if (this._unslothLoads.get(baseURL) === operation) this._unslothLoads.delete(baseURL); }
 	},
 
 	createAPIStreamParser(onEvent) {
@@ -366,6 +429,10 @@ Object.assign(Zusia, {
 				if (control.cancelled) return { text: "" };
 				if (this.apiInputSize(messages) + this.apiInputSize(tools) + config.outputTokens > config.contextTokens) {
 					throw new Error("The context budget is full. Increase the context window or ask a more focused question.");
+				}
+				if (backend === "unsloth" && round === 0) {
+					await this.ensureUnslothModel(model, config, { headers, control, onProgress: request.onProgress });
+					if (control.cancelled) return { text: "" };
 				}
 				let limitField = new URL(config.baseURL).hostname === "api.openai.com" ? "max_completion_tokens" : "max_tokens";
 				let body = { model, messages, stream: config.stream, [limitField]: config.outputTokens };

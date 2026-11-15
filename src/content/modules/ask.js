@@ -129,6 +129,7 @@ Object.assign(Zusia, {
 			this.appendUser(view, pending.question, pending.images, pending.modes);
 			this.appendError(view, result.error, {
 				title: label + " could not answer",
+				expanded: this.isAPIBackend(backend),
 				retry: () => {
 					logEl.querySelectorAll(".zs-error").forEach(n => n.remove());
 					this.renderMessages(view, history);

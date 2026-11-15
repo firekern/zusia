@@ -184,6 +184,13 @@ Object.assign(Zusia, {
 		}
 		let modelButton = root.querySelector(".zs-model-btn");
 		if (modelButton) {
+			let icon = modelButton.querySelector(".zs-model-icon");
+			let name = this.BACKEND_ICONS[backend];
+			if (icon?.dataset.icon !== name) {
+				let next = this.svgIcon(root.ownerDocument, name, "zs-model-icon");
+				if (icon) icon.replaceWith(next);
+				else modelButton.prepend(next);
+			}
 			let full = model ? info.label + " · " + this.modelLabel(backend, model) : info.label;
 			// Long model names drop the assistant prefix, as Beaver drops the vendor name.
 			modelButton.setLabel(full.length > 22 && model ? this.modelLabel(backend, model) : full);
@@ -241,7 +248,7 @@ Object.assign(Zusia, {
 				for (let model of this.getModels(key)) {
 					this.menuItem(doc, menu, {
 						label: model.label,
-						desc: model.id ? "" : model.desc,
+						desc: this.isAPIBackend(key) || !model.id ? model.desc : "",
 						checked: key === current && model.id === this.getModel(key),
 						onSelect: () => {
 							this.setPref(key + ".model", model.id);
@@ -261,6 +268,11 @@ Object.assign(Zusia, {
 		});
 		if (menu && !Array.isArray(this._agyModels)) {
 			this.loadAgyModels().then(() => menu.isConnected && menu.refresh());
+		}
+		if (menu) {
+			for (let key of Object.keys(this.BACKENDS).filter(key => this.isAPIBackend(key) && this.getModel(key))) {
+				this.loadAPIModels(key).then(() => menu.isConnected && menu.refresh()).catch(() => {});
+			}
 		}
 	},
 
@@ -423,7 +435,7 @@ Object.assign(Zusia, {
 		return card;
 	},
 
-	appendError(view, text, { title, retry } = {}) {
+	appendError(view, text, { title, retry, expanded } = {}) {
 		let { doc } = view;
 		let card = this.el(doc, "div", "zs-msg zs-error");
 		card.setAttribute("role", "alert");
@@ -447,7 +459,7 @@ Object.assign(Zusia, {
 		actions.appendChild(copy);
 		details.appendChild(actions);
 		// Short errors are shown straight away; long ones start collapsed.
-		let open = text.length < 240;
+		let open = expanded ?? text.length < 240;
 		let setOpen = (value) => {
 			open = value;
 			details.hidden = !open;

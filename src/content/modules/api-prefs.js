@@ -2,7 +2,8 @@
 
 Object.assign(Zusia, {
 	// Uses the same disclosure, rows and fields as the CLI cards. Configuration is
-	// local; testing an endpoint only lists models and never starts an inference.
+	// local; connection checks only list models. Loading is a separate explicit
+	// action, also performed automatically before an Unsloth chat request.
 	buildAPIAssistant(doc, backend) {
 		let info = this.BACKENDS[backend];
 		let config = this.getAPIConfig(backend);
@@ -86,7 +87,8 @@ Object.assign(Zusia, {
 			}
 		};
 		let model = field("Model ID", this.getModel(backend), setModel,
-			"Use the exact ID from the server. A downloaded Unsloth model may need to be loaded in Studio first.");
+			backend === "unsloth" ? "Use the exact ID from the server. Zusia loads downloaded models automatically before answering." :
+				"Use the exact ID from the server.");
 		model.setAttribute("list", "zs-api-models-" + backend);
 		let choices = this.el(doc, "datalist");
 		choices.id = "zs-api-models-" + backend;
@@ -99,7 +101,7 @@ Object.assign(Zusia, {
 			for (let m of models) {
 				let option = this.el(doc, "option"); option.value = m.id; choices.appendChild(option);
 			}
-			choose.refill([["", "Choose a discovered model"], ...models.map(m => [m.id, m.id + (m.loaded ? " · loaded" : "")])], this.getModel(backend));
+			choose.refill([["", "Choose a discovered model"], ...models.map(m => [m.id, m.id + (m.loaded ? " · loaded" : backend === "unsloth" && m.loaded === false ? " · loads on send" : "")])], this.getModel(backend));
 		};
 		refill(this.getModels(backend).filter(m => m.id));
 		body.appendChild(this.row(doc, "Server models", choose));
@@ -117,7 +119,43 @@ Object.assign(Zusia, {
 			catch (e) { details.dataset.found = "false"; status.textContent = "Connection check failed"; message.textContent = e.message; }
 			finally { check.disabled = false; }
 		});
-		body.appendChild(this.row(doc, "Connection", [check, message], null, { stack: true }));
+		let connectionActions = this.el(doc, "div", "zs-api-actions");
+		connectionActions.appendChild(check);
+		if (backend === "unsloth") {
+			let loading = null;
+			let load = button("Load model", async () => {
+				if (loading) { loading.cancelled = true; loading.abort?.(); return; }
+				if (!urlField.reportValidity()) return;
+				let target = model.value.trim();
+				let snapshot = { ...config };
+				let current = () => model.value.trim() === target && config.baseURL === snapshot.baseURL;
+				let control = loading = { cancelled: false, abort: null };
+				load.textContent = "Stop loading";
+				status.textContent = "Preparing model…";
+				message.textContent = "";
+				try {
+					await this.ensureUnslothModel(target, snapshot, { control, onProgress: update => {
+						if (current()) message.textContent = update.status === "loading the model in Unsloth" ? "Loading " + target + "…" : "";
+					} });
+					if (!current()) return;
+					if (control.cancelled) { status.textContent = "Model loading cancelled"; message.textContent = ""; return; }
+					status.textContent = "Model ready";
+					message.textContent = target + " is loaded in Unsloth. You can ask about your paper.";
+					details.dataset.found = "true";
+					let models = await this.loadAPIModels(backend);
+					if (current()) refill(models);
+				}
+				catch (e) {
+					if (current()) {
+						status.textContent = control.cancelled ? "Model loading cancelled" : "Could not load model";
+						message.textContent = control.cancelled ? "" : e.message;
+					}
+				}
+				finally { loading = null; load.textContent = "Load model"; }
+			});
+			connectionActions.appendChild(load);
+		}
+		body.appendChild(this.row(doc, "Connection", [connectionActions, message], null, { stack: true }));
 		for (let [label, prop, min, max, hint] of [
 			["Context window (tokens)", "contextTokens", 8192, 2097152, "Set this to the context actually configured on your server. Zusia uses a conservative input estimate."],
 			["Maximum output (tokens)", "outputTokens", 256, 65536, "Space reserved for the response, including reasoning on models that count it."],

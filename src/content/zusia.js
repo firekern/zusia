@@ -259,7 +259,7 @@ Zusia = {
 	// inline budget, so it stays a fraction of the smallest one (12,000 on Windows).
 	CUSTOM_PROMPT_CHARS: 4000,
 	WIZARD_STEPS: ["welcome", "assistant", "look", "buddy", "answers", "voice", "done"],
-	BACKEND_ICONS: { claude: "sparkle", codex: "terminal", agy: "rocket", ollama: "ref", unsloth: "ref", openai: "ref" },
+	BACKEND_ICONS: { claude: "sparkle", codex: "terminal", agy: "rocket", ollama: "ollama", unsloth: "unsloth", openai: "ref" },
 	// Study buddies: original drawings shown in the empty chat, with a matching header icon.
 	MASCOTS: {
 		cat: { label: "Cat", icon: "mascot-cat", header: "cat" },
@@ -311,6 +311,8 @@ Zusia = {
 		save: "download-simple.svg",
 		back: "arrow-u-up-left.svg",
 		ref: "link.svg",
+		ollama: "provider-ollama.svg",
+		unsloth: "provider-unsloth.svg",
 		cat: "cat.svg",
 		bird: "bird.svg",
 		robot: "robot.svg",

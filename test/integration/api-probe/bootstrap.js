@@ -3,6 +3,7 @@ function check(name, ok) { checks.push({ name, ok: !!ok }); }
 async function run() {
 	let out = Zotero.Prefs.get("extensions.zusia-api-probe.out", true);
 	try {
+		await IOUtils.writeUTF8(PathUtils.join(out, "probe-started.json"), JSON.stringify({ stage: "waiting for Zotero UI" }));
 		await Zotero.uiReadyPromise;
 		for (let i = 0; !Zotero.Zusia && i < 200; i++) await Zotero.Promise.delay(100);
 		let CS = Zotero.Zusia;
@@ -34,6 +35,10 @@ async function run() {
 		let doc = Zotero.getMainWindow().document;
 		let panel = CS.buildAPIAssistant(doc, "ollama");
 		check("API settings render in native Gecko", panel.querySelectorAll("input").length === 5 && panel.querySelectorAll('[role="switch"]').length === 4);
+		for (let backend of ["unsloth", "ollama"]) {
+			let svg = await CS.loadIcon(doc, CS.BACKEND_ICONS[backend]);
+			check(backend + " provider icon loads from the packaged XPI", svg?.localName === "svg" && svg.childElementCount > 0);
+		}
 	}
 	catch (e) { checks.push({ name: String(e), ok: false, stack: e.stack }); }
 	await IOUtils.writeUTF8(PathUtils.join(out, "results.json"), JSON.stringify({ checks }, null, 2));
