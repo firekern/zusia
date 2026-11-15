@@ -157,7 +157,11 @@ Object.assign(Zusia, {
 				if (!urlField.reportValidity()) return;
 				if (![...body.querySelectorAll("input")].filter(input => !input.closest("[hidden]")).every(input => input.reportValidity())) return;
 				let target = model.value.trim();
-				this.setAPIModel(backend, target);
+				try { this.setAPIModel(backend, target); }
+				catch (error) {
+					let text = target ? error.message : "Choose an exact model ID before loading.";
+					model.setCustomValidity(text); message.textContent = text; model.reportValidity(); return;
+				}
 				let snapshot = { ...config };
 				let current = () => model.value.trim() === target && config.baseURL === snapshot.baseURL;
 				let control = loading = { cancelled: false, abort: null };

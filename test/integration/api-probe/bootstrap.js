@@ -41,6 +41,16 @@ async function run() {
 		let json = await CS.runBackend("unsloth", { ...request, apiConfig: { ...config, tools: false, stream: false } });
 		check("non-streaming Unsloth preset works with server tools disabled", json.text === "JSON verified");
 		check("native Unsloth tokenizer controls the context budget", json.metrics?.budgetSource === "provider tokenizer");
+		let expired = await CS.runBackend("unsloth", { ...request, apiConfig: { ...config, tools: false, stream: false }, effort: "thinking:false",
+			messages: prepared => {
+				CS._apiCapabilities.get(CS.apiProfileKey(prepared, "smoke-model")).checkedAt -= 600001;
+				return [{ role: "user", content: "Expired capability probe" }];
+			} });
+		check("native reasoning snapshot survives discovery-cache expiry", expired.text === "JSON verified" && !expired.error);
+		let raceURL = config.baseURL.replace(/\/v1$/, "/race/v1");
+		let racing = await Promise.all(["race-A", "race-B"].map(model => CS.runBackend("unsloth", { model,
+			apiConfig: { ...config, baseURL: raceURL, stream: false }, messages: [{ role: "user", content: "Concurrent model probe" }] })));
+		check("native concurrent model switches preserve both answers", racing[0].text === "Answer race-A" && racing[1].text === "Answer race-B");
 		let stopped = false, kill;
 		let cancelled = await CS.runBackend("openai", { ...request, model: "cancel-model", onSpawn: handle => { kill = () => handle.kill(); },
 			onProgress: update => { if (update.text && !stopped) { stopped = true; kill(); } } });
@@ -48,6 +58,10 @@ async function run() {
 		let doc = Zotero.getMainWindow().document;
 		let panel = CS.buildAPIAssistant(doc, "openai");
 		check("API settings render in native Gecko", panel.querySelectorAll("input").length === 5 && panel.querySelectorAll('[role="switch"]').length === 4);
+		let emptyPanel = CS.buildAPIAssistant(doc, "unsloth");
+		[...emptyPanel.querySelectorAll("button")].find(button => button.textContent === "Load model").click();
+		await Zotero.Promise.delay(0);
+		check("native first-run model loading reports an empty selection without failing", !emptyPanel.querySelector("input[list]").checkValidity() && emptyPanel.textContent.includes("Choose an exact model ID before loading"));
 		await CS.setAPIKey("openai", config, "native-test-key-one");
 		await CS.setAPIKey("openai", config, "native-test-key-two");
 		check("native credential replacement works", await CS.getAPIKey("openai", config) === "native-test-key-two");

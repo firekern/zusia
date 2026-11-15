@@ -211,18 +211,28 @@ Object.assign(Zusia, {
 	},
 
 	async prepareAPIModel(backend, model, config, options = {}) {
-		options = { ...options, headers: options.headers || await this.apiHeaders(backend, config) };
-		let runtime;
-		if (backend === "unsloth") {
-			let status = await this.ensureUnslothModel(model, config, options);
+		let control = options.control || { cancelled: false, abort: null }, release;
+		let standalone = !options.connectionLease;
+		this._apiRequestControls = this._apiRequestControls || new Set();
+		if (standalone) this._apiRequestControls.add(control);
+		try {
+			if (this._apiConnectionsStopped) control.cancelled = true;
+			if (standalone && backend === "unsloth") release = await this.acquireUnslothConnection(config, model, control, options.onProgress);
+			if (control.cancelled) return config;
+			options = { ...options, control, headers: options.headers || await this.apiHeaders(backend, config) };
+			let runtime;
+			if (backend === "unsloth") {
+				let status = await this.ensureUnslothModel(model, config, options);
+				if (options.control?.cancelled) return config;
+				runtime = await this.effectiveUnslothProfile(model, config, status, options);
+			}
+			else if (backend === "ollama") runtime = await this.prepareOllamaModel(model, config, options);
+			else return config;
 			if (options.control?.cancelled) return config;
-			runtime = await this.effectiveUnslothProfile(model, config, status, options);
+			if (runtime.contextTokens < 8192) throw new Error("The provider is running this model with " + runtime.contextTokens + " context tokens. Increase its profile to at least 8192 tokens, or set a context override in Zusia.");
+			return this.applyAPICapabilities(backend, { ...config, contextTokens: Math.min(runtime.contextTokens, 2097152), runtimeProfile: runtime }, model);
 		}
-		else if (backend === "ollama") runtime = await this.prepareOllamaModel(model, config, options);
-		else return config;
-		if (options.control?.cancelled) return config;
-		if (runtime.contextTokens < 8192) throw new Error("The provider is running this model with " + runtime.contextTokens + " context tokens. Increase its profile to at least 8192 tokens, or set a context override in Zusia.");
-		return this.applyAPICapabilities(backend, { ...config, contextTokens: Math.min(runtime.contextTokens, 2097152), runtimeProfile: runtime }, model);
+		finally { release?.(); if (standalone) this._apiRequestControls.delete(control); }
 	},
 
 	async inspectAPIProfile(backend, model, config) {

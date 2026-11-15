@@ -259,3 +259,29 @@ for (const effort of ["thinking:false", "not-supported"]) {
 		e.window.close();
 	});
 }
+
+test("prepared reasoning remains stable across tool rounds after the discovery cache expires", async () => {
+	const e = env(), p = e.plugin;
+	let now = 1000000, round = 0;
+	e.window.Date.now = () => now;
+	const fields = [];
+	server(e, call => {
+		if (call.path === "/api/inference/status") return { json: { active_model: model, loaded: [model], gguf_variant: "Q4_K_M", context_length: 8192,
+			supports_tools: true, supports_reasoning: true, reasoning_style: "enable_thinking_effort", reasoning_effort_levels: ["max"] } };
+		if (call.path.endsWith("/count_tokens")) return { json: { model, input_tokens: 100 } };
+		if (call.path.endsWith("/chat/completions")) {
+			fields.push({ thinking: call.body.enable_thinking, effort: call.body.reasoning_effort });
+			if (++round === 1) {
+				now += 600001;
+				return { json: { choices: [{ message: { tool_calls: [{ id: "read", type: "function", function: { name: "read_pages", arguments: '{"pages":[1]}' } }] }, finish_reason: "tool_calls" }] } };
+			}
+			return { json: { choices: [{ message: { content: "Stable reasoning" }, finish_reason: "stop" }] } };
+		}
+		return metadata(call);
+	});
+	const result = await p.runBackend("unsloth", { ...req(), effort: "max" });
+	assert.equal(result.text, "Stable reasoning", result.error);
+	assert.deepEqual(fields, [{ thinking: true, effort: "max" }, { thinking: true, effort: "max" }]);
+	assert.equal(p.getAPICapabilities(cfg, model), null, "the UI discovery cache still expires normally");
+	e.window.close();
+});

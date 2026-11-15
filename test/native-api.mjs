@@ -19,7 +19,24 @@ execFileSync(process.platform === "win32" ? "python" : "python3", ["-c",
 const requests = [];
 const sockets = new Set();
 let ollamaContext = 16384;
+let raceModel = "race-A";
 const server = createServer(async (req, res) => {
+	if (req.url.startsWith("/race/")) {
+		let data = ""; for await (const chunk of req) data += chunk;
+		let body = data ? JSON.parse(data) : null, pathname = req.url.slice(5).split("?")[0], value, status = 200;
+		if (pathname === "/api/inference/status") value = { active_model: raceModel, loaded: [raceModel], context_length: 8192 };
+		else if (pathname === "/api/settings/openai-auto-switch/overrides") value = { resolved: {} };
+		else if (pathname === "/api/inference/load") { raceModel = body.model_path; value = {}; }
+		else if (pathname === "/v1/props") value = { default_generation_settings: { n_ctx: 8192 } };
+		else if (pathname === "/v1/chat/count_tokens") value = { model: raceModel, input_tokens: 10 };
+		else if (pathname === "/v1/chat/completions") {
+			await new Promise(resolve => setTimeout(resolve, 30));
+			status = body.model === raceModel ? 200 : 409;
+			value = status === 200 ? { choices: [{ message: { content: "Answer " + body.model }, finish_reason: "stop" }] } : { detail: "Requested model is not loaded" };
+		}
+		else { status = 404; value = { detail: "Unknown race fixture route" }; }
+		res.writeHead(status, { "content-type": "application/json" }); return res.end(JSON.stringify(value));
+	}
 	if (req.url === "/api/ps") {
 		res.writeHead(200, { "content-type": "application/json" });
 		return res.end(JSON.stringify({ models: [{ name: "smoke-model:latest", context_length: ollamaContext, details: { quantization_level: "Q4_K_M" } },
@@ -41,6 +58,10 @@ const server = createServer(async (req, res) => {
 	let data = "";
 	for await (const chunk of req) data += chunk;
 	const body = JSON.parse(data);
+	if (body.messages?.some(m => m.content === "Expired capability probe") && body.enable_thinking !== false) {
+		res.writeHead(400, { "content-type": "application/json" });
+		return res.end(JSON.stringify({ detail: "Prepared Thinking off must survive discovery-cache expiry" }));
+	}
 	if (req.url === "/v1/chat/count_tokens") {
 		res.writeHead(200, { "content-type": "application/json" });
 		return res.end(JSON.stringify({ model: body.model, input_tokens: Math.ceil(JSON.stringify(body.messages).length / 4) }));

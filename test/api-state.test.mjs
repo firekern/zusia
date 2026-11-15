@@ -179,3 +179,23 @@ test("a cold-start request keeps the saved reasoning choice until native capabil
 	assert.equal(Object.keys(p.apiReasoningFields("unsloth", { ...config, baseURL: "http://different/v1" }, model, "thinking:false")).length, 0);
 	assert.equal(Object.keys(p.apiReasoningFields("unsloth", config, "different-model", "thinking:false")).length, 0);
 });
+
+test("Load model validates an initially empty field without rejecting or accessing the provider", async () => {
+	const e = loadPlugin({ prefs: { [P + "backend"]: "unsloth", [P + "unsloth.api"]: JSON.stringify({ baseURL, auth: "none" }) } });
+	const listeners = new WeakMap(), proto = e.window.EventTarget.prototype, original = proto.addEventListener;
+	proto.addEventListener = function(type, listener, ...args) {
+		if (type === "click") listeners.set(this, listener);
+		return original.call(this, type, listener, ...args);
+	};
+	let panel;
+	try { panel = e.plugin.buildAPIAssistant(e.document, "unsloth"); }
+	finally { proto.addEventListener = original; }
+	let accessed = false;
+	e.plugin.prepareAPIModel = async () => { accessed = true; };
+	const button = [...panel.querySelectorAll("button")].find(b => b.textContent === "Load model");
+	await assert.doesNotReject(() => listeners.get(button)());
+	assert.equal(panel.querySelector("input[list]").checkValidity(), false);
+	assert.match(panel.textContent, /Choose an exact model ID before loading/);
+	assert.equal(accessed, false); assert.equal(e.plugin.getModel("unsloth"), "");
+	e.window.close();
+});

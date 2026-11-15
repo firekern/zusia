@@ -59,6 +59,7 @@ function shutdown() {
 	}
 	// Before the pane goes: closing it would queue memory jobs for the papers it showed.
 	Zusia.stopJobs();
+	Zusia.stopAPIConnections();
 	Zusia.stopAPIMonitoring();
 	Zusia.unwatchPrefs();
 	Zusia.unwatchReading();

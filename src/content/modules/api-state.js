@@ -74,6 +74,7 @@ Object.assign(Zusia, {
 		}
 		result.reasoningValues = [...new Set(values.filter(v => typeof v === "boolean" || typeof v === "string" && /^[\w.-]{1,40}$/.test(v)))].slice(0, 20);
 		result.checkedAt = Date.now();
+		result.scope = this.apiProfileKey(config, model);
 		this._apiCapabilities = this._apiCapabilities || new Map();
 		this._apiCapabilities.set(this.apiProfileKey(config, model), result);
 		return result;
@@ -103,11 +104,19 @@ Object.assign(Zusia, {
 	apiReasoningChoices(backend, config = this.getAPIConfig(backend), model = this.getModel(backend)) {
 		let choices = [{ id: "", label: "Provider default", desc: "Use the model's own reasoning setting" }];
 		if (!config.reasoning) return choices;
-		let values = ["unsloth", "ollama"].includes(backend) ? this.getAPICapabilities(config, model)?.reasoningValues || [] : ["low", "medium", "high"];
+		let values = ["unsloth", "ollama"].includes(backend) ? this.apiReasoningCapabilities(config, model)?.reasoningValues || [] : ["low", "medium", "high"];
 		for (let value of values) choices.push({ id: typeof value === "boolean" ? "thinking:" + value : value,
 			value, label: value === true ? "Thinking on" : value === false ? "Thinking off" : value[0].toUpperCase() + value.slice(1),
 			desc: "Declared by the selected model" });
 		return choices;
+	},
+
+	apiReasoningCapabilities(config, model) {
+		// Preparation captures the model contract for this whole request. Its
+		// reasoning fields must not change when the UI discovery cache expires or
+		// another request refreshes it. Reusing a different endpoint/model is denied.
+		let snapshot = config.detectedCapabilities;
+		return snapshot?.scope === this.safeAPIProfileKey(config, model) ? snapshot : this.getAPICapabilities(config, model);
 	},
 
 	apiReasoningFields(backend, config, model, effort) {
@@ -116,7 +125,7 @@ Object.assign(Zusia, {
 		if (!choice || choice.value === undefined) return {};
 		if (backend === "ollama") return { think: choice.value };
 		if (backend === "unsloth" && typeof choice.value === "boolean") return { enable_thinking: choice.value };
-		if (backend === "unsloth" && this.getAPICapabilities(config, model)?.reasoningStyle === "enable_thinking_effort") return { enable_thinking: true, reasoning_effort: choice.value };
+		if (backend === "unsloth" && this.apiReasoningCapabilities(config, model)?.reasoningStyle === "enable_thinking_effort") return { enable_thinking: true, reasoning_effort: choice.value };
 		return { reasoning_effort: choice.value };
 	},
 });

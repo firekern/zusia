@@ -178,8 +178,9 @@ Object.assign(Zusia, {
 		let native = { ...config, baseURL: baseURL.slice(0, -3) + "/api/inference" };
 		headers = headers || await this.apiHeaders("unsloth", config);
 		this._unslothLoads = this._unslothLoads || new Map();
-		// Serialize loads from different paper tabs/settings. A failed or stopped
-		// attempt must not poison later loads, and queued cancellations do no work.
+		// Serialize preparations among holders of the same connection lease. The
+		// lease prevents a different model/profile from replacing an active answer.
+		// Failed/stopped attempts must not poison later preparations.
 		let previous = this._unslothLoads.get(baseURL) || Promise.resolve();
 		let operation = previous.catch(() => {}).then(async () => {
 			if (control.cancelled) return null;
@@ -445,16 +446,21 @@ Object.assign(Zusia, {
 	},
 
 	async runAPIBackend(backend, request) {
-		let control = { cancelled: false, abort: null };
+		let control = { cancelled: !!this._apiConnectionsStopped, abort: null }, release;
 		let startedAt = Date.now(), metrics = { rounds: 0 }, partialText = "";
-		request.onSpawn?.({ kill: () => { control.cancelled = true; control.abort?.(); } });
+		this._apiRequestControls = this._apiRequestControls || new Set();
+		this._apiRequestControls.add(control);
 		try {
+			request.onSpawn?.({ kill: () => { control.cancelled = true; control.abort?.(); } });
+			if (control.cancelled) return { text: "", cancelled: true, stopped: true };
 			let config = request.apiConfig || this.getAPIConfig(backend);
 			let model = request.model;
 			if (!model) throw new Error("Choose an exact API model ID in Settings → Zusia → Assistants.");
 			this.normalizeAPIURL(config.baseURL);
+			if (backend === "unsloth") release = await this.acquireUnslothConnection(config, model, control, request.onProgress);
+			if (control.cancelled) return { text: "", cancelled: true, stopped: true };
 			let headers = await this.apiHeaders(backend, config);
-			config = await this.prepareAPIModel(backend, model, config, { headers, control, onProgress: request.onProgress });
+			config = await this.prepareAPIModel(backend, model, config, { headers, control, onProgress: request.onProgress, connectionLease: true });
 			if (control.cancelled) return { text: "", cancelled: true, stopped: true };
 			metrics.preparationMs = Date.now() - startedAt;
 			metrics.contextTokens = config.contextTokens;
@@ -535,5 +541,6 @@ Object.assign(Zusia, {
 			catch (ignored) {}
 			return { text: "", error: diagnostic.message, diagnostic, partialText };
 		}
+		finally { release?.(); this._apiRequestControls.delete(control); }
 	},
 });
