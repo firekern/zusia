@@ -138,7 +138,7 @@ Object.assign(Zusia, {
 
 	buildAssistantsCard(doc) {
 		let card = this.card(doc, "Assistants",
-			"Command-line agents that answer in the sidebar. Each one uses your own subscription login, so no API key is needed. Model and effort can also be changed from the chat box.");
+			"Use an assistant with your existing CLI login, or connect to Ollama, Unsloth or an OpenAI-compatible API. Choose the model from the chat box.");
 
 		let backendSelect = this.select(doc,
 			Object.entries(this.BACKENDS).map(([key, b]) => [key, b.fullName]),
@@ -150,6 +150,10 @@ Object.assign(Zusia, {
 		card.body.appendChild(this.row(doc, "Answer with", backendSelect));
 
 		for (let [key, backend] of Object.entries(this.BACKENDS)) {
+			if (this.isAPIBackend(key)) {
+				card.body.appendChild(this.buildAPIAssistant(doc, key));
+				continue;
+			}
 			let details = this.el(doc, "details", "zs-agent");
 			details.dataset.backend = key;
 			let summary = this.el(doc, "summary");

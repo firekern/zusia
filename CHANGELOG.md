@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- API backends: Ollama, Unsloth and custom OpenAI-compatible Chat Completions endpoints alongside the existing CLI logins. Includes model discovery, SSE streaming, Stop, images and optional bounded document tools, and background reading memory. API keys use the OS key store where available and session-only storage on older Zotero versions.
+
 - ➡️ **The panel is on the right, and you choose the side.** Zusia's panel now sits at the right edge of the window. **Settings → Zusia → Chat → *Where the chat is*** has three choices: Left, Right, or the item pane. Changing sides keeps the conversation as it is.
 - 👋 If your panel was on the left, a note above the chat says once that it is now on the right, with a **Back to the left** button.
 - 🪟 **The panel fills its column.** The chat was drawn as a rounded card inside a gutter of the pane's colour, one frame inside another; its background now runs from edge to edge.

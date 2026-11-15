@@ -109,6 +109,7 @@ Object.assign(Zusia, {
 	},
 
 	runBackend(backend, request) {
+		if (this.isAPIBackend(backend)) return this.runAPIBackend(backend, request);
 		switch (backend) {
 			case "codex":
 				return this.runCodex(request);

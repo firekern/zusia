@@ -532,6 +532,7 @@ Object.assign(Zusia, {
 			modes,
 			selection,
 			backend,
+			apiConfig: this.isAPIBackend(backend) ? this.getAPIConfig(backend) : null,
 			model: this.getModel(backend),
 			effort: this.getEffort(backend),
 			startedAt: Date.now(),

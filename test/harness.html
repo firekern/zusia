@@ -141,7 +141,7 @@
 	if (scenario === "prefs") {
 		const body = pane("Settings pane");
 		CS.renderPrefsPane(document, body);
-		body.querySelector(".zs-agent").open = true;
+		(body.querySelector('[data-backend="' + (params.get("backend") || "claude") + '"]') || body.querySelector(".zs-agent")).open = true;
 	}
 	else {
 		const view = sidebar(pane("Claude"));

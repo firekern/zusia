@@ -884,7 +884,7 @@ async function testPrefs(CS) {
 	prefs.querySelector('[data-backend="claude"]').open = true;
 	await Zotero.Promise.delay(300);
 	let statuses = [...prefs.querySelectorAll(".zs-agent")].map(c => c.textContent);
-	check("backend detection runs", statuses.length === 3, statuses);
+	check("backend detection runs", statuses.length === Object.keys(CS.BACKENDS).length, statuses);
 	prefs.scrollIntoView({ block: "start" });
 	await Zotero.Promise.delay(400);
 	await snapshot(prefsWin, "zotero-settings-pane");

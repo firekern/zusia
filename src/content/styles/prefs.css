@@ -360,3 +360,5 @@
 .zs-root[data-quick="hidden"] .zs-quick {
 	display: none;
 }
+/* API actions use the existing settings controls and wrap in narrow panes. */
+.zs-api-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-block: 8px; }

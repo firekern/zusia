@@ -177,6 +177,11 @@ Object.assign(Zusia, {
 		let info = this.BACKENDS[backend];
 		let model = this.getModel(backend);
 		let effort = this.getEffort(backend);
+		if (root._installed) {
+			for (let key of Object.keys(this.BACKENDS).filter(key => this.isAPIBackend(key))) {
+				root._installed[key] = this.getModel(key) ? this.getAPIConfig(key).baseURL : null;
+			}
+		}
 		let modelButton = root.querySelector(".zs-model-btn");
 		if (modelButton) {
 			let full = model ? info.label + " · " + this.modelLabel(backend, model) : info.label;
@@ -187,6 +192,7 @@ Object.assign(Zusia, {
 		let effortButton = root.querySelector(".zs-effort-btn");
 		if (effortButton) {
 			effortButton.setLabel(this.EFFORTS[effort].label);
+			effortButton.hidden = this.isAPIBackend(backend) && !this.getAPIConfig(backend).reasoning;
 		}
 		let shown = this.getModeButtons();
 		for (let button of root.querySelectorAll(".zs-mode")) {
@@ -211,6 +217,7 @@ Object.assign(Zusia, {
 
 	async probeBinary(key) {
 		try {
+			if (this.isAPIBackend(key)) return this.getModel(key) ? this.normalizeAPIURL(this.getAPIConfig(key).baseURL) : null;
 			return await this.findBinary(key);
 		}
 		catch (e) {
@@ -227,7 +234,8 @@ Object.assign(Zusia, {
 				this.menuSection(doc, menu, backend.fullName);
 				if (installed === null) {
 					menu.appendChild(this.el(doc, "div", "zs-menu-note",
-						"Not installed. Install the " + backend.command + " CLI or set its path in Settings."));
+						this.isAPIBackend(key) ? "Set the API URL and model in Settings → Zusia → Assistants." :
+							"Not installed. Install the " + backend.command + " CLI or set its path in Settings."));
 					continue;
 				}
 				for (let model of this.getModels(key)) {

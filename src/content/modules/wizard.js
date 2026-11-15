@@ -117,7 +117,7 @@ Object.assign(Zusia, {
 				if (installed[tile.dataset.value] === null) {
 					// Shown as a small badge; the name stays the tooltip.
 					tile.dataset.missing = "true";
-					tile.setAttribute("aria-description", "not installed");
+					tile.setAttribute("aria-description", this.isAPIBackend(tile.dataset.value) ? "Configure in Settings → Zusia → Assistants" : "not installed");
 				}
 			}
 			step.appendChild(tiles);

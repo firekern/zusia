@@ -72,6 +72,10 @@ Object.assign(Zusia, {
 	// Windows, whose stdin is not checked yet; escaped tags lengthen a text slightly, hence
 	// the margin). Claude has no such limit.
 	jobInputChars(backend, cap, fixed) {
+		if (this.isAPIBackend(backend)) {
+			let config = this.getAPIConfig(backend);
+			return Math.max(this.JOB_MIN_INPUT_CHARS, Math.min(cap, Math.floor((config.contextTokens - config.outputTokens - 2500) / 3) - fixed));
+		}
 		if (backend !== "agy") {
 			return cap;
 		}

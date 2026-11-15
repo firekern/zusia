@@ -173,7 +173,7 @@ Object.assign(Zusia, {
 			}
 			let history = await this.loadHistory(ctx.dir);
 			let sessions = await this.loadSessions(ctx.dir);
-			let session = sessions[backend] || null;
+			let session = this.isAPIBackend(backend) ? null : sessions[backend] || null;
 			// An edited prompt, style or language starts a new session and the chat so far is
 			// replayed into it: Codex and Antigravity never see the edit otherwise, and a resumed
 			// Claude chat keeps answering in the old voice although it gets the new prompt.
@@ -194,6 +194,7 @@ Object.assign(Zusia, {
 			}
 			let request = {
 				ctx, files, history, session, images,
+				apiConfig: pending.apiConfig,
 				question: (question || "Look at the attached image.") + this.imageNote(backend, images) +
 					this.modeInstructions(pending.modes),
 				model: pending.model,

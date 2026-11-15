@@ -9,7 +9,7 @@
   <a href="https://github.com/firekern/zusia/releases/latest"><img src="https://img.shields.io/github/v/release/firekern/zusia?label=release&color=b85a38&labelColor=111111" alt="Latest release"></a>
   <img src="https://img.shields.io/badge/Zotero-7%20%E2%80%93%2010-c03a64?labelColor=111111" alt="Zotero 7 to 10">
   <img src="https://img.shields.io/badge/Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20Antigravity-6d4fd6?labelColor=111111" alt="Works with Claude Code, Codex and Antigravity">
-  <img src="https://img.shields.io/badge/no%20API%20keys-0d7f78?labelColor=111111" alt="No API keys">
+  <img src="https://img.shields.io/badge/CLI%20logins%20%2B%20local%20APIs-0d7f78?labelColor=111111" alt="CLI logins and local APIs">
   <a href="LICENSE"><img src="https://img.shields.io/badge/licence-MIT-2d7d46?labelColor=111111" alt="MIT licence"></a>
   <a href="https://github.com/sponsors/firekern"><img src="https://img.shields.io/badge/sponsor-a%20breakfast-b8862b?labelColor=111111&logo=githubsponsors&logoColor=white" alt="Sponsor a breakfast"></a>
 </p>
@@ -20,7 +20,7 @@
 
 - 💬 A chat **next to the PDF** that reads the **whole paper**, in its own panel at the side of the window.
 - ✏️ Answers with **LaTeX**, **drawings** and numbered **theorem boxes**.
-- 🔑 Uses **Claude Code, Codex or Antigravity** with your own login. No API keys.
+- 🔑 Uses **Claude Code, Codex or Antigravity** with your own login, or **Ollama, Unsloth and OpenAI-compatible APIs** directly.
 - ⏱️ Install in 2 minutes: [jump to Install](#install).
 
 <p align="center"><img src="docs/rule.svg" alt="" width="100%"></p>
@@ -94,28 +94,45 @@
 
 ## Install
 
-1. **Install one assistant CLI** and sign in: [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex](https://github.com/openai/codex) or Antigravity (`agy`).
+1. **Choose an assistant:** install and sign in to [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex](https://github.com/openai/codex) or Antigravity (`agy`), or start an OpenAI-compatible API server such as Ollama or Unsloth.
 2. **Download `zusia.xpi`** from the [latest release](https://github.com/firekern/zusia/releases/latest).
 3. **In Zotero:** Tools → Plugins → ⚙ → *Install Plugin From File…* → pick the `.xpi`. Restart if asked.
 4. **Open a paper.** Zusia appears in a panel on the right and starts the setup wizard. To have it on the left or in Zotero's item pane instead, choose **Settings → Zusia → Chat → *Where the chat is***.
 
 Updates arrive on their own after that: Zotero checks the release feed.
 
+### Connect an API (Ollama, Unsloth or custom)
+
+In **Settings → Zusia → Assistants**, open **Ollama API**, **Unsloth API** or **OpenAI-compatible API**. Set the base URL including `/v1`, choose authentication, and save the API key if required. Then click **Check connection and list models**, select the exact model ID and choose that assistant under **Answer with**.
+
+- Ollama defaults to `http://127.0.0.1:11434/v1`, with no authentication for its local API.
+- Unsloth defaults to `http://127.0.0.1:8888/v1`; create an API key in Studio's **Settings → API**. Load the intended chat model in Studio before asking. Listing a downloaded model does not necessarily mean it is loaded.
+- Custom endpoints use the OpenAI **Chat Completions** protocol (`/chat/completions`), with `/models` for discovery. You may enter a model ID manually if discovery is unavailable. Other native API dialects need their own adapters.
+
+Set **Context window** to the context actually configured on the server. Zusia selects relevant excerpts with its existing BM25 search and uses a conservative UTF-8 input estimate, reserving room for the output. This estimate is not a model tokenizer. Long chats carry their reading memory and the recent exchanges that fit; they do not assume a server-side conversation.
+
+**Document tools**, **Image input** and **Reasoning effort** are off until explicitly enabled for the selected model. Changing the model resets these capabilities. Document tools only search this document, read up to three pages at a time and fetch its outline, for at most four tool rounds. Models without tool calling still get selected excerpts automatically. Turn off **Stream answers** if your endpoint or proxy cannot stream SSE.
+
+API keys are separate from normal preferences. On versions exposing Zotero's OS key store, keys are encrypted there; on older versions they stay in memory for the session and must be entered again after restarting. Endpoint changes require their own key. A connection check lists models without starting an inference.
+
+Protocol references: [Ollama compatibility](https://docs.ollama.com/api/openai-compatibility), [Unsloth API](https://unsloth.ai/docs/basics/api). Streaming uses bundled **eventsource-parser 4.1.3**, built with **esbuild 0.28.2** for Firefox 115 and later; no CDN or Node runtime is needed in Zotero.
+
 ## What the assistant reads
 
 - 📄 **The paper's full text**, as Zotero extracts it from the PDF (split by page), EPUB or web snapshot. Answers cite pages as *(p. N)*.
 - 🎯 **Where you are.** The page on screen and the passage you selected come first, with the pages you have turned to so far. Antigravity, which cannot read files, gets the pages that fit, chosen around that page and the question, and can ask for a few more.
 - 🗺️ **A reading map**: the printed page labels, the outline with page ranges, and where each equation, figure and table is. A book is split into section files, whatever its length.
-- 🧠 **What it remembers about this paper**: what you understood, what is still unclear, how you like answers, your `/remember` notes and a running summary. Every few questions a short call to a cheap model (Claude Haiku, or Antigravity) brings it up to date.
+- 🧠 **What it remembers about this paper**: what you understood, what is still unclear, how you like answers, your `/remember` notes and a running summary. Every few questions a short call brings it up to date (Claude Haiku, Antigravity, or the selected API model). Codex does not run background memory jobs.
 - 🏷️ **Metadata and your annotations**: title, authors, abstract, highlights and comments.
 - 🚫 **No text, no guessing.** For a scanned PDF with no text layer, the assistant says it cannot read the paper instead of answering from the abstract.
 
 ## Privacy
 
-- 🖥️ The assistants run **on your computer** with your own login. Zusia has no server and needs no API keys.
+- 🖥️ CLI assistants run **on your computer** with your own login. Zusia has no relay server. API backends connect directly to the URL you configure, using its own authentication.
 - 📄 They get the paper's **full text, metadata and your annotations**, its reading map, your reading progress and its memory, plus any image you attach. The CLI sends them to its provider (Anthropic, OpenAI or Google), as it does with anything you type into it.
+- API backends send selected document excerpts, reading context, conversation and optional images to the configured endpoint. A local URL can still route to a cloud model if the server is configured that way. Zusia never silently falls back to another provider.
 - 🔕 To send only the metadata, abstract and annotations, turn off **Settings → Zusia → Chat → *Send the paper's full text***. *Track reading progress* in the same card stops noting the pages you turn to.
-- 🧠 Keeping the memory takes extra calls to the same CLI, in the background. Turn them off in the Memory sheet (click the paper chip). Antigravity stores each of these calls in your `agy` conversation history.
+- 🧠 Keeping the memory takes extra calls to the same assistant or API, in the background. API memory uses the selected model and can consume its quota or keep a local GPU busy. Turn jobs off in the Memory sheet (click the paper chip). Antigravity stores each of its background calls in your `agy` conversation history.
 - 📁 Chats, clarifications, images, the reading map, your reading progress and the memory stay in `zusia/` inside Zotero's data folder.
 
 <p align="center"><img src="docs/rule.svg" alt="" width="100%"></p>
@@ -134,6 +151,7 @@ npm run build        # writes zusia.xpi
 
 ```sh
 npm test             # unit tests (jsdom): rendering, settings, wizard, backends, repo checks
+npm run test:api:zotero       # built XPI in an isolated Zotero profile, against a loopback fixture API (ZOTERO_BIN to override; Python needed)
 npm run shots        # screenshots of the UI in headless Firefox (optional)
 npm run test:zotero          # the checks inside a real, headless Zotero (macOS app, or Flatpak on Linux)
 npm run test:zotero:linux    # the same in Docker, against the official Linux build

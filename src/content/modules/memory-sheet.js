@@ -162,7 +162,7 @@ Object.assign(Zusia, {
 		settings.append(
 			toggle("Update the memory as we talk", this.consolidating(), "memory.consolidate",
 				"Every few questions, and when you move on to another chapter or close the chat, a short call to your " +
-				"assistant's cheapest model folds the conversation into this memory." + runner),
+				"assistant folds the conversation into this memory (Haiku for Claude, the selected model for APIs)." + runner),
 			toggle("Summarise sections I finish", this.gisting(), "memory.gists",
 				"When a section is read, one call writes a short summary of it, which later questions get for " +
 				"orientation. Costs about one call per section." + runner),

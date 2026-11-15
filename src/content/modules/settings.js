@@ -34,6 +34,7 @@ Object.assign(Zusia, {
 	},
 
 	getEffort(backend) {
+		if (this.isAPIBackend(backend) && !this.getAPIConfig(backend).reasoning) return "";
 		let effort = this.getPref(backend + ".effort") || "";
 		return this.BACKENDS[backend].efforts.includes(effort) ? effort : "";
 	},
@@ -42,6 +43,13 @@ Object.assign(Zusia, {
 	// Settings, and Antigravity's own catalogue once it has been fetched.
 	getModels(backend) {
 		let models = this.BACKENDS[backend].models.slice();
+		if (this.isAPIBackend(backend)) {
+			let cache = this._apiModels?.[backend];
+			try {
+				if (cache?.baseURL === this.normalizeAPIURL(this.getAPIConfig(backend).baseURL)) models.push(...cache.models);
+			}
+			catch (e) {}
+		}
 		if (backend === "codex") {
 			for (let id of (this.getPref("codex.models") || "").split(/[,\n]/).map(m => m.trim()).filter(Boolean)) {
 				models.push({ id, label: id, desc: "" });
@@ -419,7 +427,7 @@ Object.assign(Zusia, {
 			names.push("mode." + id);
 		}
 		for (let backend of Object.keys(this.BACKENDS)) {
-			names.push(backend + ".model", backend + ".effort");
+			names.push(backend + ".model", backend + ".effort", backend + ".api");
 		}
 		for (let name of names) {
 			this._prefObservers.push(
