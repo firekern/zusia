@@ -11,6 +11,7 @@
   <img src="https://img.shields.io/badge/Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20Antigravity-6d4fd6?labelColor=111111" alt="Works with Claude Code, Codex and Antigravity">
   <img src="https://img.shields.io/badge/no%20API%20keys-0d7f78?labelColor=111111" alt="No API keys">
   <a href="LICENSE"><img src="https://img.shields.io/badge/licence-MIT-2d7d46?labelColor=111111" alt="MIT licence"></a>
+  <a href="https://github.com/sponsors/firekern"><img src="https://img.shields.io/badge/sponsor-a%20breakfast-b8862b?labelColor=111111&logo=githubsponsors&logoColor=white" alt="Sponsor a breakfast"></a>
 </p>
 
 <p align="center"><img src="docs/rule.svg" alt="" width="100%"></p>
@@ -157,6 +158,12 @@ The tag is what releases. `.github/workflows/release.yml` refuses to run if the 
 New behaviour starts with a failing test; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 </details>
+
+## Support
+
+Zusia is free, and every feature is in the free release. If it saved you an afternoon on a hard paper, you can [buy me a breakfast](https://github.com/sponsors/firekern): an espresso is $1.
+
+An issue, an idea or a pull request counts as much as a donation. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Credits
 

@@ -142,6 +142,14 @@ test("the update manifest points at the release the tag will create", async () =
 	assert.equal(updates.update_link, `https://github.com/firekern/zusia/releases/download/v${manifest.version}/zusia.xpi`);
 });
 
+test("the repository takes donations through GitHub Sponsors, and the README says where", () => {
+	// GitHub draws the Sponsor button from this file, on the default branch only.
+	assert.match(read(".github/FUNDING.yml"), /^github: firekern$/m);
+	const readme = read("README.md");
+	assert.ok(readme.includes("## Support"), "README section ## Support");
+	assert.ok(readme.includes("https://github.com/sponsors/firekern"), "the README links the Sponsors page");
+});
+
 test("the project is MIT licensed, so a fork is allowed to exist", () => {
 	assert.match(read("LICENSE"), /^MIT License/);
 	assert.match(read("LICENSE"), /Copyright \(c\) \d{4} .+/);
