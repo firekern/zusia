@@ -95,7 +95,7 @@
 
 ## Install
 
-1. **Choose an assistant:** install and sign in to [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex](https://github.com/openai/codex) or Antigravity (`agy`),.
+1. **Choose an assistant:** install and sign in to [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex](https://github.com/openai/codex) or Antigravity (`agy`).
 2. **Download `zusia.xpi`** from the [latest release](https://github.com/firekern/zusia/releases/latest).
 3. **In Zotero:** Tools → Plugins → ⚙ → *Install Plugin From File…* → pick the `.xpi`. Restart if asked.
 4. **Open a paper.** Zusia appears in a panel on the right and starts the setup wizard. To have it on the left or in Zotero's item pane instead, choose **Settings → Zusia → Chat → *Where the chat is***.
@@ -159,8 +159,6 @@ CI runs both the general and API fixture suites in official Zotero 7, 8, 9 and 1
 Real-provider checks are separate from fixtures and require an explicit endpoint and installed model. Set `ZUSIA_LIVE_BACKEND` (`ollama` or `unsloth`), `ZUSIA_LIVE_URL` (including `/v1`) and `ZUSIA_LIVE_MODEL` (exact ID). If authentication is needed, pass `ZUSIA_LIVE_KEY` through the process environment; the probe keeps it only in memory. Optional `ZUSIA_LIVE_IMAGE` points to a synthetic green PNG for vision verification. `ZUSIA_LIVE_CONTEXT_TOKENS` explicitly applies an Ollama context override; `ZUSIA_LIVE_OUTPUT_TOKENS` changes the default 1024-token output budget. The probe checks streaming, usage, profiles, non-streaming, tools and reasoning when declared, Stop and a Zotero restart. It uses a new profile and synthetic document; Unsloth must already have the selected model and saved profile loaded, otherwise a read-only guard stops the run. Ollama may load its selected local model. It never downloads models or silently changes providers. Responses are model-dependent, so a failed evidence or tool assertion needs inspection even when transport succeeds. Results and the disposable profile are written under `test/out/`; remove that run directory after retaining the report. `ZOTERO_BIN`, `ZUSIA_LIVE_OUT` and `ZUSIA_LIVE_TIMEOUT` override the executable, output directory and timeout in milliseconds. Both runners refuse a nonempty output directory.
 
 The videos are recorded in a real Zotero with its own demo profile and library, so your library is never used. The scenes move the real pointer: don't touch the Mac while they run. Needs `ffmpeg`, `cliclick`, the `claude` CLI, and Screen Recording and Accessibility permission for the app the terminal runs in. With `INSIDE=1` neither permission is needed, nor `cliclick`: Zotero draws its own window into every frame, clicks and typing reach it as events, and the pointer and the window's buttons are drawn into the film afterwards, so the Mac's pointer stays yours; keep the demo window uncovered while it runs. The videos on this page were made this way. With `REHEARSE=1` nothing is recorded, the pointer stays where it is and no assistant is called, so neither permission is needed: every scene is walked through with events sent to Zotero and a canned answer, and what the window shows at each step is saved under `~/.cache/zusia-demo/rehearsal/`. Run it after the interface changes, to see that the scenes still find their way.
-
-The API walkthrough is attached to [PR #3](https://github.com/firekern/zusia/pull/3). Its [source notes](test/videos/api/README.md) describe the isolated synthetic library, Computer Use interactions and window-only recording pipeline.
 
 ## Release
 

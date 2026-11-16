@@ -2,7 +2,7 @@
 	"manifest_version": 2,
 	"name": "Zusia",
 	"version": "1.6.4",
-	"description": "Zusia, a study buddy for Zotero: use Claude Code, Codex, Antigravity, Ollama, Unsloth or an OpenAI-compatible API.",
+	"description": "Zusia, a study buddy for Zotero: ask Claude Code, Codex or Antigravity about the paper you're reading.",
 	"applications": {
 		"zotero": {
 			"id": "zusia@firekern.github.io",

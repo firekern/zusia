@@ -2,7 +2,7 @@
 	"name": "zusia",
 	"private": true,
 	"version": "1.6.4",
-	"description": "Zusia, a study buddy for Zotero: CLI assistants and OpenAI-compatible APIs, including Ollama and Unsloth.",
+	"description": "Zusia, a study buddy for Zotero: chat with Claude Code, Codex or Antigravity about the paper you are reading.",
 	"type": "module",
 	"scripts": {
 		"vendor": "node scripts/vendor.mjs",
