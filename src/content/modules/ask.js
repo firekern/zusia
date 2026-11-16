@@ -8,7 +8,7 @@ Object.assign(Zusia, {
 		}
 		let history = await this.loadHistory(view.ctx.dir);
 		let asked = history[index - 1] && history[index - 1].role === "user" ? history[index - 1] : null;
-		if (!asked) {
+		if (!asked || this.needsAPIModel(view)) {
 			return;
 		}
 		let question = asked.text;
@@ -125,11 +125,19 @@ Object.assign(Zusia, {
 			this.editPrompt(view, pending.question, pending.images);
 		}
 		if (result.error) {
+			let diagnostic = result.diagnostic;
 			logEl.querySelector(".zs-empty")?.remove();
 			this.appendUser(view, pending.question, pending.images, pending.modes);
-			this.appendError(view, result.error, {
-				title: label + " could not answer",
+			if (result.partialText) this.appendAssistant(view, { text: result.partialText, incomplete: true });
+			this.appendError(view, result.error + (diagnostic?.help ? "\n\n" + diagnostic.help : ""), {
+				title: diagnostic?.title || label + " could not answer",
+				expanded: this.isAPIBackend(pending.backend),
+				recovery: diagnostic?.action === "settings" ? { label: diagnostic.actionLabel, run: () => this.openSettings() } : null,
 				retry: () => {
+					// The question is only on screen so far: keep it there when nothing can be sent.
+					if (this.needsAPIModel(view)) {
+						return;
+					}
 					logEl.querySelectorAll(".zs-error").forEach(n => n.remove());
 					this.renderMessages(view, history);
 					this.startRequest(view, pending.question, pending.images, pending.modes);
@@ -173,7 +181,7 @@ Object.assign(Zusia, {
 			}
 			let history = await this.loadHistory(ctx.dir);
 			let sessions = await this.loadSessions(ctx.dir);
-			let session = sessions[backend] || null;
+			let session = this.isAPIBackend(backend) ? null : sessions[backend] || null;
 			// An edited prompt, style or language starts a new session and the chat so far is
 			// replayed into it: Codex and Antigravity never see the edit otherwise, and a resumed
 			// Claude chat keeps answering in the old voice although it gets the new prompt.
@@ -194,6 +202,7 @@ Object.assign(Zusia, {
 			}
 			let request = {
 				ctx, files, history, session, images,
+				apiConfig: pending.apiConfig,
 				question: (question || "Look at the attached image.") + this.imageNote(backend, images) +
 					this.modeInstructions(pending.modes),
 				model: pending.model,
@@ -228,6 +237,7 @@ Object.assign(Zusia, {
 			}
 
 			let meta = { backend, model: pending.model || undefined, effort: pending.effort || undefined };
+			if (result.metrics) meta.metrics = result.metrics;
 			if ((pending.steps && pending.steps.length) || pending.thoughtMs) {
 				meta.activity = { steps: pending.steps || [], thoughtMs: Math.round(pending.thoughtMs || 0) };
 			}
@@ -238,7 +248,7 @@ Object.assign(Zusia, {
 				result = { text: pending.partial.trim(), sessionId: result.sessionId, stopped: true };
 			}
 			else if (!result.text) {
-				return { error: result.error || label + " returned no text." };
+				return { error: result.error || label + " returned no text.", diagnostic: result.diagnostic, partialText: result.partialText };
 			}
 			let turnPage = Number.isInteger(files.currentPage) ? files.currentPage : files.selectedPage;
 			// The PDF page the question was asked on, 1-based like the markers, which the
@@ -248,7 +258,7 @@ Object.assign(Zusia, {
 					Number.isInteger(turnPage) ? { page: turnPage + 1 } : {},
 					images.length ? { images: images.map(p => p.startsWith(ctx.dir) ? p.slice(ctx.dir.length).replace(/^[\/\\]+/, "") : p) } : {},
 					pending.modes && pending.modes.length ? { modes: pending.modes } : {}),
-				Object.assign({ role: "assistant", text: result.text, ts: Date.now() }, meta, result.stopped ? { stopped: true } : {}),
+				Object.assign({ role: "assistant", text: result.text, ts: Date.now() }, meta, result.stopped ? { stopped: true } : result.truncated ? { truncated: true } : {}),
 			]);
 			if (pending.selection) {
 				try {

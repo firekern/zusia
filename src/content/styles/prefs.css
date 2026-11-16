@@ -86,6 +86,15 @@
 .zs-row-stack .zs-row-hint {
 	grid-column: auto;
 }
+.zs-agent-body > .zs-api-profile,
+.zs-api-profile + .zs-row,
+.zs-api-profile-overrides > .zs-row:first-child {
+	border-top: 1px solid var(--zs-stroke);
+}
+.zs-api-profile input::placeholder {
+	color: var(--zs-muted);
+	opacity: 1;
+}
 .zs-row-control {
 	display: flex;
 	align-items: center;
@@ -97,6 +106,14 @@
 /* Assistant rows: collapsible, with a status dot (llm-for-zotero Agent tab). */
 .zs-agent + .zs-agent {
 	border-top: 1px solid var(--zs-stroke);
+}
+/* Sets the optional assistants apart from the ones that work out of the box. */
+.zs-card-subhead {
+	padding: 12px 14px 4px;
+	border-top: 1px solid var(--zs-stroke);
+	font-size: 0.85em;
+	font-weight: 600;
+	color: var(--zs-muted);
 }
 .zs-agent > summary {
 	display: grid;
@@ -360,3 +377,5 @@
 .zs-root[data-quick="hidden"] .zs-quick {
 	display: none;
 }
+/* API actions use the existing settings controls and wrap in narrow panes. */
+.zs-api-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-block: 8px; }

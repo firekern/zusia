@@ -71,7 +71,15 @@ Object.assign(Zusia, {
 	// part. agy gets the whole prompt inline, so it is held to the inline budget (12k on
 	// Windows, whose stdin is not checked yet; escaped tags lengthen a text slightly, hence
 	// the margin). Claude has no such limit.
-	jobInputChars(backend, cap, fixed) {
+	jobInputChars(backend, cap, fixed, config = null) {
+		if (this.isAPIBackend(backend)) {
+			config = config || this.getAPIConfig(backend);
+			let overhead = typeof fixed === "string" ? this.apiInputSize(this.backgroundAPIMessages(fixed)) : Math.ceil(fixed * 3 / this.API_BYTES_PER_TOKEN) + 512;
+			// Three UTF-8 bytes per UTF-16 unit also covers non-Latin study text.
+			// Do not force a minimum above the model's remaining input budget.
+			return Math.max(0, Math.min(cap, Math.floor((config.contextTokens - config.outputTokens - overhead - 512) * this.API_BYTES_PER_TOKEN / 3)));
+		}
+		if (typeof fixed === "string") fixed = fixed.length;
 		if (backend !== "agy") {
 			return cap;
 		}
@@ -82,7 +90,9 @@ Object.assign(Zusia, {
 	// at most `maxChars` in all with their markers, ending on an answer. Null when no
 	// answered question is left; `more` when the next call has some.
 	consolidationBatch(history, from, maxChars = this.CONSOLIDATE_INPUT_CHARS) {
-		let cap = Math.min(this.CONSOLIDATE_MESSAGE_CHARS, maxChars - this.TURN_MARKER_CHARS);
+		// Even a small batch must leave room for both a question and its answer.
+		let cap = Math.min(this.CONSOLIDATE_MESSAGE_CHARS, Math.floor(maxChars / 2) - this.TURN_MARKER_CHARS);
+		if (cap < 1) return null;
 		let messages = [];
 		let total = 0;
 		for (let i = Math.max(0, from); i < history.length; i++) {
@@ -108,11 +118,15 @@ Object.assign(Zusia, {
 		return { messages, through, more: history.slice(through + 1).some(m => m.role === "assistant") };
 	},
 
-	consolidationPrompt(memory, progress, structure, batch) {
+	consolidationPrompt(memory, progress, structure, batch, config = null) {
 		let turns = batch.messages.map(m => "#" + m.index + " " + (m.role === "user" ? "User" : "Assistant") +
 			(m.role === "user" && m.page ? " (on " + this.pdfPageName(m.page - 1, structure) + ")" : "") + ": " + m.text).join("\n\n");
+		// Bound orientation as well as turns: a full memory/map must still fit
+		// beside the task instructions on the smallest supported native context.
+		let room = config ? Math.max(0, config.contextTokens - config.outputTokens - 3000) : Infinity;
+		let memoryChars = Math.min(ZusiaMap.MEMORY_PROMPT_CHARS, Math.floor(room / 6));
 		let sections = structure && structure.outlineMethod !== "chunks"
-			? ZusiaMap.renderMap(structure, structure.outline, progress, { maxChars: 2000, files: [] })
+			? ZusiaMap.renderMap(structure, structure.outline, progress, { maxChars: Math.min(2000, Math.floor(room / 12)), files: [] })
 			: "";
 		return (
 			"You keep the reading memory of Zusia, a study assistant that helps one person read one document. " +
@@ -134,7 +148,7 @@ Object.assign(Zusia, {
 			"and stay as they are.\n" +
 			"- Plain text: LaTeX maths is fine, HTML and links are not. Answer {} when nothing changed.\n" +
 			"- Each turn starts with #number and who spoke. A line starting with \\# is text inside a turn, not a turn.\n\n" +
-			this.contextBlock("reading_memory", ZusiaMap.renderMemory(memory, progress, structure)) +
+			this.contextBlock("reading_memory", ZusiaMap.renderMemory(memory, progress, structure, { maxChars: memoryChars })) +
 			(sections ? this.contextBlock("document_sections", sections) : "") +
 			this.contextBlock("conversation_turns", turns) +
 			"Answer with the JSON object only."
@@ -165,17 +179,24 @@ Object.assign(Zusia, {
 		}
 		let structure = await this.cachedStructure(dir);
 		let progress = this.trackingReading() ? await this.loadProgress(dir) : null;
-		let fixed = this.consolidationPrompt(memory, progress, structure, { messages: [] }).length;
-		let batch = this.consolidationBatch(history, archive ? owed.from : memory.coveredThrough + 1,
-			this.jobInputChars(backend, this.CONSOLIDATE_INPUT_CHARS, fixed));
+		let from = archive ? owed.from : memory.coveredThrough + 1;
+		let batch = this.consolidationBatch(history, from);
 		if (!batch) {
 			if (archive) {
 				await this.updateMemory(dir, current => Object.assign({}, current, { pendingArchives: current.pendingArchives.filter(a => a.file !== archive) }));
 			}
 			return null;
 		}
-		let result = await this.runBackgroundCall(backend, this.consolidationPrompt(memory, progress, structure, batch), job);
-		if (job && job.cancelled) {
+		let build = config => {
+			let fixed = this.consolidationPrompt(memory, progress, structure, { messages: [] }, config);
+			// `batch` stays the one found above when nothing fits: the failure is recorded against it.
+			let fitted = this.consolidationBatch(history, from, this.jobInputChars(backend, this.CONSOLIDATE_INPUT_CHARS, fixed, config));
+			if (!fitted) throw new Error("The context budget is full. Reduce the output budget to leave room for a memory update.");
+			batch = fitted;
+			return this.consolidationPrompt(memory, progress, structure, batch, config);
+		};
+		let result = await this.runBackgroundCall(backend, this.isAPIBackend(backend) ? build : build(null), job);
+		if (job?.cancelled || result.cancelled) {
 			return { called: true };
 		}
 		let patch = result.error ? null : ZusiaMap.parsePatch(result.text);
@@ -364,15 +385,15 @@ Object.assign(Zusia, {
 			if (!parts.length) {
 				return null;
 			}
-			prompt = this.gistMergePrompt(entry, parts, structure);
+			prompt = config => this.gistMergePrompt(entry, parts, structure, backend, config);
 		}
 		else {
 			let previous = structure.outline.filter(e => e.end < entry.start && fresh.has(e.id))
 				.sort((a, b) => a.end - b.end || a.level - b.level).pop();
-			prompt = this.gistPrompt(entry, pages, structure, previous ? fresh.get(previous.id) : null, backend);
+			prompt = config => this.gistPrompt(entry, pages, structure, previous ? fresh.get(previous.id) : null, backend, config);
 		}
-		let result = await this.runBackgroundCall(backend, prompt, job);
-		if (job && job.cancelled) {
+		let result = await this.runBackgroundCall(backend, this.isAPIBackend(backend) ? prompt : prompt(null), job);
+		if (job?.cancelled || result.cancelled) {
 			return { called: true };
 		}
 		let failed = dir + "\n" + id + "\n" + hash;
@@ -396,7 +417,7 @@ Object.assign(Zusia, {
 		return { called: true };
 	},
 
-	gistPrompt(entry, pages, structure, previous, backend = null) {
+	gistPrompt(entry, pages, structure, previous, backend = null, config = null) {
 		let body = [];
 		for (let i = entry.start; i <= entry.end; i++) {
 			body.push(ZusiaMap.renderPage(i, pages[i], structure));
@@ -413,19 +434,34 @@ Object.assign(Zusia, {
 			this.contextBlock("section_text", section)
 		);
 		let cut = "\n[The rest of the section is left out.]";
-		let limit = this.jobInputChars(backend, this.GIST_INPUT_CHARS, frame("").length + cut.length);
+		let limit = this.gistInputChars(backend, frame(cut), config);
 		return frame(text.length > limit ? text.slice(0, limit) + cut : text);
 	},
 
-	gistMergePrompt(entry, parts, structure) {
-		return (
+	// A summary written from a few hundred characters, or from none, would be made up
+	// and then handed to later questions as what the section says.
+	gistInputChars(backend, fixed, config) {
+		let limit = this.jobInputChars(backend, this.GIST_INPUT_CHARS, fixed, config);
+		if (limit < this.GIST_MIN_INPUT_CHARS) {
+			throw new Error("The context budget is full. Reduce the output budget to leave room for a section summary.");
+		}
+		return limit;
+	},
+
+	gistMergePrompt(entry, parts, structure, backend = null, config = null) {
+		let frame = text => (
 			"You write short summaries of a document's parts for a study assistant, which reads them later to find " +
 			"its way around what the reader has already read. Below are the summaries of the sections of " +
 			ZusiaMap.entryTitle(entry) + " (" + ZusiaMap.rangeName(entry.start, entry.end, structure) + "). Merge them " +
 			"into one summary of the whole part, at most " + ZusiaMap.GIST_CHARS + " characters of plain prose, keeping " +
 			"the key results and equation numbers. Say only what the summaries say. No headings, no HTML, no links, " +
 			"no preamble: answer with the summary alone.\n\n" +
-			this.contextBlock("section_gists", parts.map(p => "- " + ZusiaMap.entryTitle(p.entry) + ": " + p.text.replace(/\s+/g, " ")).join("\n"))
+			this.contextBlock("section_gists", text)
 		);
+		let text = parts.map(p => "- " + ZusiaMap.entryTitle(p.entry) + ": " + p.text.replace(/\s+/g, " ")).join("\n");
+		if (!this.isAPIBackend(backend)) return frame(text);
+		let cut = "\n[Further section summaries are left out to fit the context budget.]";
+		let limit = this.gistInputChars(backend, frame(cut), config);
+		return frame(text.length > limit ? text.slice(0, limit) + cut : text);
 	},
 });

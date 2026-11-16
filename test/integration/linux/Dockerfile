@@ -5,7 +5,7 @@ FROM debian:bookworm-slim AS base
 # the fonts stand in for the macOS system fonts the CSS falls back to.
 RUN apt-get update && apt-get install -y --no-install-recommends \
 		ca-certificates libgtk-3-0 libdbus-glib-1-2 libxt6 libxtst6 libx11-xcb1 libasound2 libpci3 \
-		fonts-dejavu-core fonts-liberation2 nodejs \
+		fonts-dejavu-core fonts-liberation2 nodejs python3 \
 	&& rm -rf /var/lib/apt/lists/*
 RUN useradd --create-home --uid 1000 zusia
 

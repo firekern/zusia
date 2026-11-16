@@ -2,6 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Claude Sidebar harness</title>
 <link rel="stylesheet" href="zotero-tokens.css">
 <style>
@@ -38,6 +39,7 @@
 		Prefs: { get: k => prefs[k], set: (k, v) => { prefs[k] = v; } },
 		Utilities: { Internal: { copyTextToClipboard() {}, openPreferences() {} } },
 		getMainWindow: () => window,
+		getMainWindows: () => [window],
 	};
 	// Firefox takes the screenshot at the load event, which does not wait for fetch():
 	// read the icons synchronously, so every shot has them.
@@ -141,7 +143,7 @@
 	if (scenario === "prefs") {
 		const body = pane("Settings pane");
 		CS.renderPrefsPane(document, body);
-		body.querySelector(".zs-agent").open = true;
+		(body.querySelector('[data-backend="' + (params.get("backend") || "claude") + '"]') || body.querySelector(".zs-agent")).open = true;
 	}
 	else {
 		const view = sidebar(pane("Claude"));

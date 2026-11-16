@@ -152,7 +152,16 @@ Object.assign(Zusia, {
 		context.hidden = true;
 		let attachments = this.el(doc, "div", "zs-attachments");
 		attachments.hidden = true;
-		composer.append(context, attachments, input, controls);
+		let runtime = this.el(doc, "div", "zs-api-runtime");
+		runtime.hidden = true;
+		let state = this.el(doc, "details");
+		state.append(this.el(doc, "summary"), this.el(doc, "div", "zs-api-runtime-detail"));
+		let refresh = this.iconButton(doc, "zs-api-runtime-refresh", "Refresh model status", "retry", () => {
+			refresh.disabled = true;
+			this.refreshAPIRuntime(this.getBackend(), { force: true }).finally(() => { refresh.disabled = false; });
+		});
+		runtime.append(state, refresh);
+		composer.append(context, runtime, attachments, input, controls);
 		root.append(header, paperCard, logWrap, quick, composer);
 		root.addEventListener("keydown", event => this.handleShortcut(root, event));
 		// A sheet or the wizard lies over the chat and needs room even when the chat is
@@ -177,6 +186,11 @@ Object.assign(Zusia, {
 		let info = this.BACKENDS[backend];
 		let model = this.getModel(backend);
 		let effort = this.getEffort(backend);
+		if (root._installed) {
+			for (let key of Object.keys(this.BACKENDS).filter(key => this.isAPIBackend(key))) {
+				root._installed[key] = this.getModel(key) ? this.getAPIConfig(key).baseURL : null;
+			}
+		}
 		let modelButton = root.querySelector(".zs-model-btn");
 		if (modelButton) {
 			let full = model ? info.label + " · " + this.modelLabel(backend, model) : info.label;
@@ -186,7 +200,9 @@ Object.assign(Zusia, {
 		}
 		let effortButton = root.querySelector(".zs-effort-btn");
 		if (effortButton) {
-			effortButton.setLabel(this.EFFORTS[effort].label);
+			let choice = this.isAPIBackend(backend) ? this.apiReasoningChoices(backend).find(c => c.id === effort) : this.EFFORTS[effort];
+			effortButton.setLabel(choice?.label || "Provider default");
+			effortButton.hidden = this.isAPIBackend(backend) && !this.getAPIConfig(backend).reasoning;
 		}
 		let shown = this.getModeButtons();
 		for (let button of root.querySelectorAll(".zs-mode")) {
@@ -199,6 +215,7 @@ Object.assign(Zusia, {
 			input.placeholder = "Ask " + info.label + " about this paper…";
 		}
 		root.querySelector(".zs-menu")?.refresh?.();
+		this.renderAPIRuntime(root);
 	},
 
 	async checkInstalledBackends(root) {
@@ -211,6 +228,7 @@ Object.assign(Zusia, {
 
 	async probeBinary(key) {
 		try {
+			if (this.isAPIBackend(key)) return this.getModel(key) ? this.normalizeAPIURL(this.getAPIConfig(key).baseURL) : null;
 			return await this.findBinary(key);
 		}
 		catch (e) {
@@ -224,6 +242,11 @@ Object.assign(Zusia, {
 			let current = this.getBackend();
 			for (let [key, backend] of Object.entries(this.BACKENDS)) {
 				let installed = root._installed ? root._installed[key] : undefined;
+				// An API assistant is optional: it is listed once it is set up in Settings,
+				// where a CLI that is missing is named so that it can be installed.
+				if (this.isAPIBackend(key) && !this.getModel(key)) {
+					continue;
+				}
 				this.menuSection(doc, menu, backend.fullName);
 				if (installed === null) {
 					menu.appendChild(this.el(doc, "div", "zs-menu-note",
@@ -233,10 +256,12 @@ Object.assign(Zusia, {
 				for (let model of this.getModels(key)) {
 					this.menuItem(doc, menu, {
 						label: model.label,
-						desc: model.id ? "" : model.desc,
+						desc: this.isAPIBackend(key) || !model.id ? model.desc : "",
 						checked: key === current && model.id === this.getModel(key),
 						onSelect: () => {
-							this.setPref(key + ".model", model.id);
+							if (this.isAPIBackend(key) && !model.id) { this.closeMenu(root); this.openSettings(); return; }
+							if (this.isAPIBackend(key)) this.setAPIModel(key, model.id);
+							else this.setPref(key + ".model", model.id);
 							this.setPref("backend", key);
 							this.closeMenu(root);
 							this.updateControls(root);
@@ -254,6 +279,11 @@ Object.assign(Zusia, {
 		if (menu && !Array.isArray(this._agyModels)) {
 			this.loadAgyModels().then(() => menu.isConnected && menu.refresh());
 		}
+		if (menu) {
+			for (let key of Object.keys(this.BACKENDS).filter(key => this.isAPIBackend(key) && this.getModel(key))) {
+				this.loadAPIModels(key).then(() => menu.isConnected && menu.refresh()).catch(() => {});
+			}
+		}
 	},
 
 	openEffortMenu(root, anchor) {
@@ -262,13 +292,14 @@ Object.assign(Zusia, {
 			let backend = this.getBackend();
 			let current = this.getEffort(backend);
 			this.menuSection(doc, menu, "Reasoning effort · " + this.BACKENDS[backend].label);
-			for (let effort of this.BACKENDS[backend].efforts) {
+			let choices = this.isAPIBackend(backend) ? this.apiReasoningChoices(backend) : this.BACKENDS[backend].efforts.map(id => ({ id, ...this.EFFORTS[id] }));
+			for (let choice of choices) {
 				this.menuItem(doc, menu, {
-					label: this.EFFORTS[effort].label,
-					desc: this.EFFORTS[effort].desc,
-					checked: effort === current,
+					label: choice.label,
+					desc: choice.desc,
+					checked: choice.id === current,
 					onSelect: () => {
-						this.setPref(backend + ".effort", effort);
+						this.setPref(backend + ".effort", choice.id);
 						this.closeMenu(root);
 						this.updateControls(root);
 					},
@@ -415,7 +446,7 @@ Object.assign(Zusia, {
 		return card;
 	},
 
-	appendError(view, text, { title, retry } = {}) {
+	appendError(view, text, { title, retry, expanded, recovery } = {}) {
 		let { doc } = view;
 		let card = this.el(doc, "div", "zs-msg zs-error");
 		card.setAttribute("role", "alert");
@@ -429,6 +460,7 @@ Object.assign(Zusia, {
 		let details = this.el(doc, "div", "zs-error-details");
 		details.appendChild(this.el(doc, "div", "zs-error-text", text));
 		let actions = this.el(doc, "div", "zs-error-actions");
+		if (recovery) actions.appendChild(this.ghostButton(doc, "zs-error-recovery", "settings", recovery.label, recovery.run));
 		if (retry) {
 			actions.appendChild(this.ghostButton(doc, "zs-error-retry", "retry", "Try again", retry));
 		}
@@ -439,7 +471,7 @@ Object.assign(Zusia, {
 		actions.appendChild(copy);
 		details.appendChild(actions);
 		// Short errors are shown straight away; long ones start collapsed.
-		let open = text.length < 240;
+		let open = expanded ?? text.length < 240;
 		let setOpen = (value) => {
 			open = value;
 			details.hidden = !open;

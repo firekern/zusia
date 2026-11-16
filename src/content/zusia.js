@@ -10,11 +10,11 @@ Zusia = {
 		"settings", "window", "dom", "sidebar", "attachments", "chat", "history", "reader",
 		"theorems", "clarifications", "memory-sheet", "wizard", "search", "ask", "prefs-pane",
 		"notes", "markdown", "drawings", "math", "context", "reading", "progress", "memory",
-		"jobs", "consolidation", "binaries", "prompts", "backends", "dock", "layouts",
+		"jobs", "consolidation", "binaries", "prompts", "backends", "api", "api-connections", "api-state", "api-diagnostics", "api-budget", "api-ui", "api-profiles", "api-ollama", "api-prefs", "dock", "layouts",
 	],
 	// The stylesheets in src/content/styles, in cascade order: a later file overrides an earlier one.
 	STYLES: [
-		"base", "shell", "conversation", "richtext", "states", "composer", "appearance", "drawings",
+		"base", "shell", "conversation", "richtext", "states", "composer", "api", "appearance", "drawings",
 		"buddies", "theorems", "search", "glass", "prefs", "wizard", "panels", "layouts",
 		"layout-minimal", "layout-rich", "layout-visual",
 	],
@@ -65,6 +65,21 @@ Zusia = {
 			pathPref: "agyPath",
 			models: [{ id: "", label: "Default", desc: "Your Antigravity default" }],
 			efforts: ["", "low", "medium", "high"],
+		},
+		ollama: {
+			label: "Ollama", fullName: "Ollama API", transport: "http", baseURL: "http://127.0.0.1:11434/v1",
+			models: [{ id: "", label: "Choose a model", desc: "Configure in Settings → Zusia → Assistants" }],
+			efforts: ["", "low", "medium", "high"], images: true,
+		},
+		unsloth: {
+			label: "Unsloth", fullName: "Unsloth API", transport: "http", baseURL: "http://127.0.0.1:8888/v1",
+			models: [{ id: "", label: "Choose a model", desc: "Configure in Settings → Zusia → Assistants" }],
+			efforts: ["", "low", "medium", "high"], images: true,
+		},
+		openai: {
+			label: "Custom API", fullName: "OpenAI-compatible API", transport: "http", baseURL: "https://api.openai.com/v1",
+			models: [{ id: "", label: "Choose a model", desc: "Configure in Settings → Zusia → Assistants" }],
+			efforts: ["", "low", "medium", "high"], images: true,
 		},
 	},
 	EFFORTS: {
@@ -132,6 +147,8 @@ Zusia = {
 	MEMORY_TRANSCRIPT_CHARS: 60000,
 	// A gist reads at most this much of its section; agy's inline budget is 60k.
 	GIST_INPUT_CHARS: 40000,
+	// Less of a section than this is not enough to summarise it.
+	GIST_MIN_INPUT_CHARS: 600,
 	// What a background prompt to agy leaves for its turns or section text when its
 	// instructions and memory already fill most of the inline budget (Windows: 12k).
 	JOB_MIN_INPUT_CHARS: 2000,
@@ -244,7 +261,7 @@ Zusia = {
 	// inline budget, so it stays a fraction of the smallest one (12,000 on Windows).
 	CUSTOM_PROMPT_CHARS: 4000,
 	WIZARD_STEPS: ["welcome", "assistant", "look", "buddy", "answers", "voice", "done"],
-	BACKEND_ICONS: { claude: "sparkle", codex: "terminal", agy: "rocket" },
+	BACKEND_ICONS: { claude: "sparkle", codex: "terminal", agy: "rocket", ollama: "ollama", unsloth: "unsloth", openai: "ref" },
 	// Study buddies: original drawings shown in the empty chat, with a matching header icon.
 	MASCOTS: {
 		cat: { label: "Cat", icon: "mascot-cat", header: "cat" },
@@ -296,6 +313,8 @@ Zusia = {
 		save: "download-simple.svg",
 		back: "arrow-u-up-left.svg",
 		ref: "link.svg",
+		ollama: "provider-ollama.svg",
+		unsloth: "provider-unsloth.svg",
 		cat: "cat.svg",
 		bird: "bird.svg",
 		robot: "robot.svg",

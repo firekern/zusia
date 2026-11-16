@@ -10,6 +10,11 @@ Object.assign(Zusia, {
 	},
 
 	setPref(name, value) {
+		let api = name.match(/^(ollama|unsloth|openai)\.(model|api)$/);
+		if (api) {
+			if (api[2] === "model") this.rememberAPISelection(api[1], value);
+			else value = this.mergeAPISelections(api[1], value);
+		}
 		Zotero.Prefs.set(this.PREF_PREFIX + name, value, true);
 	},
 
@@ -30,11 +35,18 @@ Object.assign(Zusia, {
 	},
 
 	getModel(backend) {
+		if (this.isAPIBackend(backend)) return this.apiSelectedModel(backend);
 		return this.getPref(backend + ".model") || "";
 	},
 
-	getEffort(backend) {
+	getEffort(backend, { deferCapabilities = false } = {}) {
 		let effort = this.getPref(backend + ".effort") || "";
+		if (this.isAPIBackend(backend)) {
+			// A pending request keeps the saved intent through cold-start discovery.
+			// apiReasoningFields validates it against the prepared endpoint/model.
+			if (deferCapabilities) return typeof effort === "string" && /^[\w.:-]{1,64}$/.test(effort) ? effort : "";
+			return this.apiReasoningChoices(backend).some(c => c.id === effort) ? effort : "";
+		}
 		return this.BACKENDS[backend].efforts.includes(effort) ? effort : "";
 	},
 
@@ -42,6 +54,13 @@ Object.assign(Zusia, {
 	// Settings, and Antigravity's own catalogue once it has been fetched.
 	getModels(backend) {
 		let models = this.BACKENDS[backend].models.slice();
+		if (this.isAPIBackend(backend)) {
+			let cache = this._apiModels?.[backend];
+			try {
+				if (cache?.baseURL === this.normalizeAPIURL(this.getAPIConfig(backend).baseURL)) models.push(...cache.models);
+			}
+			catch (e) {}
+		}
 		if (backend === "codex") {
 			for (let id of (this.getPref("codex.models") || "").split(/[,\n]/).map(m => m.trim()).filter(Boolean)) {
 				models.push({ id, label: id, desc: "" });
@@ -419,7 +438,7 @@ Object.assign(Zusia, {
 			names.push("mode." + id);
 		}
 		for (let backend of Object.keys(this.BACKENDS)) {
-			names.push(backend + ".model", backend + ".effort");
+			names.push(backend + ".model", backend + ".effort", backend + ".api");
 		}
 		for (let name of names) {
 			this._prefObservers.push(

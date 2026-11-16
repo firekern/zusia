@@ -5,6 +5,7 @@ Zusia bundles the following third-party files. Each licence ships next to the fi
 | Component | Version | Licence | Files | Licence file |
 |---|---|---|---|---|
 | KaTeX | 0.16.22 | MIT | `src/content/lib/katex.min.js` | `src/content/lib/KATEX-LICENSE` |
+| eventsource-parser | 4.1.3 | MIT | `src/content/lib/eventsource-parser.js` | `src/content/lib/EVENTSOURCE-PARSER-LICENSE` |
 | Latin Modern Math | — | GUST Font License | `src/content/lib/latinmodern-math.otf` | `src/content/lib/LATINMODERN-MATH-LICENSE.txt` |
 | Phosphor Icons (Duotone) | 2.1.1 | MIT | `src/content/icons/*.svg` except `mascot-*.svg` | `src/content/icons/PHOSPHOR-LICENSE` |
 

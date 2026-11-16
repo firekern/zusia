@@ -49,7 +49,13 @@ export function loadPlugin({ prefs = {}, files = new Map() } = {}) {
 		getMainWindows: () => [window],
 	};
 	window.eval(read("src/content/lib/katex.min.js").replace(/^!function\(e,t\)\{/, "!function(e,t){var exports,module,define;"));
-	window.Services = { scriptloader: { loadSubScript: (url, scope) => { scope.module.exports = window.katex; } } };
+	window.Services = { scriptloader: { loadSubScript: (url, scope) => {
+		if (url.endsWith("eventsource-parser.js")) {
+			window.eval(read("src/content/lib/eventsource-parser.js"));
+			scope.ZusiaEventSource = window.ZusiaEventSource;
+		}
+		else scope.module.exports = window.katex;
+	} } };
 	// bootstrap.js loads the reading map first, into the same scope as zusia.js.
 	window.eval(read("src/content/readingmap.js") + "\nwindow.ZusiaMap = ZusiaMap;");
 	window.eval("var Zusia;\n" + read("src/content/zusia.js") + "\nwindow.Zusia = Zusia;");

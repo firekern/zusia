@@ -1,0 +1,18 @@
+/* Native model status and per-answer request details. */
+.zs-api-runtime {
+	display: flex;
+	align-items: flex-start;
+	gap: 4px;
+	color: var(--zs-muted);
+	font-size: 0.9em;
+	font-variant-numeric: tabular-nums;
+	padding: 0 2px 3px;
+}
+.zs-api-runtime[hidden] { display: none; }
+.zs-api-runtime details { flex: 1; min-width: 0; }
+.zs-api-runtime summary { cursor: pointer; overflow-wrap: anywhere; line-height: 1.5; }
+.zs-api-runtime-detail { white-space: pre-line; overflow-wrap: anywhere; margin-top: 4px; line-height: 1.5; }
+.zs-api-runtime-refresh { flex: none; }
+.zs-api-metrics { margin: 4px 0; color: var(--zs-muted); font-size: 0.9em; font-variant-numeric: tabular-nums; }
+.zs-api-metrics summary { cursor: pointer; overflow-wrap: anywhere; }
+.zs-api-metrics-detail { white-space: pre-line; overflow-wrap: anywhere; line-height: 1.5; margin-top: 5px; }

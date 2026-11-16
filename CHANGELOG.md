@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- 🔑 **Connect a local model.** Ollama, Unsloth and OpenAI-compatible APIs can answer about the paper alongside the existing CLI logins, with model discovery, streamed answers, Stop, optional images and bounded document tools. Keys stay in Zotero's OS key store where available, or only in the session on older versions.
+- 🧠 **Use the provider's model settings.** Native profiles supply the active context and generation settings, with optional overrides per endpoint and model. Reading memory and section summaries fit that context, including small models and unavailable tokenizers.
+- 🛑 **Model changes wait for the current answer.** Unsloth keeps the chosen model and profile through the full answer and tool loop. Matching calls can run together; model changes queue, Stop cancels a waiting call, and shutdown stops active and queued work. Saved reasoning choices survive cold starts and long tool loops.
+- 🔒 **Remote APIs require HTTPS.** Plain HTTP is limited to loopback. Extra background calls to custom endpoints are off until you enable them for that endpoint, since they can cost money.
+- 🐛 Loading before choosing a model now shows a message beside the field instead of an unhandled error.
+
 - ➡️ **The panel is on the right, and you choose the side.** Zusia's panel now sits at the right edge of the window. **Settings → Zusia → Chat → *Where the chat is*** has three choices: Left, Right, or the item pane. Changing sides keeps the conversation as it is.
 - 👋 If your panel was on the left, a note above the chat says once that it is now on the right, with a **Back to the left** button.
 - 🪟 **The panel fills its column.** The chat was drawn as a rounded card inside a gutter of the pane's colour, one frame inside another; its background now runs from edge to edge.

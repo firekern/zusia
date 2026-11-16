@@ -27,12 +27,19 @@ test("composer shows the assistant, model and effort from prefs", () => {
 	assert.equal(root.querySelector(".zs-input").placeholder, "Ask Claude about this paper…");
 });
 
+test("API error details can stay visible even when the server returns a long explanation", () => {
+	const { plugin, view } = sidebar();
+	const card = plugin.appendError(view, "The selected model could not load. ".repeat(12), { title: "Unsloth could not answer", expanded: true });
+	assert.equal(card.querySelector(".zs-error-details").hidden, false);
+	assert.equal(card.querySelector(".zs-error-head").getAttribute("aria-expanded"), "true");
+});
+
 test("model menu lists every assistant and switches backend and model together", () => {
 	const { root, prefs, plugin } = sidebar();
 	plugin._agyModels = [{ id: "gemini-3.1-pro-high", label: "Gemini 3.1 Pro (High)" }];
 	root.querySelector(".zs-model-btn").click();
 	assert.deepEqual([...root.querySelectorAll(".zs-menu-section")].map(n => n.textContent),
-		["Claude Code", "OpenAI Codex", "Google Antigravity"]);
+		Object.values(plugin.BACKENDS).filter(b => b.transport !== "http").map(b => b.fullName));
 	assert.ok(root.querySelector(".zs-menu").textContent.includes("Not installed"), "missing CLI is explained");
 	const gemini = [...root.querySelectorAll(".zs-menu-item")].find(i => i.textContent.includes("Gemini 3.1 Pro"));
 	gemini.click();
