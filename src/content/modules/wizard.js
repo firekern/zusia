@@ -108,7 +108,9 @@ Object.assign(Zusia, {
 		else if (name === "assistant") {
 			hero("sparkle", "Your AI");
 			let installed = root._installed || {};
-			let tiles = this.tiles(doc, Object.entries(this.BACKENDS).map(([value, b]) => ({ value, label: b.label, icon: this.BACKEND_ICONS[value] })),
+			// The CLIs are the way in. An API assistant joins them once it has a model.
+			let offered = Object.entries(this.BACKENDS).filter(([value]) => !this.isAPIBackend(value) || this.getModel(value));
+			let tiles = this.tiles(doc, offered.map(([value, b]) => ({ value, label: b.label, icon: this.BACKEND_ICONS[value] })),
 				this.getBackend(), (v) => {
 					this.setPref("backend", v);
 					this.updateControls(root);
@@ -117,10 +119,11 @@ Object.assign(Zusia, {
 				if (installed[tile.dataset.value] === null) {
 					// Shown as a small badge; the name stays the tooltip.
 					tile.dataset.missing = "true";
-					tile.setAttribute("aria-description", this.isAPIBackend(tile.dataset.value) ? "Configure in Settings → Zusia → Assistants" : "not installed");
+					tile.setAttribute("aria-description", "not installed");
 				}
 			}
 			step.appendChild(tiles);
+			step.appendChild(this.el(doc, "div", "zs-wizard-sub", "A local model instead? Settings → Zusia → Assistants."));
 		}
 		else if (name === "look") {
 			hero("palette", "Your look");

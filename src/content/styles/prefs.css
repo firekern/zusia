@@ -107,6 +107,14 @@
 .zs-agent + .zs-agent {
 	border-top: 1px solid var(--zs-stroke);
 }
+/* Sets the optional assistants apart from the ones that work out of the box. */
+.zs-card-subhead {
+	padding: 12px 14px 4px;
+	border-top: 1px solid var(--zs-stroke);
+	font-size: 0.85em;
+	font-weight: 600;
+	color: var(--zs-muted);
+}
 .zs-agent > summary {
 	display: grid;
 	grid-template-columns: auto 1fr auto auto;

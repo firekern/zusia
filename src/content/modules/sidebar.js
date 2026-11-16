@@ -193,13 +193,6 @@ Object.assign(Zusia, {
 		}
 		let modelButton = root.querySelector(".zs-model-btn");
 		if (modelButton) {
-			let icon = modelButton.querySelector(".zs-model-icon");
-			let name = this.BACKEND_ICONS[backend];
-			if (icon?.dataset.icon !== name) {
-				let next = this.svgIcon(root.ownerDocument, name, "zs-model-icon");
-				if (icon) icon.replaceWith(next);
-				else modelButton.prepend(next);
-			}
 			let full = model ? info.label + " · " + this.modelLabel(backend, model) : info.label;
 			// Long model names drop the assistant prefix, as Beaver drops the vendor name.
 			modelButton.setLabel(full.length > 22 && model ? this.modelLabel(backend, model) : full);
@@ -249,11 +242,15 @@ Object.assign(Zusia, {
 			let current = this.getBackend();
 			for (let [key, backend] of Object.entries(this.BACKENDS)) {
 				let installed = root._installed ? root._installed[key] : undefined;
+				// An API assistant is optional: it is listed once it is set up in Settings,
+				// where a CLI that is missing is named so that it can be installed.
+				if (this.isAPIBackend(key) && !this.getModel(key)) {
+					continue;
+				}
 				this.menuSection(doc, menu, backend.fullName);
 				if (installed === null) {
 					menu.appendChild(this.el(doc, "div", "zs-menu-note",
-						this.isAPIBackend(key) ? "Set the API URL and model in Settings → Zusia → Assistants." :
-							"Not installed. Install the " + backend.command + " CLI or set its path in Settings."));
+						"Not installed. Install the " + backend.command + " CLI or set its path in Settings."));
 					continue;
 				}
 				for (let model of this.getModels(key)) {
