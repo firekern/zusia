@@ -128,8 +128,9 @@ Object.assign(Zusia, {
 		}
 		let bubble = this.el(view.doc, "div", "zs-msg zs-assistant");
 		this.renderRich(view.doc, bubble, msg.text);
-		if (msg.stopped || msg.incomplete) {
-			bubble.appendChild(this.el(view.doc, "div", "zs-stopped", msg.incomplete ? "Incomplete response" : "Stopped"));
+		if (msg.stopped || msg.incomplete || msg.truncated) {
+			bubble.appendChild(this.el(view.doc, "div", "zs-stopped",
+				msg.incomplete ? "Incomplete response" : msg.truncated ? "Reached the output limit" : "Stopped"));
 		}
 		turn.appendChild(bubble);
 		if (msg.metrics) turn.appendChild(this.renderAPIMetrics(view.doc, msg.metrics));
@@ -512,18 +513,28 @@ Object.assign(Zusia, {
 		}
 	},
 
+	// An API assistant without a model cannot answer, and says so. Whoever is about to
+	// change the chat asks this first: Retry drops the last exchange before it asks again.
+	needsAPIModel(view) {
+		let backend = this.getBackend();
+		if (!this.isAPIBackend(backend) || this.getModel(backend)) {
+			return false;
+		}
+		let diagnostic = this.apiDiagnostic(this.apiFailure("model", "Choose a model before sending this question."));
+		this.appendError(view, diagnostic.message, { title: diagnostic.title, expanded: true,
+			recovery: { label: diagnostic.actionLabel, run: () => this.openSettings() } });
+		return true;
+	},
+
 	startRequest(view, text, images = [], modes = this.activeModes(), { selection = null } = {}) {
 		let question = (text || "").trim();
 		if ((!question && !images.length) || this._pending.has(view.ctx.dir)) {
 			return;
 		}
-		let backend = this.getBackend();
-		if (this.isAPIBackend(backend) && !this.getModel(backend)) {
-			let diagnostic = this.apiDiagnostic(this.apiFailure("model", "Choose a model before sending this question."));
-			this.appendError(view, diagnostic.message, { title: diagnostic.title, expanded: true,
-				recovery: { label: diagnostic.actionLabel, run: () => this.openSettings() } });
+		if (this.needsAPIModel(view)) {
 			return;
 		}
+		let backend = this.getBackend();
 		if (view.input.value.trim() === question) {
 			view.input.value = "";
 			this.autoGrow(view.input);

@@ -36,12 +36,12 @@ Object.assign(Zusia, {
 		return { ...config, baseURL: baseURL.slice(0, -3) + path };
 	},
 
-	async providerJSON(backend, config, path, { headers, control, body, optional = false } = {}) {
+	async providerJSON(backend, config, path, { headers, control, body, optional = false, slow = false } = {}) {
 		if (control?.cancelled) return null;
 		// Optional profile routes may be absent on an older server. Authentication,
 		// connection and malformed-response errors are not silently ignored.
 		try {
-			let xhr = await this.apiHTTPRequest(backend, config, path, { headers, body,
+			let xhr = await this.apiHTTPRequest(backend, config, path, { headers, body, slow,
 				onCancel: cancel => { if (control) { control.abort = cancel; if (control.cancelled) cancel(); } },
 			});
 			try { return JSON.parse(xhr.responseText); }
@@ -79,12 +79,17 @@ Object.assign(Zusia, {
 		return load;
 	},
 
+	// One rule for "this model is loaded", shared by the request, the profile and the status line.
+	unslothModelReady(status, model) {
+		return !!(status?.loaded?.includes(model) || status?.active_model === model || status?.model_identifier === model);
+	},
+
 	async readUnslothProfile(model, config, { headers, control, status } = {}) {
 		headers = headers || await this.apiHeaders("unsloth", config);
 		let native = this.nativeAPIConfig(config, "/api");
 		status = status || await this.providerJSON("unsloth", native, "/inference/status?model=" + encodeURIComponent(model), { headers, control });
 		if (control?.cancelled) return null;
-		let ready = status?.loaded?.includes(model) || status?.active_model === model || status?.model_identifier === model;
+		let ready = this.unslothModelReady(status, model);
 		let overrides = this.apiProfileSettings(config, model).overrides;
 		let variant = overrides.ggufVariant || (ready && status.gguf_variant) || "";
 		if (!variant && (/gguf/i.test(model) || status?.is_gguf)) {
@@ -195,10 +200,18 @@ Object.assign(Zusia, {
 			return list?.models?.find(entry => this.ollamaModelMatches(entry.name || entry.model, model));
 		};
 		let current = await running(), preloadLoadMs;
-		let desired = profile.options.num_ctx || profile.parameters.num_ctx;
-		if (!current || !desired || current.context_length !== desired) {
+		let options = profile.options;
+		let desired = options.num_ctx || profile.parameters.num_ctx;
+		if (!desired) {
+			// Nobody chose a context. Ollama's own default is too small for a paper, so ask
+			// for the minimum, or keep what a loaded model already has: naming it in every
+			// request is what stops Ollama from reloading the model at its default.
+			desired = current?.context_length >= this.API_MIN_CONTEXT ? current.context_length : this.API_MIN_CONTEXT;
+			options = { ...options, num_ctx: desired };
+		}
+		if (!current || current.context_length !== desired) {
 			onProgress({ status: "loading the model in Ollama" });
-			let preloaded = await this.providerJSON("ollama", profile.native, "/chat", { headers, control, body: { model, messages: [], stream: false, options: profile.options } });
+			let preloaded = await this.providerJSON("ollama", profile.native, "/chat", { headers, control, slow: true, body: { model, messages: [], stream: false, options } });
 			preloadLoadMs = this.apiUsage(preloaded || {}, "ollama").loadMs;
 			if (control?.cancelled) return null;
 			current = await running();
@@ -206,7 +219,7 @@ Object.assign(Zusia, {
 		if (!current) throw new Error("Ollama did not load the selected model.");
 		let runtime = this.recordAPIProfile("ollama", model, config, { contextTokens: current.context_length,
 			quantization: current.details?.quantization_level || profile.show.details?.quantization_level || "Model tag",
-			cacheTypeKV: "Ollama server setting", source: "Ollama model/tag", options: profile.options, preloadLoadMs });
+			cacheTypeKV: "Ollama server setting", source: "Ollama model/tag", options, preloadLoadMs });
 		return runtime;
 	},
 
@@ -229,7 +242,7 @@ Object.assign(Zusia, {
 			else if (backend === "ollama") runtime = await this.prepareOllamaModel(model, config, options);
 			else return config;
 			if (options.control?.cancelled) return config;
-			if (runtime.contextTokens < 8192) throw new Error("The provider is running this model with " + runtime.contextTokens + " context tokens. Increase its profile to at least 8192 tokens, or set a context override in Zusia.");
+			if (runtime.contextTokens < this.API_MIN_CONTEXT) throw new Error("The provider is running this model with " + runtime.contextTokens + " context tokens. Increase its profile to at least " + this.API_MIN_CONTEXT + " tokens, or set a context override in Zusia.");
 			return this.applyAPICapabilities(backend, { ...config, contextTokens: Math.min(runtime.contextTokens, 2097152), runtimeProfile: runtime }, model);
 		}
 		finally { release?.(); if (standalone) this._apiRequestControls.delete(control); }

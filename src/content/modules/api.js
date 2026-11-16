@@ -1,6 +1,17 @@
 "use strict";
 
 Object.assign(Zusia, {
+	// Without the provider's tokenizer the input is sized from its UTF-8 bytes. English
+	// runs near four bytes a token, formulas and CJK text near three: two and a half
+	// stays under all of them without throwing most of the context away.
+	API_BYTES_PER_TOKEN: 2.5,
+	// How long an answer or a model load may stay silent, and a status call may take.
+	API_IDLE_MS: 5 * 60 * 1000,
+	API_SLOW_MS: 30 * 60 * 1000,
+	API_STATUS_MS: 60 * 1000,
+	// Below this a paper's excerpts, the instructions and the answer do not fit together.
+	API_MIN_CONTEXT: 8192,
+
 	// Unsloth and compatible servers use OpenAI Chat Completions; Ollama has a
 	// native adapter. All network access stays in Zotero's privileged HTTP layer.
 	isAPIBackend(backend) {
@@ -121,38 +132,67 @@ Object.assign(Zusia, {
 		return error;
 	},
 
-	async apiHTTPRequest(backend, config, path, { body, headers, onChunk, onCancel } = {}) {
+	apiStreamError(backend, error) {
+		return new Error(error.message?.startsWith("API HTTP ") ? error.message : backend === "ollama" ?
+			"Invalid Ollama NDJSON stream. Check the model and native API connection." : "Invalid API stream. Check the endpoint's Chat Completions and SSE support.");
+	},
+
+	// Zotero's timeout counts the whole request, so it would cut a slow local model off
+	// in the middle of an answer. A `slow` request (an answer, a model load) has none:
+	// it is stopped when the server has sent nothing for a while, and a stream that
+	// keeps arriving never is.
+	async apiHTTPRequest(backend, config, path, { body, headers, onChunk, onCancel, slow = false } = {}) {
 		let url = this.normalizeAPIURL(config.baseURL) + path;
 		headers = headers || await this.apiHeaders(backend, config);
 		let offset = 0;
 		let parsingError = null;
+		let cancel = null, done = false, silent = false, heard = Date.now();
 		let consume = xhr => {
+			heard = Date.now();
 			if (!onChunk || xhr.status < 200 || xhr.status >= 300 || parsingError) return;
 			let chunk = xhr.responseText.slice(offset);
 			offset = xhr.responseText.length;
 			try { if (chunk) onChunk(chunk); }
-			catch (e) { parsingError = e; }
+			// The rest of a broken stream is never read: cancel, so the server stops writing it.
+			catch (e) { parsingError = e; cancel?.(); }
 		};
+		let patience = onChunk ? this.API_IDLE_MS : this.API_SLOW_MS;
+		let watch = async () => {
+			while (!done) {
+				await Zotero.Promise.delay(Math.max(1000, heard + patience - Date.now()));
+				if (!done && Date.now() - heard >= patience) {
+					silent = true;
+					cancel?.();
+					return;
+				}
+			}
+		};
+		if (slow) watch();
 		let xhr;
 		try {
 			xhr = await Zotero.HTTP.request(body ? "POST" : "GET", url, {
 				headers, ...(body ? { body: JSON.stringify(body) } : {}), responseType: "text",
 				// Handle statuses ourselves: Zotero 7 retries some 503s even with errorDelayMax=0.
-				successCodes: false, errorDelayMax: 0, followRedirects: false, timeout: 300000,
+				successCodes: false, errorDelayMax: 0, followRedirects: false, timeout: slow ? 0 : this.API_STATUS_MS,
 				logBodyLength: 0, debug: false, noCache: true,
 				requestObserver: request => request.addEventListener("progress", () => consume(request)),
-				cancellerReceiver: cancel => onCancel?.(cancel),
+				cancellerReceiver: canceller => { cancel = canceller; onCancel?.(canceller); },
 			});
 		}
 		catch (e) {
+			if (parsingError) throw this.apiStreamError(backend, parsingError);
+			if (silent) {
+				throw new Error("The API server sent nothing for " + Math.max(1, Math.round(patience / 60000)) +
+					" minutes and the request timed out. Check that the server is still running.");
+			}
 			// Native exceptions can hold the complete XHR and request headers. Return a
 			// new, deliberately small error so ask() never logs credentials or the paper.
 			throw new Error("API connection interrupted, cancelled or timed out. Check that the server is running and reachable.");
 		}
+		finally { done = true; }
 		if (xhr.status < 200 || xhr.status >= 300) throw this.apiError(xhr.status, xhr.responseText, headers);
 		consume(xhr);
-		if (parsingError) throw new Error(parsingError.message?.startsWith("API HTTP ") ? parsingError.message : backend === "ollama" ?
-			"Invalid Ollama NDJSON stream. Check the model and native API connection." : "Invalid API stream. Check the endpoint's Chat Completions and SSE support.");
+		if (parsingError) throw this.apiStreamError(backend, parsingError);
 		return xhr;
 	},
 
@@ -188,7 +228,12 @@ Object.assign(Zusia, {
 		// lease prevents a different model/profile from replacing an active answer.
 		// Failed/stopped attempts must not poison later preparations.
 		let previous = this._unslothLoads.get(baseURL) || Promise.resolve();
-		let operation = previous.catch(() => {}).then(async () => {
+		// Stop does not wait for someone else's load: the wait ends when this request is cancelled.
+		let stopped = new Promise(resolve => {
+			control.abort = resolve;
+			if (control.cancelled) resolve();
+		});
+		let operation = Promise.race([previous, stopped]).then(async () => {
 			if (control.cancelled) return null;
 			let status = async () => {
 				let xhr = await this.apiHTTPRequest("unsloth", native, "/status?model=" + encodeURIComponent(model), {
@@ -197,7 +242,6 @@ Object.assign(Zusia, {
 				try { return JSON.parse(xhr.responseText); }
 				catch (e) { throw new Error("Unsloth returned invalid model status. Check the Studio API connection."); }
 			};
-			let ready = value => value?.loaded?.includes(model) || value?.active_model === model || value?.model_identifier === model;
 			let current = await status();
 			if (control.cancelled) return null;
 			let profile = await this.readUnslothProfile(model, config, { headers, control, status: current });
@@ -209,7 +253,7 @@ Object.assign(Zusia, {
 			onProgress({ status: "loading the model in Unsloth", step: { kind: "load", target: model, label: "Loading " + model } });
 			let loadID = "zusia-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2);
 			await this.apiHTTPRequest("unsloth", native, "/load", {
-				headers, body: { model_path: model, ...profile.load, load_request_id: loadID },
+				headers, body: { model_path: model, ...profile.load, load_request_id: loadID }, slow: true,
 				onCancel: cancel => {
 					control.abort = () => {
 						// A scoped cancel can stop only this load, never unload a model
@@ -226,7 +270,7 @@ Object.assign(Zusia, {
 			});
 			if (control.cancelled) return null;
 			current = await status();
-			if (!ready(current)) throw new Error("Unsloth did not load the selected model. Check the available memory and model settings, then try again.");
+			if (!this.unslothModelReady(current, model)) throw new Error("Unsloth did not load the selected model. Check the available memory and model settings, then try again.");
 			current._zusiaProfile = profile;
 			this.rememberUnslothProfile(model, config, { ...profile, status: current });
 			let cache = this._apiModels?.unsloth;
@@ -239,9 +283,13 @@ Object.assign(Zusia, {
 			onProgress({ status: "reading the paper" });
 			return current;
 		});
-		this._unslothLoads.set(baseURL, operation);
-		try { return await operation; }
-		finally { if (this._unslothLoads.get(baseURL) === operation) this._unslothLoads.delete(baseURL); }
+		// The next request waits for both: one that was stopped leaves the load before it running.
+		let turn = Promise.allSettled([previous, operation]);
+		this._unslothLoads.set(baseURL, turn);
+		turn.then(() => {
+			if (this._unslothLoads.get(baseURL) === turn) this._unslothLoads.delete(baseURL);
+		});
+		return operation;
 	},
 
 	createAPIStreamParser(onEvent) {
@@ -294,7 +342,7 @@ Object.assign(Zusia, {
 			accept(JSON.parse(event.data));
 		}) : null;
 		let xhr = await this.apiHTTPRequest(backend, config, "/chat/completions", {
-			body, headers, onChunk: parser ? chunk => parser.feed(chunk) : null,
+			body, headers, slow: true, onChunk: parser ? chunk => parser.feed(chunk) : null,
 			onCancel: cancel => { control.abort = cancel; if (control.cancelled) cancel(); },
 		});
 		if (!body.stream) {
@@ -304,16 +352,17 @@ Object.assign(Zusia, {
 			accept(value);
 		}
 		if (!received || !finish) throw new Error("The API response ended before a complete answer. Retry the question.");
-		if (finish === "length") throw new Error("The model reached its output or context limit. Increase the output budget or shorten the question.");
+		// What was written before the limit is still an answer; a tool call cut in half is not.
+		if (finish === "length" && (!text.trim() || calls.size)) throw new Error("The model reached its output or context limit. Increase the output budget or shorten the question.");
 		if (finish === "content_filter") throw new Error("The provider filtered this response.");
 		metrics.responseMs = Date.now() - startedAt;
-		return { text, reasoning, calls: [...calls.values()], finish, metrics, actualModel };
+		return { text, reasoning, calls: [...calls.values()], finish, metrics, actualModel, truncated: finish === "length" };
 	},
 
-	// A UTF-8 byte per token is intentionally conservative across languages. This
-	// is an estimate, not the model's tokenizer; output and tool schemas reserve room.
+	// An estimate in tokens, not the model's tokenizer; output and tool schemas reserve room.
 	apiInputSize(messages) {
-		return new TextEncoder().encode(JSON.stringify(messages, (key, value) => key === "image_url" ? "[image]" : value)).length +
+		let bytes = new TextEncoder().encode(JSON.stringify(messages, (key, value) => key === "image_url" ? "[image]" : value)).length;
+		return Math.ceil(bytes / this.API_BYTES_PER_TOKEN) +
 			messages.reduce((n, m) => n + (Array.isArray(m.content) ? m.content.filter(p => p.type === "image_url").length * 4096 : 0), 512);
 	},
 
@@ -357,7 +406,8 @@ Object.assign(Zusia, {
 		let limit = Math.floor((config.contextTokens - config.outputTokens - 2000) * scale);
 		if (limit < 2000) throw new Error("The context window must leave at least 2,000 tokens for the document and instructions.");
 		let system = this.apiSystemPrompt(config.tools);
-		if (new TextEncoder().encode(system).length > limit * 0.6) system = this.apiCompactPrompt(config.tools);
+		// On a small context the full instructions would leave the paper a page or two.
+		if (new TextEncoder().encode(system).length / this.API_BYTES_PER_TOKEN > limit * 0.4) system = this.apiCompactPrompt(config.tools);
 		let block = (tag, text) => this.contextBlock(tag, text);
 		let reading = this.readingBlocks(files, null, { withFiles: false });
 		if (new TextEncoder().encode(reading).length > 2500) {
@@ -386,6 +436,8 @@ Object.assign(Zusia, {
 		}
 		messages.push(...recent);
 		let budget = Math.max(500, Math.floor((limit - this.apiInputSize([...messages, { role: "user", content: fixed + questionNote }])) * (config.tools ? 0.55 : 0.95)));
+		// The pages are chosen and cut by their size in bytes.
+		budget = Math.floor(budget * this.API_BYTES_PER_TOKEN);
 		let full = files.fullText;
 		let paper = "The document text is unavailable or disabled. Say so when the question requires it.";
 		if (full?.status === "ok" && full.pages?.length) {
@@ -516,7 +568,7 @@ Object.assign(Zusia, {
 					metrics.totalMs = Date.now() - startedAt;
 					let actualModel = result.actualModel || model;
 					this.publishAPIState(backend, config, model, { loaded: true, actualModel, runtime: config.runtimeProfile || null, metrics, diagnostic: null });
-					return { text: result.text.trim(), metrics };
+					return { text: result.text.trim(), metrics, ...(result.truncated ? { truncated: true } : {}) };
 				}
 				if (!tools.length || round === 4 || result.calls.length > 8) throw new Error("The model exceeded the document tool limit. Try a more focused question.");
 				request.onProgress?.({ text: "", status: "reading the paper" });
@@ -532,14 +584,14 @@ Object.assign(Zusia, {
 					let content;
 					try { content = this.executeAPITool(call.function.name, JSON.parse(call.function.arguments || "{}"), request.files); }
 					catch (e) { content = JSON.stringify({ error: "Invalid JSON tool arguments." }); }
-					messages.push({ role: "tool", tool_call_id: call.id, content: this.apiClip(content, Math.floor(remaining / result.calls.length)) });
+					messages.push({ role: "tool", tool_call_id: call.id, content: this.apiClip(content, Math.floor(remaining * this.API_BYTES_PER_TOKEN / result.calls.length)) });
 					request.onProgress?.({ step: this.describeTool(call.function.name, {}) });
 				}
 			}
 		}
 		catch (e) {
 			if (control.cancelled) return { text: partialText, cancelled: true, stopped: true };
-			let diagnostic = this.apiDiagnostic(partialText && /connection interrupted/i.test(e.message) ? this.apiFailure("incomplete", e.message) : e);
+			let diagnostic = this.apiDiagnostic(partialText && /connection interrupted|sent nothing/i.test(e.message) ? this.apiFailure("incomplete", e.message) : e);
 			try {
 				let config = request.apiConfig || this.getAPIConfig(backend);
 				this.publishAPIState(backend, config, request.model || "", { loaded: null, diagnostic });

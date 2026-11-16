@@ -100,7 +100,7 @@ const server = createServer(async (req, res) => {
 			return res.end(JSON.stringify({ done: true }));
 		}
 		let prompt = body.messages.at(-1)?.content || "";
-		if ((prompt === "Ollama cold reasoning probe" && body.think !== "deep") || (body.model === "small-context-model" && Buffer.byteLength(JSON.stringify(body.messages)) + 512 + 2048 > 8192)) {
+		if ((prompt === "Ollama cold reasoning probe" && body.think !== "deep") || (body.model === "small-context-model" && Math.ceil(Buffer.byteLength(JSON.stringify(body.messages)) / 3) + 2048 > 8192)) {
 			res.writeHead(400, { "content-type": "application/json" });
 			return res.end(JSON.stringify({ error: "Fixture rejected an invalid reasoning choice or background context budget" }));
 		}

@@ -113,7 +113,8 @@ test("native tokenizer expands useful document excerpts and recounts the complet
 	const result = await e.plugin.runAPIBackend("unsloth", req());
 	assert.equal(result.text, "Grounded answer"); assert.equal(result.metrics.budgetSource, "provider tokenizer");
 	const completion = calls.find(c => c.path === "/v1/chat/completions");
-	assert.ok(e.plugin.apiInputSize(completion.body.messages) > cfg.contextTokens, "more evidence than the byte-only baseline fits");
+	const baseline = e.plugin.buildAPIMessages(req(), { ...e.plugin.getAPIConfig("unsloth"), contextTokens: cfg.contextTokens });
+	assert.ok(e.plugin.apiInputSize(completion.body.messages) > e.plugin.apiInputSize(baseline) * 1.2, "more evidence than the estimate alone lets in");
 	assert.ok(promptTokens + cfg.outputTokens < cfg.contextTokens);
 	assert.match(JSON.stringify(completion.body.messages), /Explain attention/);
 	assert.ok(calls.filter(c => c.path.endsWith("/count_tokens")).length >= 2);

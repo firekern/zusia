@@ -36,8 +36,8 @@ Object.assign(Zusia, {
 				if (backend === "unsloth") {
 					let status = await this.providerJSON(backend, this.nativeAPIConfig(config, "/api/inference"), "/status?model=" + encodeURIComponent(model), { headers, control });
 					if (!status || control.cancelled) return;
-					actualModel = status.model_identifier || status.active_model || status.loaded?.[0] || "";
-					loaded = actualModel === model;
+					loaded = this.unslothModelReady(status, model);
+					actualModel = loaded ? model : status.model_identifier || status.active_model || status.loaded?.[0] || "";
 					if (loaded) runtime = await this.effectiveUnslothProfile(model, config, status, { headers, control });
 				}
 				else {
@@ -68,7 +68,9 @@ Object.assign(Zusia, {
 		this._apiMonitorWindow = win;
 		let tick = async () => {
 			try {
-				let visible = [...this.allRoots()].some(root => root.isConnected && !root.hidden && root.getClientRects().length);
+				// Only Ollama and Unsloth have a status to read: nothing is measured for anyone else.
+				let visible = ["unsloth", "ollama"].includes(this.getBackend()) &&
+					[...this.allRoots()].some(root => root.isConnected && !root.hidden && root.getClientRects().length);
 				if (visible) await this.refreshAPIRuntime();
 			}
 			catch (error) { this.log("API status refresh needs attention"); }

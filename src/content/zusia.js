@@ -147,6 +147,8 @@ Zusia = {
 	MEMORY_TRANSCRIPT_CHARS: 60000,
 	// A gist reads at most this much of its section; agy's inline budget is 60k.
 	GIST_INPUT_CHARS: 40000,
+	// Less of a section than this is not enough to summarise it.
+	GIST_MIN_INPUT_CHARS: 600,
 	// What a background prompt to agy leaves for its turns or section text when its
 	// instructions and memory already fill most of the inline budget (Windows: 12k).
 	JOB_MIN_INPUT_CHARS: 2000,

@@ -66,7 +66,7 @@ Object.assign(Zusia, {
 			}
 			if (buffer.length > 1024 * 1024) throw new Error("Ollama stream buffer exceeded its limit.");
 		};
-		let xhr = await this.apiHTTPRequest("ollama", this.nativeAPIConfig(config, "/api"), "/chat", { body: payload, headers,
+		let xhr = await this.apiHTTPRequest("ollama", this.nativeAPIConfig(config, "/api"), "/chat", { body: payload, headers, slow: true,
 			onChunk: body.stream ? consume : null,
 			onCancel: cancel => { control.abort = cancel; if (control.cancelled) cancel(); },
 		});
@@ -78,8 +78,8 @@ Object.assign(Zusia, {
 			accept(value);
 		}
 		if (!finish) throw new Error("The Ollama response ended before a complete answer. Retry the question.");
-		if (finish === "length") throw new Error("The model reached its output or context limit. Increase the output budget or shorten the question.");
+		if (finish === "length" && (!text.trim() || calls.length)) throw new Error("The model reached its output or context limit. Increase the output budget or shorten the question.");
 		metrics.responseMs = Date.now() - startedAt;
-		return { text, reasoning, calls, finish, metrics, actualModel };
+		return { text, reasoning, calls, finish, metrics, actualModel, truncated: finish === "length" };
 	},
 });

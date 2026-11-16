@@ -74,10 +74,10 @@ Object.assign(Zusia, {
 	jobInputChars(backend, cap, fixed, config = null) {
 		if (this.isAPIBackend(backend)) {
 			config = config || this.getAPIConfig(backend);
-			let overhead = typeof fixed === "string" ? this.apiInputSize(this.backgroundAPIMessages(fixed)) : fixed * 3 + 512;
+			let overhead = typeof fixed === "string" ? this.apiInputSize(this.backgroundAPIMessages(fixed)) : Math.ceil(fixed * 3 / this.API_BYTES_PER_TOKEN) + 512;
 			// Three UTF-8 bytes per UTF-16 unit also covers non-Latin study text.
 			// Do not force a minimum above the model's remaining input budget.
-			return Math.max(0, Math.min(cap, Math.floor((config.contextTokens - config.outputTokens - overhead - 512) / 3)));
+			return Math.max(0, Math.min(cap, Math.floor((config.contextTokens - config.outputTokens - overhead - 512) * this.API_BYTES_PER_TOKEN / 3)));
 		}
 		if (typeof fixed === "string") fixed = fixed.length;
 		if (backend !== "agy") {
@@ -189,8 +189,10 @@ Object.assign(Zusia, {
 		}
 		let build = config => {
 			let fixed = this.consolidationPrompt(memory, progress, structure, { messages: [] }, config);
-			batch = this.consolidationBatch(history, from, this.jobInputChars(backend, this.CONSOLIDATE_INPUT_CHARS, fixed, config));
-			if (!batch) throw new Error("The context budget is full. Reduce the output budget to leave room for a memory update.");
+			// `batch` stays the one found above when nothing fits: the failure is recorded against it.
+			let fitted = this.consolidationBatch(history, from, this.jobInputChars(backend, this.CONSOLIDATE_INPUT_CHARS, fixed, config));
+			if (!fitted) throw new Error("The context budget is full. Reduce the output budget to leave room for a memory update.");
+			batch = fitted;
 			return this.consolidationPrompt(memory, progress, structure, batch, config);
 		};
 		let result = await this.runBackgroundCall(backend, this.isAPIBackend(backend) ? build : build(null), job);
@@ -432,8 +434,18 @@ Object.assign(Zusia, {
 			this.contextBlock("section_text", section)
 		);
 		let cut = "\n[The rest of the section is left out.]";
-		let limit = this.jobInputChars(backend, this.GIST_INPUT_CHARS, frame(cut), config);
+		let limit = this.gistInputChars(backend, frame(cut), config);
 		return frame(text.length > limit ? text.slice(0, limit) + cut : text);
+	},
+
+	// A summary written from a few hundred characters, or from none, would be made up
+	// and then handed to later questions as what the section says.
+	gistInputChars(backend, fixed, config) {
+		let limit = this.jobInputChars(backend, this.GIST_INPUT_CHARS, fixed, config);
+		if (limit < this.GIST_MIN_INPUT_CHARS) {
+			throw new Error("The context budget is full. Reduce the output budget to leave room for a section summary.");
+		}
+		return limit;
 	},
 
 	gistMergePrompt(entry, parts, structure, backend = null, config = null) {
@@ -449,7 +461,7 @@ Object.assign(Zusia, {
 		let text = parts.map(p => "- " + ZusiaMap.entryTitle(p.entry) + ": " + p.text.replace(/\s+/g, " ")).join("\n");
 		if (!this.isAPIBackend(backend)) return frame(text);
 		let cut = "\n[Further section summaries are left out to fit the context budget.]";
-		let limit = this.jobInputChars(backend, this.GIST_INPUT_CHARS, frame(cut), config);
+		let limit = this.gistInputChars(backend, frame(cut), config);
 		return frame(text.length > limit ? text.slice(0, limit) + cut : text);
 	},
 });

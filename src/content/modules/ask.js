@@ -8,7 +8,7 @@ Object.assign(Zusia, {
 		}
 		let history = await this.loadHistory(view.ctx.dir);
 		let asked = history[index - 1] && history[index - 1].role === "user" ? history[index - 1] : null;
-		if (!asked) {
+		if (!asked || this.needsAPIModel(view)) {
 			return;
 		}
 		let question = asked.text;
@@ -134,6 +134,10 @@ Object.assign(Zusia, {
 				expanded: this.isAPIBackend(pending.backend),
 				recovery: diagnostic?.action === "settings" ? { label: diagnostic.actionLabel, run: () => this.openSettings() } : null,
 				retry: () => {
+					// The question is only on screen so far: keep it there when nothing can be sent.
+					if (this.needsAPIModel(view)) {
+						return;
+					}
 					logEl.querySelectorAll(".zs-error").forEach(n => n.remove());
 					this.renderMessages(view, history);
 					this.startRequest(view, pending.question, pending.images, pending.modes);
@@ -254,7 +258,7 @@ Object.assign(Zusia, {
 					Number.isInteger(turnPage) ? { page: turnPage + 1 } : {},
 					images.length ? { images: images.map(p => p.startsWith(ctx.dir) ? p.slice(ctx.dir.length).replace(/^[\/\\]+/, "") : p) } : {},
 					pending.modes && pending.modes.length ? { modes: pending.modes } : {}),
-				Object.assign({ role: "assistant", text: result.text, ts: Date.now() }, meta, result.stopped ? { stopped: true } : {}),
+				Object.assign({ role: "assistant", text: result.text, ts: Date.now() }, meta, result.stopped ? { stopped: true } : result.truncated ? { truncated: true } : {}),
 			]);
 			if (pending.selection) {
 				try {
