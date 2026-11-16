@@ -1,10 +1,11 @@
 # Changelog
 
-## Unreleased
+## 1.7.0
 
-- 🔑 **Connect a local model.** Ollama, Unsloth and OpenAI-compatible APIs can answer about the paper alongside the existing CLI logins, with model discovery, streamed answers, Stop, optional images and bounded document tools. Keys stay in Zotero's OS key store where available, or only in the session on older versions.
-- 🧠 **Use the provider's model settings.** Native profiles supply the active context and generation settings, with optional overrides per endpoint and model. Reading memory and section summaries fit that context, including small models and unavailable tokenizers.
+- 🔑 **Connect a local model, if you want one.** In **Settings → Zusia → Assistants**, Ollama, Unsloth or an OpenAI-compatible API can answer about the paper. Claude Code, Codex and Antigravity stay the default and need no key; an API assistant joins the wizard and the model menu once it has a model. It comes with model discovery, streamed answers, Stop, optional images and document tools that search and read the paper. Unlike the CLIs, these models get the pages that fit their context, chosen around your question. Keys stay in Zotero's OS key store where available, or only in the session on older versions.
+- 🧠 **Use the provider's model settings.** Native profiles supply the active context and generation settings, with optional overrides per endpoint and model. Reading memory and section summaries fit that context, including small models and unavailable tokenizers. A default Ollama starts with too small a context for a paper, so Zusia asks it for 8,192 tokens.
 - 🛑 **Model changes wait for the current answer.** Unsloth keeps the chosen model and profile through the full answer and tool loop. Matching calls can run together; model changes queue, Stop cancels a waiting call, and shutdown stops active and queued work. Saved reasoning choices survive cold starts and long tool loops.
+- ⏳ **Slow local models are not cut off.** An answer or a model load has no fixed time limit: it ends when the server goes silent. An answer that reaches the output limit is kept and marked.
 - 🔒 **Remote APIs require HTTPS.** Plain HTTP is limited to loopback. Extra background calls to custom endpoints are off until you enable them for that endpoint, since they can cost money.
 - 🐛 Loading before choosing a model now shows a message beside the field instead of an unhandled error.
 
