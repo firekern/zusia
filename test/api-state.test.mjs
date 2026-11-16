@@ -29,12 +29,12 @@ test("switching endpoints restores each server's selection and never borrows ano
 	const { plugin: p } = env();
 	p.initializeAPIConnections();
 	let config = p.getAPIConfig("unsloth");
-	p.setPref("unsloth.api", JSON.stringify({ ...config, baseURL: "http://other.example/v1" }));
+	p.setPref("unsloth.api", JSON.stringify({ ...config, baseURL: "https://other.example/v1" }));
 	assert.equal(p.getModel("unsloth"), "");
 	p.setAPIModel("unsloth", "other-model");
 	p.setPref("unsloth.api", JSON.stringify({ ...config, baseURL }));
 	assert.equal(p.getModel("unsloth"), model);
-	p.setPref("unsloth.api", JSON.stringify({ ...config, baseURL: "http://other.example/v1" }));
+	p.setPref("unsloth.api", JSON.stringify({ ...config, baseURL: "https://other.example/v1" }));
 	assert.equal(p.getModel("unsloth"), "other-model");
 });
 
@@ -59,7 +59,7 @@ test("native capabilities are discovered per endpoint/model with explicit overri
 	config = p.getAPIConfig("unsloth");
 	assert.equal(config.tools, true); assert.equal(config.vision, false); assert.equal(config.reasoning, true);
 	assert.equal(p.applyAPICapabilities("unsloth", config, "another").tools, false);
-	assert.equal(p.applyAPICapabilities("unsloth", { ...config, baseURL: "http://other/v1" }, model).tools, false);
+	assert.equal(p.applyAPICapabilities("unsloth", { ...config, baseURL: "https://other/v1" }, model).tools, false);
 	const key = p.apiProfileKey(config, model);
 	p.setPref("unsloth.api", JSON.stringify({ ...config, capabilities: { [key]: { tools: "off", vision: "on", reasoning: "auto" } } }));
 	config = p.getAPIConfig("unsloth");
@@ -176,7 +176,7 @@ test("a cold-start request keeps the saved reasoning choice until native capabil
 	p.rememberAPICapabilities("unsloth", model, config, { supports_reasoning: true, reasoning_style: "enable_thinking" });
 	config = p.applyAPICapabilities("unsloth", config, model);
 	assert.equal(p.apiReasoningFields("unsloth", config, model, p.getEffort("unsloth", { deferCapabilities: true })).enable_thinking, false);
-	assert.equal(Object.keys(p.apiReasoningFields("unsloth", { ...config, baseURL: "http://different/v1" }, model, "thinking:false")).length, 0);
+	assert.equal(Object.keys(p.apiReasoningFields("unsloth", { ...config, baseURL: "https://different/v1" }, model, "thinking:false")).length, 0);
 	assert.equal(Object.keys(p.apiReasoningFields("unsloth", config, "different-model", "thinking:false")).length, 0);
 });
 

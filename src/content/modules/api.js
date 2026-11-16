@@ -14,15 +14,21 @@ Object.assign(Zusia, {
 		if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
 			throw new Error("Use an HTTP or HTTPS base URL without credentials, query parameters or a fragment.");
 		}
+		if (url.protocol === "http:" && !["127.0.0.1", "localhost", "[::1]"].includes(url.hostname)) {
+			throw new Error("Use HTTPS for remote API servers. HTTP is allowed only for loopback (127.0.0.1, localhost or ::1).");
+		}
 		return url.href.replace(/\/+$/, "");
 	},
 
 	getAPIConfig(backend) {
 		let saved = this.getJSONPref(backend + ".api", {}) || {};
+		let baseURL = saved.baseURL || this.BACKENDS[backend]?.baseURL || "http://127.0.0.1:8080/v1";
 		let capabilitiesMatch = saved.capabilityModel === this.getModel(backend);
 		let integer = (value, fallback, min, max) => Number.isInteger(value) && value >= min && value <= max ? value : fallback;
 		let config = {
-			baseURL: saved.baseURL || this.BACKENDS[backend]?.baseURL || "http://127.0.0.1:8080/v1",
+			baseURL,
+			background: saved.background === true && saved.backgroundURL === baseURL,
+			backgroundURL: saved.backgroundURL || "",
 			auth: saved.auth === "none" ? "none" : saved.auth === "bearer" ? "bearer" : backend === "ollama" ? "none" : "bearer",
 			contextTokens: integer(saved.contextTokens, 32768, 8192, 2097152),
 			outputTokens: integer(saved.outputTokens, 2048, 256, 65536),

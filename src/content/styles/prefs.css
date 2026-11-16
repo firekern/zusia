@@ -282,7 +282,7 @@
 }
 .zs-swatch-custom {
 	overflow: hidden;
-	background: conic-gradient(#f55, #fc3, #5d5, #3cf, #66f, #e5e, #f55); /* taste-skill-ignore: functional custom colour-picker swatch */
+	background: conic-gradient(#f55, #fc3, #5d5, #3cf, #66f, #e5e, #f55);
 }
 .zs-swatch-custom input {
 	position: absolute;

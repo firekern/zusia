@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { loadPlugin } from "./load-plugin.mjs";
 
-const P = "extensions.zusia.", baseURL = "http://fixture.invalid/v1";
+const P = "extensions.zusia.", baseURL = "https://fixture.invalid/v1";
 const config = { baseURL, auth: "none", contextTokens: 8192, outputTokens: 1024, stream: false };
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
 function fixture(complete = () => {}) {
@@ -68,7 +68,7 @@ test("a queued model switch can be cancelled without accessing credentials or lo
 test("connection leases are isolated by normalized endpoint", async () => {
 	const e = fixture(), p = e.plugin;
 	const first = await p.acquireUnslothConnection(config, "A", { cancelled: false });
-	const second = await p.acquireUnslothConnection({ ...config, baseURL: "http://other.invalid/v1" }, "B", { cancelled: false });
+	const second = await p.acquireUnslothConnection({ ...config, baseURL: "https://other.invalid/v1" }, "B", { cancelled: false });
 	assert.equal(p._apiConnections.size, 2);
 	first(); second(); assert.equal(p._apiConnections.size, 0);
 	e.window.close();

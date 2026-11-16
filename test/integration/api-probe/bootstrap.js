@@ -59,6 +59,19 @@ async function run() {
 			outputTokens: 2048, tools: false, vision: false, stream: true, capabilityModel: "smoke-model" };
 		CS.setPref("openai.api", JSON.stringify(config));
 		CS.setPref("openai.model", "smoke-model");
+		let rejectedHTTP = false;
+		try { CS.normalizeAPIURL("http://remote.example/v1"); } catch (error) { rejectedHTTP = /HTTPS/.test(error.message); }
+		check("native transport rejects remote HTTP and accepts loopback IPv6", rejectedHTTP && CS.normalizeAPIURL("http://[::1]:8080/v1") === "http://[::1]:8080/v1");
+		let previousBackend = CS.getBackend();
+		CS.setPref("backend", "openai");
+		let noConsent = await CS.runBackgroundCall("openai", "Do not send this without consent");
+		check("native custom endpoint background calls are off by default", CS.jobBackend() === null && noConsent.cancelled === true);
+		CS.setPref("openai.api", JSON.stringify({ ...config, background: true, backgroundURL: config.baseURL }));
+		check("native custom endpoint background consent can be enabled", CS.jobBackend() === "openai");
+		CS.setPref("openai.api", JSON.stringify({ ...config, baseURL: "https://different.example/v1", background: true, backgroundURL: config.baseURL }));
+		check("native background consent does not follow another endpoint", CS.jobBackend() === null);
+		CS.setPref("openai.api", JSON.stringify(config));
+		CS.setPref("backend", previousBackend);
 		let models = await CS.loadAPIModels("openai");
 		check("native Zotero HTTP discovers model ids", models.some(m => m.id === "smoke-model"));
 		let request = { ctx: { dir: out }, question: "Explain attention", history: [], session: null, model: "smoke-model", images: [],
@@ -105,7 +118,8 @@ async function run() {
 		check("Stop aborts the native HTTP stream", stopped && cancelled.cancelled && cancelled.stopped);
 		let doc = Zotero.getMainWindow().document;
 		let panel = CS.buildAPIAssistant(doc, "openai");
-		check("API settings render in native Gecko", panel.querySelectorAll("input").length === 5 && panel.querySelectorAll('[role="switch"]').length === 4);
+		check("API settings render in native Gecko", panel.querySelectorAll("input").length === 5 && panel.querySelectorAll('[role="switch"]').length === 5);
+		check("native settings expose background costs and an unchecked opt-in", panel.querySelector('[aria-label="Allow background calls"]')?.getAttribute("aria-checked") === "false" && panel.textContent.includes("can cost money"));
 		let emptyPanel = CS.buildAPIAssistant(doc, "unsloth");
 		[...emptyPanel.querySelectorAll("button")].find(button => button.textContent === "Load model").click();
 		await Zotero.Promise.delay(0);

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { loadPlugin } from "./load-plugin.mjs";
 
-const P = "extensions.zusia.", model = "small-context-model", baseURL = "http://fixture.invalid/v1";
+const P = "extensions.zusia.", model = "small-context-model", baseURL = "https://fixture.invalid/v1";
 function setup(backend = "ollama", { tokenizer = false, unicode = false } = {}) {
 	const e = loadPlugin({ prefs: { [P + "backend"]: backend, [P + backend + ".model"]: model,
 		[P + backend + ".api"]: JSON.stringify({ baseURL, auth: "none", contextTokens: 32768, outputTokens: 2048, stream: false }),

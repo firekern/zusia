@@ -194,7 +194,7 @@ Object.assign(Zusia, {
 			return this.consolidationPrompt(memory, progress, structure, batch, config);
 		};
 		let result = await this.runBackgroundCall(backend, this.isAPIBackend(backend) ? build : build(null), job);
-		if (job && job.cancelled) {
+		if (job?.cancelled || result.cancelled) {
 			return { called: true };
 		}
 		let patch = result.error ? null : ZusiaMap.parsePatch(result.text);
@@ -391,7 +391,7 @@ Object.assign(Zusia, {
 			prompt = config => this.gistPrompt(entry, pages, structure, previous ? fresh.get(previous.id) : null, backend, config);
 		}
 		let result = await this.runBackgroundCall(backend, this.isAPIBackend(backend) ? prompt : prompt(null), job);
-		if (job && job.cancelled) {
+		if (job?.cancelled || result.cancelled) {
 			return { called: true };
 		}
 		let failed = dir + "\n" + id + "\n" + hash;

@@ -2,7 +2,6 @@
 set -euo pipefail
 
 cd "$(dirname "$0")"
-node scripts/vendor.mjs
 rm -f zusia.xpi
 cd src
 if command -v zip >/dev/null; then

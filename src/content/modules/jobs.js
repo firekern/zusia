@@ -15,6 +15,7 @@ Object.assign(Zusia, {
 	// read. Codex cannot: its read-only sandbox still reads the whole home folder.
 	jobBackend() {
 		let backend = this.getBackend();
+		if (backend === "openai" && !this.getAPIConfig(backend).background) return null;
 		return backend === "claude" || backend === "agy" || this.isAPIBackend(backend) ? backend : null;
 	},
 
@@ -145,6 +146,10 @@ Object.assign(Zusia, {
 		if (this.isAPIBackend(backend)) {
 			try {
 				let config = this.getAPIConfig(backend);
+				if (backend === "openai" && !config.background) {
+					if (job) job.cancelled = true;
+					return { text: "", error: "Background calls are disabled for this endpoint.", cancelled: true, rateLimited: false };
+				}
 				let result = await this.runAPIBackend(backend, {
 					model: this.getModel(backend), apiConfig: config,
 					effort: this.getEffort(backend, { deferCapabilities: true }),

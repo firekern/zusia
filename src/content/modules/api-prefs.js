@@ -54,7 +54,8 @@ Object.assign(Zusia, {
 			try {
 				let baseURL = this.normalizeAPIURL(value);
 				if (baseURL !== config.baseURL) {
-					save({ baseURL, tools: false, vision: false, reasoning: false });
+					save({ baseURL, tools: false, vision: false, reasoning: false, background: false, backgroundURL: "" });
+					toggles.background?.setAttribute("aria-checked", "false");
 					for (let prop of ["tools", "vision", "reasoning"]) toggles[prop]?.setAttribute("aria-checked", "false");
 				}
 				input.value = baseURL; input.setCustomValidity(""); message.textContent = "";
@@ -62,7 +63,7 @@ Object.assign(Zusia, {
 					model.setCustomValidity(""); syncProfiles(); refreshCapabilities();
 			}
 			catch (e) { input.setCustomValidity(e.message); message.textContent = e.message; }
-		}, "Include /v1. Requests go directly to this endpoint; no CLI login is used.");
+		}, "Include /v1. Remote servers require HTTPS; HTTP is allowed only on loopback. No CLI login is used.");
 		let auth = this.select(doc, [["none", "No authentication"], ["bearer", "API key (Bearer)"]], config.auth, value => {
 			save({ auth: value }); keyRow.hidden = value !== "bearer";
 		});
@@ -230,6 +231,13 @@ Object.assign(Zusia, {
 			body.appendChild(this.row(doc, label, toggle, hint));
 		}
 		refreshCapabilities();
+		if (backend === "openai") {
+			let toggle = this.switchControl(doc, config.background, value => save({ background: value, backgroundURL: value ? config.baseURL : "" }));
+			toggles.background = toggle;
+			toggle.setAttribute("aria-label", "Allow background calls");
+			body.appendChild(this.row(doc, "Allow background calls", toggle,
+				"Off by default. Allow reading-memory updates and section summaries on this endpoint. These extra calls can cost money."));
+		}
 		details.append(summary, body);
 		return details;
 	},

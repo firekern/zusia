@@ -374,7 +374,7 @@ test("API settings save configuration, list server models and keep keys out of p
 });
 
 test("API memory uses the selected endpoint and model with document tools disabled", async () => {
-	const e = env({ tools: true, stream: false });
+	const e = env({ tools: true, stream: false, background: true, backgroundURL: config.baseURL });
 	const calls = http(e, [{ json: { choices: [{ message: { content: '{"summary":"memory"}' }, finish_reason: "stop" }] } }]);
 	const result = await e.runBackgroundCall.call(e.plugin, "openai", "Update memory");
 	assert.equal(result.text, '{"summary":"memory"}');

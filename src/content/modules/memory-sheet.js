@@ -152,7 +152,9 @@ Object.assign(Zusia, {
 		itemsBox.appendChild(this.el(doc, "div", "zs-memory-reset-row")).appendChild(reset);
 
 		let settings = section("In the background", "zs-memory-settings");
-		let runner = this.jobBackend() ? "" : " Needs Claude or Antigravity as the assistant: Codex is never used for it.";
+		let runner = this.jobBackend() ? "" : this.getBackend() === "openai"
+			? " Enable background calls for this endpoint in Settings → Zusia → Assistants. These extra calls can cost money."
+			: " Needs Claude, Antigravity or an API assistant with background calls enabled: Codex is never used for it.";
 		// A switch is a button, which the row's <label> does not name.
 		let toggle = (label, checked, pref, hint) => {
 			let control = this.switchControl(doc, checked, v => this.setPref(pref, v));
