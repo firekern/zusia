@@ -203,7 +203,7 @@
 	margin-top: 8px;
 	font-size: 0.88em;
 	line-height: 1.4;
-	color: var(--zs-red, #d42a3c);
+	color: var(--accent-red, #db2c3a);
 }
 
 /* Form controls */

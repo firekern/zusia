@@ -360,3 +360,14 @@ test("Settings' stylesheet styles only classes the modules set", () => {
 	const styled = new Set([...source("src/content/styles/prefs.css").matchAll(/\.(zs-[\w-]+)/g)].map(m => m[1]));
 	assert.deepEqual([...styled].filter(name => !new RegExp("[\"' ]" + name + "[\"' ]").test(modules)), []);
 });
+
+test("a stylesheet reads the chat's red only inside the error card that declares it", () => {
+	// Elsewhere --zs-red is unset, so its fallback would paint a red the chat never shows.
+	for (const name of readdirSync(new URL("../src/content/styles/", import.meta.url))) {
+		for (const [, selector, body] of source("src/content/styles/" + name).matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+			if (body.includes("var(--zs-red")) {
+				assert.match(selector, /\.zs-error\b/, name + ": " + selector.trim());
+			}
+		}
+	}
+});
