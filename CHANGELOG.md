@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- 🔌 **Agent Client Protocol support.** An ACP agent can answer in the panel. The model and effort menus come from the agent, and a follow-up question resumes the same conversation. File reads stay inside the paper's folder, and Zusia refuses changes and commands.
+- 🧩 **ACP agents can be added in Settings.** Open **Settings → Zusia → Assistants → ACP agents** to enter the agent's name, command, and arguments. **Browse the ACP registry** fetches the official list and fills the form with the command for your platform. **Sign in** on an agent's card runs its ACP auth method. The agent uses its own login and model list. An agent is available as soon as you add it. Removing it takes away its card and its saved model. npx and uvx fetch the agent on first use. A binary agent links its archive, which you install yourself.
+- 🖼️ **ACP agents can see images and keep the memory.** An agent that supports images receives attached images with the question. Background memory calls run through the current ACP agent at low effort. ACP agents keep the memory like Claude and Antigravity. Codex is the one assistant without background memory.
+
 ## 1.7.0
 
 - 🔑 **Connect a local model, if you want one.** In **Settings → Zusia → Assistants**, Ollama, Unsloth or an OpenAI-compatible API can answer about the paper. Claude Code, Codex and Antigravity stay the default and need no key; an API assistant joins the wizard and the model menu once it has a model. It comes with model discovery, streamed answers, Stop, optional images and document tools that search and read the paper. Unlike the CLIs, these models get the pages that fit their context, chosen around your question. Keys stay in Zotero's OS key store where available, or only in the session on older versions.
