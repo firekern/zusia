@@ -2,9 +2,9 @@
 
 ## Unreleased
 
-- 🔌 **Agent Client Protocol support.** An ACP agent can answer in the panel. The model and effort menus come from the agent, and a follow-up question resumes the same conversation. File reads stay inside the paper's folder, and Zusia refuses changes and commands.
+- 🔌 **Agent Client Protocol support.** An ACP agent can answer in the panel. The model and effort menus come from the agent, and a follow-up question resumes the same conversation. Zusia serves and approves reads only inside the paper's folder, refuses changes and commands, and cannot confine tools an agent uses without asking.
 - 🧩 **ACP agents can be added in Settings.** Open **Settings → Zusia → Assistants → ACP agents** to enter the agent's name, command, and arguments. **Browse the ACP registry** fetches the official list and fills the form with the command for your platform. **Sign in** on an agent's card runs its ACP auth method. The agent uses its own login and model list. An agent is available as soon as you add it. Removing it takes away its card and its saved model. npx and uvx fetch the agent on first use. A binary agent links its archive, which you install yourself.
-- 🖼️ **ACP agents can see images and keep the memory.** An agent that supports images receives attached images with the question. Background memory calls run through the current ACP agent at low effort. ACP agents keep the memory like Claude and Antigravity. Codex is the one assistant without background memory.
+- 🖼️ **ACP agents can see images and keep the memory.** An agent that supports images receives attached images with the question. Once its card allows it, an ACP agent keeps the memory like Claude and Antigravity, at the model and effort chosen for it. Codex is the one assistant without background memory.
 
 ## 1.7.0
 
