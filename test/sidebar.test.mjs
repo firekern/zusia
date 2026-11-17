@@ -318,6 +318,36 @@ test("menus: arrow keys move focus, Home/End jump, Escape closes back to the but
 	assert.equal(doc.activeElement, button);
 });
 
+test("the arrow keys reach a folded section, which keeps focus as it opens and as its list arrives", async () => {
+	const { root, window, plugin } = sidebar();
+	let list;
+	plugin.loadAgyModels = () => new Promise((resolve) => {
+		list = () => resolve(plugin._agyModels = [{ id: "gemini-3.1-pro-high", label: "Gemini 3.1 Pro (High)" }]);
+	});
+	await new Promise(resolve => setTimeout(resolve, 0));
+	root._installed = { claude: "/bin/claude", codex: null, agy: "/bin/agy" };
+	root.querySelector(".zs-model-btn").click();
+	await new Promise(resolve => setTimeout(resolve, 0));
+	const doc = root.ownerDocument;
+	const key = k => doc.dispatchEvent(new window.KeyboardEvent("keydown", { key: k, bubbles: true }));
+	const antigravity = () => root.querySelector('.zs-menu-section-toggle[data-menu-key="agy"]');
+	assert.equal(antigravity().getAttribute("role"), "menuitem");
+	for (let i = 0; i < 12 && doc.activeElement !== antigravity(); i++) {
+		key("ArrowDown");
+	}
+	assert.equal(doc.activeElement, antigravity(), "ArrowDown reaches the Antigravity section");
+	// Enter on a focused button clicks it.
+	antigravity().click();
+	assert.equal(antigravity().getAttribute("aria-expanded"), "true");
+	assert.equal(doc.activeElement, antigravity(), "the section keeps focus once it opens");
+	list();
+	await new Promise(resolve => setTimeout(resolve, 0));
+	assert.ok(menuLabels(root).includes("Gemini 3.1 Pro (High)"), "its list came in");
+	assert.equal(doc.activeElement, antigravity(), "and keeps it through the refresh the list brings");
+	key("ArrowDown");
+	assert.equal(doc.activeElement.dataset.menuKey, "agy/", "the next stop is its first model, the default");
+});
+
 test("long model names drop the assistant prefix; the tooltip keeps both", () => {
 	const { root, plugin } = sidebar({ "extensions.zusia.backend": "agy", "extensions.zusia.agy.model": "gemini-3.8-flash-high" });
 	plugin._agyModels = [{ id: "gemini-3.8-flash-high", label: "Gemini 3.8 Flash (High)" }];

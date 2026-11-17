@@ -255,7 +255,7 @@ Object.assign(Zusia, {
 				let installed = root._installed ? root._installed[key] : undefined;
 				let open = expanded.has(key);
 				this.menuSection(doc, menu, backend.fullName, {
-					collapsible: true,
+					key,
 					expanded: open,
 					onToggle: () => {
 						if (expanded.has(key)) {
@@ -275,6 +275,7 @@ Object.assign(Zusia, {
 				let models = installed === null ? [] : this.getModels(key);
 				for (let model of models) {
 					this.menuItem(doc, menu, {
+						key: key + "/" + model.id,
 						label: model.label,
 						desc: this.isAPIBackend(key) || !model.id ? model.desc : "",
 						checked: key === current && model.id === this.getModel(key),
