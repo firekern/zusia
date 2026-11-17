@@ -29,9 +29,18 @@ Object.assign(Zusia, {
 		];
 	},
 
+	missingBinaryMessage(backend, command) {
+		let { label, pathPref, custom } = this.BACKENDS[backend];
+		return "Could not find the '" + command + "' command. Make sure the " + label + " " +
+			(custom ? "agent is installed and its command is right" : "CLI is installed and on your PATH") +
+			(pathPref
+				? ", or set " + this.PREF_PREFIX + pathPref + " (Zotero Settings → Advanced → Config Editor) to its full path."
+				: ". Check the command in Zotero Settings → Zusia → Assistants.");
+	},
+
 	async findBinary(backend) {
-		let { label, command, pathPref } = this.BACKENDS[backend];
-		let override = this.getPref(pathPref);
+		let { command, pathPref } = this.BACKENDS[backend];
+		let override = pathPref ? this.getPref(pathPref) : "";
 		if (override) {
 			// Windows itself takes C:/…, but Gecko's path functions refuse a forward slash.
 			return this.avoidBatchFile(backend, Zotero.isWin ? override.replace(/\//g, "\\") : override);
@@ -49,7 +58,7 @@ Object.assign(Zusia, {
 			if (await OS.File.exists(path)) {
 				return this.avoidBatchFile(backend, path);
 			}
-			throw new Error("Could not find " + path + ". Check the path in Settings → Zusia → Assistants.");
+			throw new Error(this.missingBinaryMessage(backend, path));
 		}
 
 		let searchEnv = this.buildChildEnvironment();
@@ -64,11 +73,7 @@ Object.assign(Zusia, {
 				return this.avoidBatchFile(backend, found);
 			}
 		}
-		throw new Error(
-			"Could not find the '" + command + "' command. Make sure the " + label + " CLI is " +
-			"installed and on your PATH, or set " + this.PREF_PREFIX + pathPref + " (Zotero " +
-			"Settings → Advanced → Config Editor) to its full path."
-		);
+		throw new Error(this.missingBinaryMessage(backend, command));
 	},
 
 	// Mozilla runs a .cmd/.bat through cmd.exe, which re-parses the prompt: a newline ends
@@ -84,6 +89,7 @@ Object.assign(Zusia, {
 		let target = {
 			claude: ["node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe"],
 			codex: ["node_modules", "@openai", "codex", "bin", "codex.js"],
+			commandcode: ["node_modules", "command-code", "dist", "index.mjs"],
 		}[backend];
 		if (/\.cmd[. ]*$/i.test(path) && target) {
 			let resolved = OS.Path.join(OS.Path.dirname(path), ...target);
@@ -91,12 +97,14 @@ Object.assign(Zusia, {
 				return resolved;
 			}
 		}
-		let { label, pathPref } = this.BACKENDS[backend];
+		let { label, pathPref, custom } = this.BACKENDS[backend];
 		throw new Error(
 			"Zusia will not run batch files (.cmd/.bat) such as " + path + ": Windows hands their " +
 			"arguments to cmd.exe, which can cut the prompt short or run commands hidden in it. " +
-			"Install or update the " + label + " CLI so it provides an .exe, or set " +
-			this.PREF_PREFIX + pathPref + " (Zotero Settings → Advanced → Config Editor) to the .exe."
+			"Install or update the " + label + " " + (custom ? "agent" : "CLI") + " so it provides a native program, " +
+			(pathPref
+				? "or set " + this.PREF_PREFIX + pathPref + " (Zotero Settings → Advanced → Config Editor) to its full path."
+				: "or point its command in Settings → Zusia → Assistants at that program.")
 		);
 	},
 
