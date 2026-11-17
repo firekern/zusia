@@ -53,8 +53,10 @@ test("an ACP agent can be added and removed from Settings", () => {
 	change(window, form.querySelector("textarea"), "acp\n--print-logs");
 	form.querySelector(".zs-acp-add-button").click();
 
-	assert.deepEqual(JSON.parse(prefs[PREFIX + "acpAgents"]),
-		[{ id: "opencode", name: "OpenCode", command: "opencode", args: ["acp", "--print-logs"] }]);
+	assert.deepEqual(JSON.parse(prefs[PREFIX + "acpAgents"]).map(a => a.id), ["commandcode", "opencode"],
+		"the shipped agent stays first, the added one follows");
+	assert.deepEqual(JSON.parse(prefs[PREFIX + "acpAgents"])[1],
+		{ id: "opencode", name: "OpenCode", command: "opencode", args: ["acp", "--print-logs"] });
 	let agent = assistants.querySelector('.zs-acp-list .zs-agent[data-backend="acp:opencode"]');
 	assert.ok(agent, "the agent is listed");
 	assert.match(agent.textContent, /OpenCode/);
@@ -65,7 +67,7 @@ test("an ACP agent can be added and removed from Settings", () => {
 	agent.querySelector(".zs-acp-remove").click();
 	agent = assistants.querySelector('.zs-acp-list .zs-agent[data-backend="acp:opencode"]');
 	assert.equal(agent, null);
-	assert.deepEqual(JSON.parse(prefs[PREFIX + "acpAgents"]), []);
+	assert.deepEqual(JSON.parse(prefs[PREFIX + "acpAgents"]).map(a => a.id), ["commandcode"]);
 	assert.ok(![...assistants.querySelector(".zs-select").options].some(o => o.value === "acp:opencode"),
 		"the picker drops it");
 });

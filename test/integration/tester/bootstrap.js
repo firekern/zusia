@@ -559,9 +559,9 @@ async function testPreconfiguredAcpAgent(win, CS) {
 		return r && CS._views.get(r) && CS._views.get(r).ctx.paperItem.id === item.id && r;
 	}, 30000, "ACP sidebar");
 	let view = CS._views.get(root);
-	CS.setPref("backend", "commandcode");
-	CS.setPref("commandcode.model", "deepseek/deepseek-v4.1-flash");
-	CS.setPref("commandcode.effort", "low");
+	CS.setPref("backend", "acp:commandcode");
+	CS.setPref("acp:commandcode.model", "deepseek/deepseek-v4.1-flash");
+	CS.setPref("acp:commandcode.effort", "low");
 
 	let ask = async (text) => {
 		view.input.value = text;
@@ -575,7 +575,7 @@ async function testPreconfiguredAcpAgent(win, CS) {
 	}, 240000, "ACP answer");
 	let answer = history[history.length - 1] || {};
 	check("ACP: a real answer arrives through the sidebar",
-		/pelican/i.test(answer.text || "") && answer.backend === "commandcode" &&
+		/pelican/i.test(answer.text || "") && answer.backend === "acp:commandcode" &&
 		answer.model === "deepseek/deepseek-v4.1-flash" && answer.effort === "low",
 		{ text: (answer.text || "").slice(0, 120), backend: answer.backend, model: answer.model, effort: answer.effort,
 			error: root.querySelector(".zs-error")?.textContent });
@@ -697,7 +697,7 @@ async function testConfiguredAcpAgent(win, CS, realBackgroundCall) {
 	check("acp agents: Settings lists the added agent and its ACP command",
 		/openCode/i.test(agent.textContent) && /opencode\s+acp/.test(agent.textContent),
 		{ text: agent.textContent.slice(0, 160) });
-	let commandCode = prefs.querySelector('.zs-acp-list .zs-agent[data-backend="commandcode"]');
+	let commandCode = prefs.querySelector('.zs-acp-list .zs-agent[data-backend="acp:commandcode"]');
 	if (commandCode) {
 		commandCode.open = true;
 	}

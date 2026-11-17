@@ -7,6 +7,8 @@ const plain = value => JSON.parse(JSON.stringify(value));
 const stored = prefs => JSON.parse(prefs[PREF] || "[]");
 const agent = (over = {}) => ({ name: "OpenCode", command: "opencode", args: ["acp"], ...over });
 const storedAgent = (over = {}) => ({ id: "opencode", ...agent(), ...over });
+// An install starts with the agent src/prefs.js ships, so a store test states its own list.
+const fresh = (over = {}) => loadPlugin({ prefs: { [PREF]: "[]", ...over } });
 
 const flush = () => new Promise(resolve => setImmediate(resolve));
 
@@ -94,7 +96,7 @@ function fakeAgent({ answer = "It is the FFT.", sessionId = "s-1", auth = [], co
 const request = { ctx: { dir: "/d" }, question: "Why?", history: [], session: null, files: { metadata: "# T\n", annotations: "" } };
 
 test("adding an agent registers its backend, writes the pref, sets the icon and feeds the model menu", () => {
-	const env = loadPlugin();
+	const env = fresh();
 	const p = env.plugin;
 	const added = p.addAcpAgent(agent());
 	assert.equal(added.error, undefined, added.error);
@@ -106,7 +108,6 @@ test("adding an agent registers its backend, writes the pref, sets the icon and 
 		command: "opencode",
 		acp: true,
 		acpArgs: ["acp"],
-		custom: true,
 		models: [{ id: "", label: "Default", desc: "The agent's default model" }],
 		efforts: ["", "low", "medium", "high", "max"],
 		images: true,
@@ -148,7 +149,7 @@ test("a slug comes from the name, and two names that slug alike get numbered ids
 });
 
 test("the same name in any case is refused and writes nothing", () => {
-	const env = loadPlugin();
+	const env = fresh();
 	const p = env.plugin;
 	p.addAcpAgent(agent());
 	const before = env.prefs[PREF];
@@ -162,7 +163,7 @@ test("the same name in any case is refused and writes nothing", () => {
 });
 
 test("invalid names, commands and arguments are refused and write nothing", () => {
-	const env = loadPlugin();
+	const env = fresh();
 	const p = env.plugin;
 	for (const [raw, why] of [
 		[agent({ name: "" }), "an empty name"],
@@ -180,8 +181,8 @@ test("invalid names, commands and arguments are refused and write nothing", () =
 		assert.ok(result.error, why + " should be refused");
 		assert.equal(result.key, undefined, why);
 	}
-	assert.equal(env.prefs[PREF], undefined, "nothing was written");
-	assert.deepEqual(Object.keys(p.BACKENDS).sort(), ["agy", "claude", "codex", "commandcode", "ollama", "openai", "unsloth"]);
+	assert.deepEqual(stored(env.prefs), [], "nothing was written");
+	assert.deepEqual(Object.keys(p.BACKENDS).sort(), ["agy", "claude", "codex", "ollama", "openai", "unsloth"]);
 });
 
 test("arguments keep their inner spaces, split on newlines and drop the empties", () => {
@@ -196,7 +197,7 @@ test("arguments keep their inner spaces, split on newlines and drop the empties"
 });
 
 test("the twenty-first agent is refused and the stored twenty stay", () => {
-	const env = loadPlugin();
+	const env = fresh();
 	const p = env.plugin;
 	for (let i = 0; i < 20; i++) {
 		const added = p.addAcpAgent({ name: "Agent " + i, command: "agent" + i, args: ["acp"] });
@@ -273,7 +274,7 @@ test("loading the stored agents runs once", () => {
 });
 
 test("removing an agent deletes its backend, icon, model cache and prefs", () => {
-	const env = loadPlugin();
+	const env = fresh();
 	const p = env.plugin;
 	const { key } = p.addAcpAgent(agent());
 	p._acpModels[key] = [{ id: "m", label: "M", desc: "" }];
@@ -291,16 +292,10 @@ test("removing an agent deletes its backend, icon, model cache and prefs", () =>
 	assert.deepEqual(stored(env.prefs), []);
 	assert.equal(p.acpAgents().length, 0);
 	assert.equal(p.removeAcpAgent(key), false, "an agent that is no longer stored cannot be removed again");
-	p.setPref("backend", "commandcode");
-	assert.equal(p.removeAcpAgent("commandcode"), true, "the preconfigured agent is removable");
-	assert.equal(p.BACKENDS.commandcode, undefined, "the preconfigured backend is gone");
-	assert.equal(p.BACKEND_ICONS.commandcode, undefined);
-	assert.deepEqual(JSON.parse(p.getPref("acpRemoved")), ["commandcode"]);
-	assert.equal(p.getPref("backend"), "claude", "the removed preconfigured agent falls back to Claude");
 });
 
 test("removing an agent switches the backend only when it pointed at that agent", () => {
-	const env = loadPlugin();
+	const env = fresh();
 	const p = env.plugin;
 	const first = p.addAcpAgent(agent());
 	const second = p.addAcpAgent({ name: "Other", command: "other", args: [] });
@@ -311,23 +306,16 @@ test("removing an agent switches the backend only when it pointed at that agent"
 
 	p.setPref("backend", first.key);
 	assert.equal(p.removeAcpAgent(first.key), true);
-	assert.equal(p.getPref("backend"), "commandcode");
-
-	const fallback = loadPlugin().plugin;
-	const only = fallback.addAcpAgent(agent());
-	delete fallback.BACKENDS.commandcode;
-	fallback.setPref("backend", only.key);
-	fallback.removeAcpAgent(only.key);
-	assert.equal(fallback.getPref("backend"), "claude", "without the preconfigured ACP agent the backend falls back to Claude");
+	assert.equal(p.getPref("backend"), "claude", "the removed agent falls back to Claude");
 });
 
-test("a backend that is not a custom one is never overwritten", () => {
-	const p = loadPlugin().plugin;
+test("registering a stored agent replaces the backend of the same id", () => {
+	const p = fresh().plugin;
 	p.BACKENDS["acp:opencode"] = { label: "Existing", command: "existing", acp: true, acpArgs: ["acp"], models: [], efforts: [""] };
 	assert.equal(p.registerAcpAgent({ id: "opencode", name: "OpenCode", command: "opencode", args: ["acp"] }), "acp:opencode");
-	assert.equal(p.BACKENDS["acp:opencode"].label, "Existing");
-	assert.equal(p.BACKENDS["acp:opencode"].command, "existing");
-	assert.equal(p.BACKEND_ICONS["acp:opencode"], undefined);
+	assert.equal(p.BACKENDS["acp:opencode"].label, "OpenCode");
+	assert.equal(p.BACKENDS["acp:opencode"].command, "opencode");
+	assert.equal(p.BACKEND_ICONS["acp:opencode"], "code");
 });
 
 test("the command line quotes only the parts that contain whitespace", () => {
@@ -378,7 +366,7 @@ test("a custom agent that is not signed in gets its own name in the help", async
 	const { key } = p.addAcpAgent(agent());
 	assert.equal(p.acpSignInHelp(key, "Not authenticated"),
 		"OpenCode is not signed in. Sign in with its own CLI in a terminal, then ask again.");
-	assert.match(p.acpSignInHelp("commandcode", "Not authenticated"), /Command Code is not signed in/);
+	assert.match(p.acpSignInHelp("acp:commandcode", "Not authenticated"), /Command Code is not signed in/);
 	assert.equal(p.acpSignInHelp(key, "Everything is fine"), null);
 
 	p.findBinary = async () => "/opt/opencode";
@@ -476,10 +464,10 @@ test("an ACP agent's models are available as soon as it is added", async () => {
 	assert.deepEqual(plain(models.map(m => m.id)), ["", "fast"]);
 });
 
-test("a removed preconfigured agent stays removed on the next start", () => {
+test("the shipped agent can be removed like any other and stays removed", () => {
 	const env = loadPlugin();
-	assert.equal(env.plugin.removeAcpAgent("commandcode"), true);
+	assert.equal(env.plugin.removeAcpAgent("acp:commandcode"), true);
+	assert.deepEqual(stored(env.prefs), [], "the pref no longer holds it");
 	const next = loadPlugin({ prefs: env.prefs });
-	next.plugin.loadAcpAgents();
-	assert.equal(next.plugin.BACKENDS.commandcode, undefined);
+	assert.equal(next.plugin.BACKENDS["acp:commandcode"], undefined);
 });

@@ -268,9 +268,9 @@ Object.assign(Zusia, {
 				}
 				if (installed === null) {
 					menu.appendChild(this.el(doc, "div", "zs-menu-note",
-						backend.custom
-							? "Not found. Check its command and arguments in Settings."
-							: "Not installed. Install the " + backend.command + " CLI or set its path in Settings."));
+						backend.pathPref
+							? "Not installed. Install the " + backend.command + " CLI or set its path in Settings."
+							: "Not found. Check its command and arguments in Settings."));
 					continue;
 				}
 				for (let model of this.getModels(key)) {

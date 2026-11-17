@@ -6,7 +6,16 @@ import { JSDOM } from "jsdom";
 const root = new URL("../", import.meta.url);
 const read = path => readFileSync(new URL(path, root), "utf8");
 
+// The ACP agents a fresh install starts with live in src/prefs.js, so a test that renders
+// Settings or the model menu sees the same list a user does.
+const shipped = read("src/prefs.js").match(/pref\("extensions\.zusia\.acpAgents", "(.*)"\);/);
+if (!shipped) {
+	throw new Error("src/prefs.js no longer declares extensions.zusia.acpAgents");
+}
+const SHIPPED_ACP_AGENTS = JSON.parse(shipped[1].replace(/\\"/g, "\""));
+
 export function loadPlugin({ prefs = {}, files = new Map() } = {}) {
+	prefs = { "extensions.zusia.acpAgents": JSON.stringify(SHIPPED_ACP_AGENTS), ...prefs };
 	const dom = new JSDOM("<!doctype html><html><body></body></html>", { runScripts: "outside-only" });
 	const { window } = dom;
 	window.TextEncoder = TextEncoder;
@@ -78,6 +87,8 @@ export function loadPlugin({ prefs = {}, files = new Map() } = {}) {
 		window.eval(read("src/content/modules/" + name + ".js"));
 	}
 	plugin.rootURI = "./";
+	// What init() does on a real start: the stored ACP agents become backends a chat can pick.
+	plugin.loadAcpAgents();
 	// Memory jobs start on their own after answers, New chat and page turns, so no test
 	// reaches a CLI through them by accident: each call is recorded and gets no answer.
 	// Tests of the runner itself put `runBackgroundCall` back.

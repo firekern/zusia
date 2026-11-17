@@ -79,18 +79,6 @@ Object.assign(Zusia, {
 		this.setPref("acpAgents", JSON.stringify(configs || []));
 	},
 
-	acpRemoved() {
-		let stored = this.getJSONPref("acpRemoved", []);
-		if (!Array.isArray(stored)) {
-			return [];
-		}
-		return [...new Set(stored.filter(key => typeof key === "string" && key))];
-	},
-
-	saveAcpRemoved(keys) {
-		this.setPref("acpRemoved", JSON.stringify([...new Set(keys)]));
-	},
-
 	acpSlug(name, taken) {
 		let base = String(name || "")
 			.normalize("NFKD")
@@ -158,17 +146,12 @@ Object.assign(Zusia, {
 
 	registerAcpAgent(config) {
 		let key = this.acpAgentKey(config.id);
-		let existing = this.BACKENDS[key];
-		if (existing && !existing.custom) {
-			return key;
-		}
 		this.BACKENDS[key] = {
 			label: config.name,
 			fullName: config.name,
 			command: config.command,
 			acp: true,
 			acpArgs: Array.isArray(config.args) ? config.args.slice() : [],
-			custom: true,
 			models: [{ id: "", label: "Default", desc: "The agent's default model" }],
 			efforts: ["", "low", "medium", "high", "max"],
 			images: true,
@@ -184,13 +167,6 @@ Object.assign(Zusia, {
 		}
 		this._acpAgentsLoaded = true;
 		try {
-			for (let key of this.acpRemoved()) {
-				if (this.BACKENDS[key] && this.BACKENDS[key].acp && !this.BACKENDS[key].custom) {
-					delete this.BACKENDS[key];
-					delete this.BACKEND_ICONS[key];
-					delete this._acpModels[key];
-				}
-			}
 			let configs = this.acpAgents();
 			for (let config of configs) {
 				this.registerAcpAgent(config);
@@ -226,28 +202,21 @@ Object.assign(Zusia, {
 	removeAcpAgent(backend) {
 		let configs = this.acpAgents();
 		let config = configs.find(agent => this.acpAgentKey(agent.id) === backend);
-		let builtIn = !!this.BACKENDS[backend] && !!this.BACKENDS[backend].acp && !this.BACKENDS[backend].custom;
-		if (!config && !builtIn) {
+		if (!config) {
 			return false;
 		}
-		let key = config ? this.acpAgentKey(config.id) : backend;
-		if (config) {
-			this.saveAcpAgentConfigs(configs.filter(agent => agent.id !== config.id));
-		}
-		else {
-			this.saveAcpRemoved(this.acpRemoved().concat(key));
-		}
-		delete this.BACKENDS[key];
-		delete this.BACKEND_ICONS[key];
-		delete this._acpModels[key];
-		delete this._acpModelPromises[key];
-		delete this._acpModelErrors[key];
-		this.unwatchBackendPrefs(key);
+		this.saveAcpAgentConfigs(configs.filter(agent => agent.id !== config.id));
+		delete this.BACKENDS[backend];
+		delete this.BACKEND_ICONS[backend];
+		delete this._acpModels[backend];
+		delete this._acpModelPromises[backend];
+		delete this._acpModelErrors[backend];
+		this.unwatchBackendPrefs(backend);
 		for (let name of ["model", "effort", "api"]) {
-			Zotero.Prefs.clear(this.PREF_PREFIX + key + "." + name, true);
+			Zotero.Prefs.clear(this.PREF_PREFIX + backend + "." + name, true);
 		}
-		if (this.getPref("backend") === key) {
-			this.setPref("backend", this.BACKENDS.commandcode ? "commandcode" : "claude");
+		if (this.getPref("backend") === backend) {
+			this.setPref("backend", "claude");
 		}
 		return true;
 	},

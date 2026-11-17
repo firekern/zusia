@@ -30,12 +30,11 @@ Object.assign(Zusia, {
 	},
 
 	missingBinaryMessage(backend, command) {
-		let { label, pathPref, custom } = this.BACKENDS[backend];
-		return "Could not find the '" + command + "' command. Make sure the " + label + " " +
-			(custom ? "agent is installed and its command is right" : "CLI is installed and on your PATH") +
+		let { label, pathPref } = this.BACKENDS[backend];
+		return "Could not find the '" + command + "' command. Make sure " + label + " is installed" +
 			(pathPref
-				? ", or set " + this.PREF_PREFIX + pathPref + " (Zotero Settings → Advanced → Config Editor) to its full path."
-				: ". Check the command in Zotero Settings → Zusia → Assistants.");
+				? " and on your PATH, or set " + this.PREF_PREFIX + pathPref + " (Zotero Settings → Advanced → Config Editor) to its full path."
+				: " and its command is right. Check it in Zotero Settings → Zusia → Assistants.");
 	},
 
 	async findBinary(backend) {
@@ -89,7 +88,7 @@ Object.assign(Zusia, {
 		let target = {
 			claude: ["node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe"],
 			codex: ["node_modules", "@openai", "codex", "bin", "codex.js"],
-			commandcode: ["node_modules", "command-code", "dist", "index.mjs"],
+			"acp:commandcode": ["node_modules", "command-code", "dist", "index.mjs"],
 		}[backend];
 		if (/\.cmd[. ]*$/i.test(path) && target) {
 			let resolved = OS.Path.join(OS.Path.dirname(path), ...target);
@@ -97,11 +96,11 @@ Object.assign(Zusia, {
 				return resolved;
 			}
 		}
-		let { label, pathPref, custom } = this.BACKENDS[backend];
+		let { label, pathPref } = this.BACKENDS[backend];
 		throw new Error(
 			"Zusia will not run batch files (.cmd/.bat) such as " + path + ": Windows hands their " +
 			"arguments to cmd.exe, which can cut the prompt short or run commands hidden in it. " +
-			"Install or update the " + label + " " + (custom ? "agent" : "CLI") + " so it provides a native program, " +
+			"Install or update " + label + " so it provides a native program, " +
 			(pathPref
 				? "or set " + this.PREF_PREFIX + pathPref + " (Zotero Settings → Advanced → Config Editor) to its full path."
 				: "or point its command in Settings → Zusia → Assistants at that program.")

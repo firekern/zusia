@@ -105,9 +105,9 @@ test("windows: npm's codex.cmd runs as node.exe codex.js, with node.exe found on
 	assert.ok(run.closed);
 });
 
-test("windows: the preconfigured ACP agent's npm .cmd resolves to the .mjs it runs with node.exe", async () => {
+test("windows: the shipped ACP agent's npm .cmd resolves to the .mjs it runs with node.exe", async () => {
 	const env = loadWindowsPlugin({ executables: [NPM + "\\command-code.cmd", COMMANDCODE_MJS, NODE_EXE], environment: upperPath() });
-	assert.equal(await env.plugin.findBinary("commandcode"), COMMANDCODE_MJS);
+	assert.equal(await env.plugin.findBinary("acp:commandcode"), COMMANDCODE_MJS);
 	await env.plugin.spawnAgent(COMMANDCODE_MJS, ["acp"], PAPER);
 	const [run] = env.spawns;
 	assert.equal(run.command, NODE_EXE);
