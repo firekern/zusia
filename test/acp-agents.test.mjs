@@ -688,6 +688,63 @@ test("an agent's card turns its background memory on and off", () => {
 	assert.equal(p.jobBackend(), null);
 });
 
+// Settings open on the page with one agent's card, its agent found and every other command
+// not. The card stops listening once it leaves the page, so it has to be on one.
+function agentCard(env, key) {
+	const p = env.plugin;
+	p.findBinary = async backend => (backend === key ? "/opt/opencode" : null);
+	const container = env.document.body.appendChild(env.document.createElement("div"));
+	p.renderPrefsPane(env.document, container);
+	const card = container.querySelector('.zs-acp-list .zs-agent[data-backend="' + key + '"]');
+	return { container, card, model: card.querySelector(".zs-agent-body > .zs-row select") };
+}
+
+// Flushes until `done()` holds; the listing crosses several awaits before the card hears of it.
+async function settle(done) {
+	for (let i = 0; i < 50 && !done(); i++) {
+		await flush();
+	}
+}
+
+test("a card whose agent could not list its models says why, and Try again lists them", async () => {
+	const env = fresh();
+	const p = env.plugin;
+	const { key } = p.addAcpAgent(agent());
+	p.loadAcpModels = env.loadAcpModels;
+	p.getDataDir = () => "/d";
+	p.spawnAgent = async () => deadAgent(1, "npx: network unreachable\n");
+	const { card, model } = agentCard(env, key);
+	const hint = card.querySelector(".zs-agent-body > .zs-row-hint");
+	assert.equal(hint.textContent, "Loading the model list…");
+	await settle(() => hint.querySelector(".zs-acp-retry"));
+	assert.equal(hint.textContent, "Models could not be loaded. OpenCode exited with code 1: npx: network unreachable Try again");
+	assert.deepEqual([...model.options].map(o => o.value), [""]);
+
+	p.spawnAgent = async () => fakeAgent({ configOptions: MODEL }).proc;
+	hint.querySelector(".zs-acp-retry").click();
+	assert.equal(hint.textContent, "Loading the model list…");
+	await settle(() => !hint.isConnected);
+	assert.equal(hint.isConnected, false, "the hint goes once the list is in");
+	assert.deepEqual([...model.options].map(o => o.value), ["", "fast"]);
+});
+
+test("removing the agent in use from its card hands the chat back to Claude", () => {
+	const env = fresh();
+	const p = env.plugin;
+	const { key } = p.addAcpAgent(agent());
+	p.setPref("backend", key);
+	const { container, card } = agentCard(env, key);
+	card.querySelector(".zs-acp-remove").click();
+	assert.equal(p.getPref("backend"), "claude");
+	assert.equal(p.BACKENDS[key], undefined);
+	assert.deepEqual(stored(env.prefs), []);
+	assert.equal(container.querySelector('.zs-agent[data-backend="' + key + '"]'), null, "its card is gone");
+	const answerWith = [...container.querySelectorAll(".zs-row")].find(row => row.textContent.startsWith("Answer with")).querySelector("select");
+	assert.equal(answerWith.value, "claude");
+	assert.ok(![...answerWith.options].some(o => o.value === key), "the backend menu no longer offers it");
+	assert.equal(container.querySelector('.zs-agent[data-backend="claude"] .zs-badge').hidden, false, "Claude is marked in use");
+});
+
 test("the shipped agent can be removed like any other and stays removed", () => {
 	const env = loadPlugin();
 	assert.equal(env.plugin.removeAcpAgent("acp:commandcode"), true);
