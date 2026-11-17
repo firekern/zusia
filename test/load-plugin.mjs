@@ -15,6 +15,13 @@ export function loadPlugin({ prefs = {}, files = new Map() } = {}) {
 		Path: { join: (...p) => p.join("/"), dirname: p => p.replace(/[\\/][^\\/]*$/, ""), basename: p => p.replace(/^.*[\\/]/, "") },
 		File: {
 			exists: async p => files.has(p),
+			read: async (p) => {
+				if (!files.has(p)) {
+					throw new Error("read: no such file " + p);
+				}
+				let value = files.get(p);
+				return value instanceof Uint8Array ? value : new TextEncoder().encode(String(value));
+			},
 			remove: async (p) => { files.delete(p); },
 			// Real OS.File.move replaces the target, which is what makes writeAtomic atomic.
 			move: async (from, to) => {
