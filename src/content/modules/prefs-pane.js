@@ -240,7 +240,6 @@ Object.assign(Zusia, {
 			}
 		}
 		return card;
-
 	},
 
 	buildAcpAgentsSection(doc, { fillBackends, syncBadges }) {
