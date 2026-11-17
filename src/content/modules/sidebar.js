@@ -295,7 +295,7 @@ Object.assign(Zusia, {
 					menu.appendChild(this.el(doc, "div", "zs-menu-note", "Sign-in not reachable from Zotero, so only the default model is listed. See Settings."));
 				}
 				if (backend.kind === "acp" && !Array.isArray(this._acpModels[key])) {
-					let error = (this._acpModelErrors || {})[key];
+					let error = this._acpModelErrors[key];
 					menu.appendChild(this.el(doc, "div", "zs-menu-note",
 						error ? "Models could not be loaded. " + error : "Loading models…"));
 				}

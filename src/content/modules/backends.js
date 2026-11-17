@@ -7,6 +7,7 @@ Object.assign(Zusia, {
 
 	async spawnAgent(command, args, workdir, stdinChars = 0) {
 		let environment = this.buildChildEnvironment();
+		// findBinary resolves npm's shim to the .js or .mjs it runs with node.
 		if (Zotero.isWin && /\.(m?js)$/i.test(command)) {
 			args = [command, ...args];
 			command = await Subprocess.pathSearch("node.exe", environment).catch((e) => {
@@ -24,6 +25,8 @@ Object.assign(Zusia, {
 		});
 	},
 
+	// The prompt travels on stdin, never in argv: Windows caps a command line at 32k
+	// characters, and a prompt starting with "-" would be read as a flag.
 	async runProcess(command, args, workdir, onEvent, onSpawn, stdinText) {
 		let proc = await this.spawnAgent(command, args, workdir, stdinText ? stdinText.length : 0);
 		// Not awaited before the readers start: a child that writes while we are still
@@ -703,8 +706,9 @@ Object.assign(Zusia, {
 			if (!e.acpClosed) {
 				this.logError(label + " ACP", e);
 			}
+			let why = exitCode === null ? "closed its output" : "exited with code " + exitCode;
 			let error = e.acpClosed
-				? label + " exited with code " + exitCode + (stderr.trim() ? ": " + stderr.trim().slice(-1000) : ".")
+				? label + " " + why + (stderr.trim() ? ": " + stderr.trim().slice(-1000) : ".")
 				: (e.message || label + " ACP failed.");
 			return { text: "", error, sessionId, partialText, resumeFailed: resumed && !partialText };
 		}

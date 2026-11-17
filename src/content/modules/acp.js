@@ -187,18 +187,23 @@ Object.assign(Zusia, {
 			if (!closing) {
 				closing = (async () => {
 					ended = true;
+					// A pipe the agent already closed is not an error on the way out.
 					try {
 						await proc.stdin.close();
 					}
 					catch (e) {
+						log("closing the ACP stdin: " + e);
 					}
 					await waitFor(exitPromise, 150);
 					let code = exited ? exitCode : null;
 					if (!exited) {
+						// The same for a process that has gone away since the last check.
 						try {
 							proc.kill();
 						}
-						catch (e) {}
+						catch (e) {
+							log("killing the ACP agent: " + e);
+						}
 					}
 					await waitFor(stderrDone, 150);
 					rejectPending();

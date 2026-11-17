@@ -383,7 +383,7 @@ Object.assign(Zusia, {
 				if (!hint.isConnected) {
 					return;
 				}
-				let error = (this._acpModelErrors || {})[key];
+				let error = this._acpModelErrors[key];
 				if (error) {
 					hint.textContent = "Models could not be loaded. " + error;
 				}

@@ -472,7 +472,6 @@ Object.assign(Zusia, {
 	},
 
 	watchBackendPrefs(backend) {
-		this._backendPrefObservers = this._backendPrefObservers || new Map();
 		if (this._backendPrefObservers.has(backend)) {
 			return;
 		}
@@ -485,7 +484,6 @@ Object.assign(Zusia, {
 	},
 
 	unwatchBackendPrefs(backend) {
-		this._backendPrefObservers = this._backendPrefObservers || new Map();
 		let ids = this._backendPrefObservers.get(backend) || [];
 		for (let id of ids) {
 			Zotero.Prefs.unregisterObserver(id);
