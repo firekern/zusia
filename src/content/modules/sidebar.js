@@ -289,7 +289,18 @@ Object.assign(Zusia, {
 						},
 					});
 				}
-				let note = this.modelMenuNote(root, key, installed);
+				// The one note under the section's models: why its program cannot run, or how its
+				// list stands. Only Antigravity and the ACP agents keep how their listing went: an
+				// API list that fails is only logged.
+				let note = "";
+				if (installed === null) {
+					note = root._refused[key] || "Not installed. " + this.commandFixHint(key);
+				}
+				else if (key === "agy" || backend.kind === "acp") {
+					let entry = key === "agy" ? { models: this._agyModels, error: this._agyModelsError } : this.acpModelEntry(key);
+					note = entry.promise || (!entry.models && !entry.error) ? "Loading models…"
+						: entry.error ? "Models could not be loaded. " + entry.error : "";
+				}
 				if (note) {
 					// Cut at three lines by the stylesheet, so the whole note is the tooltip.
 					menu.appendChild(this.el(doc, "div", "zs-menu-note", note)).title = note;
@@ -304,16 +315,6 @@ Object.assign(Zusia, {
 				this.loadLiveModels(key);
 			}
 		}
-	},
-
-	// The one note under an open section's models: why its program cannot run, or how its
-	// list stands.
-	modelMenuNote(root, key, installed) {
-		if (installed === null) {
-			return root._refused[key] || "Not installed. " + this.commandFixHint(key);
-		}
-		let { loading, error } = this.liveModelsStatus(key);
-		return loading ? "Loading models…" : error ? "Models could not be loaded. " + error : "";
 	},
 
 	openEffortMenu(root, anchor) {
