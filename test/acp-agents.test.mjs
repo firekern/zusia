@@ -382,7 +382,10 @@ test("an agent that dies is reported alike to a question, a sign-in and a model 
 
 test("a custom agent can name an absolute command", async () => {
 	const files = new Map([["/opt/opencode/bin/opencode", "binary"]]);
-	const { plugin } = loadPlugin({ files });
+	const { plugin, Subprocess } = loadPlugin({ files });
+	Subprocess.getEnvironment = () => ({ HOME: "/home/u", PATH: "/usr/bin" });
+	// Like Mozilla's: a full path is taken as given once it is an executable file.
+	Subprocess.pathSearch = async bin => files.has(bin) ? bin : Promise.reject(new Error("Executable not found: " + bin));
 	const { key } = plugin.addAcpAgent(agent({ command: "/opt/opencode/bin/opencode" }));
 	assert.equal(await plugin.findBinary(key), "/opt/opencode/bin/opencode");
 });

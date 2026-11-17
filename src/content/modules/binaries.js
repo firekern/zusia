@@ -39,40 +39,28 @@ Object.assign(Zusia, {
 
 	async findBinary(backend) {
 		let { command, pathPref } = this.BACKENDS[backend];
-		let override = pathPref ? this.getPref(pathPref) : "";
-		if (override) {
-			// Windows itself takes C:/…, but Gecko's path functions refuse a forward slash.
-			return this.avoidBatchFile(backend, Zotero.isWin ? override.replace(/\//g, "\\") : override);
+		let env = this.buildChildEnvironment();
+		let wanted = (pathPref && this.getPref(pathPref)) || command;
+		// Windows itself takes C:/…, but Gecko's path functions refuse a forward slash.
+		if (Zotero.isWin) {
+			wanted = wanted.replace(/\//g, "\\");
 		}
-
-		// A program named by full path, or by ~ for the home folder, is used as given.
-		if (command === "~" || command.startsWith("~/") || command.startsWith("~\\")) {
-			let env = this.buildChildEnvironment();
-			let home = Zotero.isWin ? (env.USERPROFILE || env.HOME || "") : (env.HOME || "");
-			command = OS.Path.join(home, command.slice(2));
+		if (/^~[\\/]/.test(wanted)) {
+			wanted = OS.Path.join(this.homeFolder(env), wanted.slice(2));
 		}
-		let absolute = Zotero.isWin ? /^[A-Za-z]:[\\/]|^\\\\/.test(command) : command.startsWith("/");
-		if (absolute) {
-			let path = Zotero.isWin ? command.replace(/\//g, "\\") : command;
-			if (await OS.File.exists(path)) {
-				return this.avoidBatchFile(backend, path);
-			}
-			throw new Error(this.missingBinaryMessage(backend, path));
-		}
-
-		let searchEnv = this.buildChildEnvironment();
 		// Windows: Mozilla tries the bare name before PATHEXT, and npm puts an extensionless
-		// sh shim next to its .cmd, which CreateProcess cannot start. So ask for the .exe,
-		// and only then for an npm .cmd shim to resolve.
-		let names = Zotero.isWin ? [command + ".exe", command + ".cmd"] : [command];
+		// sh shim next to its .cmd, which CreateProcess cannot start. So a name without an
+		// extension is asked for as an .exe, and only then as an npm .cmd shim to resolve.
+		let names = Zotero.isWin && !/\.[^.\\]+[. ]*$/.test(wanted) ? [wanted + ".exe", wanted + ".cmd"] : [wanted];
 		for (let name of names) {
-			// pathSearch rejects when the name is on none of the paths.
-			let found = await Subprocess.pathSearch(name, searchEnv).catch(() => null);
+			// pathSearch takes a full path as given once it is an executable file, and
+			// rejects a name that is on none of the paths.
+			let found = await Subprocess.pathSearch(name, env).catch(() => null);
 			if (found) {
 				return this.avoidBatchFile(backend, found);
 			}
 		}
-		throw new Error(this.missingBinaryMessage(backend, command));
+		throw new Error(this.missingBinaryMessage(backend, wanted));
 	},
 
 	// Mozilla runs a .cmd/.bat through cmd.exe, which re-parses the prompt: a newline ends
@@ -118,8 +106,7 @@ Object.assign(Zusia, {
 		delete env.OPENAI_API_KEY;
 
 		if (!Zotero.isWin) {
-			let home = env.HOME || env.USERPROFILE || "";
-			env.PATH = this.extraSearchPaths(home).join(":") + (env.PATH ? ":" + env.PATH : "");
+			env.PATH = this.extraSearchPaths(this.homeFolder(env)).join(":") + (env.PATH ? ":" + env.PATH : "");
 			return env;
 		}
 		// Windows spells the variable "Path", while Mozilla's pathSearch reads only PATH and
@@ -132,13 +119,17 @@ Object.assign(Zusia, {
 				delete env[name];
 			}
 		}
-		// A HOME from Git Bash or MSYS (/c/Users/…) is not a path Windows programs can use.
-		let home = env.USERPROFILE || env.HOME || "";
 		// pathSearch gives up on the first folder Gecko refuses, so only native absolute ones stay.
-		env.PATH = [...this.extraSearchPaths(home), ...own.split(";")]
+		env.PATH = [...this.extraSearchPaths(this.homeFolder(env)), ...own.split(";")]
 			.map(dir => dir.replace(/\//g, "\\"))
 			.filter(dir => /^([A-Za-z]:\\|\\\\)/.test(dir))
 			.join(";");
 		return env;
+	},
+
+	// A HOME from Git Bash or MSYS (/c/Users/…) is not a path Windows programs can use, so
+	// there USERPROFILE comes first.
+	homeFolder(env) {
+		return Zotero.isWin ? (env.USERPROFILE || env.HOME || "") : (env.HOME || env.USERPROFILE || "");
 	},
 });

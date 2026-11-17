@@ -87,7 +87,7 @@ test("windows: a batch file set as the path is refused, also with the trailing d
 		["claude", "C:\\tools\\claude.bat."],
 		["codex", "C:\\tools\\codex.cmd "],
 	]) {
-		const { plugin } = loadWindowsPlugin({ prefs: { [PREFIX + backend + "Path"]: path } });
+		const { plugin } = loadWindowsPlugin({ executables: [path], prefs: { [PREFIX + backend + "Path"]: path } });
 		await assert.rejects(plugin.findBinary(backend), /will not run batch files.*cmd\.exe/s, path);
 	}
 });
@@ -160,8 +160,60 @@ test("windows: a HOME that is not a Windows path does not hide claude.exe on PAT
 // PathUtils.parent refuses "C:/..." on Windows, which a person may well type, so the
 // setting is turned into a native path before anything reads it.
 test("windows: a path setting written with forward slashes still resolves npm's claude.cmd", async () => {
-	const { plugin } = loadWindowsPlugin({ executables: [CLAUDE_NPM_EXE], prefs: { [PREFIX + "claudePath"]: "C:/Users/u/AppData/Roaming/npm/claude.cmd" } });
+	const { plugin } = loadWindowsPlugin({ executables: [NPM + "\\claude.cmd", CLAUDE_NPM_EXE], prefs: { [PREFIX + "claudePath"]: "C:/Users/u/AppData/Roaming/npm/claude.cmd" } });
 	assert.equal(await plugin.findBinary("claude"), CLAUDE_NPM_EXE);
+});
+
+test("windows: a path setting is searched like a command: without an extension it finds the .exe, and a missing one is reported", async () => {
+	const { plugin } = loadWindowsPlugin({ executables: ["C:\\tools\\claude.exe"], prefs: { [PREFIX + "claudePath"]: "C:/tools/claude" } });
+	assert.equal(await plugin.findBinary("claude"), "C:\\tools\\claude.exe");
+	const missing = loadWindowsPlugin({ prefs: { [PREFIX + "codexPath"]: "C:\\tools\\codex.exe" } });
+	await assert.rejects(missing.plugin.findBinary("codex"), /Could not find the 'C:\\tools\\codex\.exe' command/);
+});
+
+// The command an ACP agent was added with, as the form stores it.
+const typedAgent = (command, executables) => loadWindowsPlugin({ executables, environment: upperPath(),
+	prefs: { [PREFIX + "acpAgents"]: JSON.stringify([{ id: "agent", name: "Agent", command, args: ["acp"] }]) } }).plugin;
+
+test("windows: a typed command keeps the extension it was given", async () => {
+	assert.equal(await typedAgent("opencode.exe", [NPM + "\\opencode.exe"]).findBinary("acp:agent"), NPM + "\\opencode.exe");
+	assert.equal(await typedAgent("opencode", [NPM + "\\opencode.exe"]).findBinary("acp:agent"), NPM + "\\opencode.exe");
+});
+
+test("windows: a ~ command is under USERPROFILE, with backslashes only", async () => {
+	for (const command of ["~/bin/agent.exe", "~\\bin\\agent.exe", "~/bin/agent"]) {
+		const found = await typedAgent(command, [HOME + "\\bin\\agent.exe"]).findBinary("acp:agent");
+		assert.equal(found, HOME + "\\bin\\agent.exe", command);
+		assert.ok(!mixedSeparators(found), found);
+	}
+});
+
+test("windows: a full path is used as given, on a drive with either slash or on a share", async () => {
+	assert.equal(await typedAgent("C:/Tools/agent.exe", ["C:\\Tools\\agent.exe"]).findBinary("acp:agent"), "C:\\Tools\\agent.exe");
+	assert.equal(await typedAgent("\\\\srv\\share\\agent.exe", ["\\\\srv\\share\\agent.exe"]).findBinary("acp:agent"), "\\\\srv\\share\\agent.exe");
+	await assert.rejects(typedAgent("C:\\Tools\\agent.cmd", ["C:\\Tools\\agent.cmd"]).findBinary("acp:agent"), /will not run batch files.*C:\\Tools\\agent\.cmd/s);
+});
+
+// `where gemini` lists npm's sh shim first, which CreateProcess cannot start.
+test("windows: a full path without an extension never runs npm's sh shim: it takes the .exe, else the .cmd beside it", async () => {
+	assert.equal(await typedAgent(NPM + "\\agent", [NPM + "\\agent", NPM + "\\agent.exe"]).findBinary("acp:agent"), NPM + "\\agent.exe");
+	await assert.rejects(typedAgent(NPM + "\\gemini", [NPM + "\\gemini", NPM + "\\gemini.cmd"]).findBinary("acp:agent"), /will not run batch files.*\\npm\\gemini\.cmd/s);
+});
+
+// The way out the batch-file refusal suggests for an npm agent: name what its .cmd runs.
+test("windows: a full path to an npm agent's .mjs resolves to itself and runs with node.exe", async () => {
+	const env = loadWindowsPlugin({ executables: [COMMANDCODE_MJS, NODE_EXE], environment: upperPath(),
+		prefs: { [PREFIX + "acpAgents"]: JSON.stringify([{ id: "agent", name: "Agent", command: COMMANDCODE_MJS, args: ["acp"] }]) } });
+	const found = await env.plugin.findBinary("acp:agent");
+	assert.equal(found, COMMANDCODE_MJS);
+	await env.plugin.spawnAgent(found, ["acp"], PAPER);
+	assert.equal(env.spawns[0].command, NODE_EXE);
+	assert.deepEqual(env.spawns[0].args, [COMMANDCODE_MJS, "acp"]);
+});
+
+test("windows: a command that is nowhere is reported with the name or path that was looked for", async () => {
+	await assert.rejects(typedAgent("opencode", []).findBinary("acp:agent"), /Could not find the 'opencode' command/);
+	await assert.rejects(typedAgent("~/bin/agent.exe", []).findBinary("acp:agent"), /Could not find the 'C:\\Users\\u\\bin\\agent\.exe' command/);
 });
 
 test("windows: a chat run spawns the exe with --setting-sources= as one argument and the prompt on stdin only", async () => {
