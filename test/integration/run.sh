@@ -31,6 +31,7 @@ user_pref("extensions.zotero.dataDir", "$base/data");
 user_pref("extensions.zusia-tester.outDir", "$out");
 user_pref("extensions.zusia-tester.repo", "$repo");
 user_pref("extensions.zusia-tester.live", $([ "${LIVE:-0}" = 1 ] && echo true || echo false));
+user_pref("extensions.zusia-tester.acp", $([ "${ACP:-0}" = 1 ] && echo true || echo false));
 user_pref("ui.systemUsesDarkTheme", $([ "${DARK:-0}" = 1 ] && echo 1 || echo 0));
 PREFS
 
