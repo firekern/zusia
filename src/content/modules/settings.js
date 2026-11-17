@@ -117,23 +117,7 @@ Object.assign(Zusia, {
 		return "Antigravity is not signed in. Run `agy` once in a terminal to sign in.";
 	},
 
-	acpSignInHelp(backend, output) {
-		if (!/not authenticated|not signed in|authentication required/i.test(output || "")) {
-			return null;
-		}
-		return this.BACKENDS[backend].label + " is not signed in. Sign in with its own CLI in a terminal, then ask again.";
-	},
 
-	rememberAcpConfig(backend, configOptions) {
-		if (!this.BACKENDS[backend]) {
-			return;
-		}
-		let models = this.acpModelChoices(configOptions);
-		if (models.length) {
-			this._acpModels[backend] = models;
-		}
-		delete this._acpModelErrors[backend];
-	},
 
 	async loadAgyModels() {
 		if (Array.isArray(this._agyModels)) {

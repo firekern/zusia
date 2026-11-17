@@ -1,220 +1,6 @@
 "use strict";
 
 Object.assign(Zusia, {
-	createAcpConnection(proc, { onNotification, onRequest } = {}) {
-		let pending = new Map();
-		let nextId = 1;
-		let stderr = "";
-		let ended = false;
-		let closing = null;
-		let exited = false;
-		let exitCode = null;
-		let queue = Promise.resolve();
-
-		let exitPromise = (async () => {
-			try {
-				let result = await proc.wait();
-				exited = true;
-				exitCode = result && typeof result.exitCode === "number" ? result.exitCode : null;
-			}
-			catch (e) {
-				exited = true;
-			}
-		})();
-
-		let stderrDone = (async () => {
-			let chunk;
-			try {
-				while ((chunk = await proc.stderr.readString())) {
-					stderr = (stderr + chunk).slice(-4000);
-				}
-			}
-			catch (e) {
-			}
-		})();
-
-		let waitFor = (promise, ms) => new Promise((resolve) => {
-			let timer = setTimeout(resolve, ms);
-			let done = () => {
-				clearTimeout(timer);
-				resolve();
-			};
-			promise.then(done, done);
-		});
-
-		let lastStderrLine = () => {
-			let lines = stderr.split("\n").map(line => line.trim()).filter(Boolean);
-			return lines.length ? lines[lines.length - 1] : "";
-		};
-
-		let closedError = () => {
-			let why = exited && exitCode !== null ? "The agent exited with code " + exitCode : "The agent closed its output";
-			let last = lastStderrLine();
-			let error = new Error(why + " before the reply arrived" + (last ? ": " + last : "."));
-			error.acpClosed = true;
-			return error;
-		};
-
-		let rejectPending = () => {
-			for (let entry of pending.values()) {
-				entry.reject(closedError());
-			}
-			pending.clear();
-		};
-
-		let write = (message) => {
-			queue = queue.then(async () => {
-				if (ended) {
-					return;
-				}
-				try {
-					await proc.stdin.write(JSON.stringify(message) + "\n");
-				}
-				catch (e) {
-					this.logError("writing to the ACP agent", e);
-				}
-			});
-			return queue;
-		};
-
-		let handleLine = async (line) => {
-			line = line.trim();
-			if (!line) {
-				return;
-			}
-			let msg;
-			try {
-				msg = JSON.parse(line);
-			}
-			catch (e) {
-				this.log("Skipping non-JSON ACP output line: " + line.slice(0, 200));
-				return;
-			}
-			if (!msg || typeof msg !== "object") {
-				return;
-			}
-			let hasId = msg.id !== undefined && msg.id !== null;
-			if (hasId && msg.method) {
-				let reply = { jsonrpc: "2.0", id: msg.id };
-				try {
-					if (typeof onRequest !== "function") {
-						let missing = new Error("No handler for " + msg.method);
-						missing.code = -32601;
-						throw missing;
-					}
-					let result = await onRequest(msg.method, msg.params);
-					reply.result = result === undefined ? null : result;
-				}
-				catch (e) {
-					reply.error = { code: e && e.code !== undefined ? e.code : -32603, message: String((e && e.message) || e) };
-				}
-				await write(reply);
-				return;
-			}
-			if (hasId) {
-				let entry = pending.get(msg.id);
-				if (!entry) {
-					return;
-				}
-				pending.delete(msg.id);
-				if (msg.error) {
-					let error = new Error(msg.error.message || ("The agent could not " + entry.method));
-					error.code = msg.error.code;
-					error.data = msg.error.data;
-					entry.reject(error);
-				}
-				else {
-					entry.resolve(msg.result);
-				}
-				return;
-			}
-			if (msg.method) {
-				try {
-					let handling = onNotification && onNotification(msg.method, msg.params);
-					if (handling && typeof handling.then === "function") {
-						handling.then(null, e => this.logError("handling ACP notification " + msg.method, e));
-					}
-				}
-				catch (e) {
-					this.logError("handling ACP notification " + msg.method, e);
-				}
-			}
-		};
-
-		(async () => {
-			let buffer = "";
-			let chunk;
-			try {
-				while (!ended && (chunk = await proc.stdout.readString())) {
-					buffer += chunk;
-					let lines = buffer.split("\n");
-					buffer = lines.pop();
-					for (let line of lines) {
-						await handleLine(line);
-					}
-				}
-				if (!ended && buffer.trim()) {
-					await handleLine(buffer);
-				}
-			}
-			catch (e) {
-				this.logError("reading the ACP agent", e);
-			}
-			if (ended) {
-				return;
-			}
-			ended = true;
-			await waitFor(exitPromise, 150);
-			await waitFor(stderrDone, 150);
-			rejectPending();
-		})();
-
-		let request = (method, params) => {
-			if (ended) {
-				return Promise.reject(closedError());
-			}
-			let id = nextId++;
-			let promise = new Promise((resolve, reject) => {
-				pending.set(id, { method, resolve, reject });
-			});
-			write({ jsonrpc: "2.0", id, method, params });
-			return promise;
-		};
-
-		let notify = (method, params) => write({ jsonrpc: "2.0", method, params });
-
-		let close = () => {
-			if (!closing) {
-				closing = (async () => {
-					ended = true;
-					// A pipe the agent already closed is not an error on the way out.
-					try {
-						await proc.stdin.close();
-					}
-					catch (e) {
-						log("closing the ACP stdin: " + e);
-					}
-					await waitFor(exitPromise, 150);
-					let code = exited ? exitCode : null;
-					if (!exited) {
-						// The same for a process that has gone away since the last check.
-						try {
-							proc.kill();
-						}
-						catch (e) {
-							log("killing the ACP agent: " + e);
-						}
-					}
-					await waitFor(stderrDone, 150);
-					rejectPending();
-					return { stderr, exitCode: code };
-				})().catch(() => ({ stderr, exitCode: exited ? exitCode : null }));
-			}
-			return closing;
-		};
-
-		return { request, notify, close };
-	},
 
 	acpPermissionReply(toolCall, options) {
 		// The agent reads the paper folder and nothing else: no network, no change, no command.
@@ -310,5 +96,335 @@ Object.assign(Zusia, {
 		return option.options
 			.filter(o => o && o.value !== undefined)
 			.map(o => ({ id: o.value, label: o.name || o.value, desc: o.description || "" }));
+	},
+
+	acpArgs(backend) {
+		return this.BACKENDS[backend].acpArgs.slice();
+	},
+
+	acpInitialize(connection) {
+		return connection.request("initialize", {
+			protocolVersion: 1,
+			clientInfo: { name: "Zusia", version: this.version },
+			clientCapabilities: { fs: { readTextFile: true, writeTextFile: false }, terminal: false },
+		});
+	},
+
+	async loadAcpModels(backend) {
+		if (Array.isArray(this._acpModels[backend])) {
+			return this._acpModels[backend];
+		}
+		if (this._acpModelPromises[backend]) {
+			return this._acpModelPromises[backend];
+		}
+		delete this._acpModelErrors[backend];
+		this._acpModelPromises[backend] = (async () => {
+			let connection = null;
+			try {
+				let command = await this.findBinary(backend);
+				let proc = await this.spawnAgent(command, this.acpArgs(backend), this.getDataDir());
+				connection = this.createAcpConnection(proc);
+				await this.acpInitialize(connection);
+				let opened = await connection.request("session/new", { cwd: this.getDataDir(), mcpServers: [] });
+				if (!this.BACKENDS[backend]) {
+					return [];
+				}
+				this.rememberAcpConfig(backend, opened.configOptions);
+				if (!Array.isArray(this._acpModels[backend])) {
+					this._acpModels[backend] = [];
+				}
+				this.refreshAllSidebars();
+				return this._acpModels[backend];
+			}
+			catch (e) {
+				if (this.BACKENDS[backend]) {
+					this._acpModelErrors[backend] = String((e && e.message) || e);
+				}
+				this.log("Could not list " + (this.BACKENDS[backend] ? this.BACKENDS[backend].label : backend) + " models: " + e);
+				return [];
+			}
+			finally {
+				delete this._acpModelPromises[backend];
+				if (connection) {
+					await connection.close();
+				}
+			}
+		})();
+		return this._acpModelPromises[backend];
+	},
+
+	async acpAuthenticate(backend) {
+		let connection = null;
+		try {
+			let command = await this.findBinary(backend);
+			let proc = await this.spawnAgent(command, this.acpArgs(backend), this.getDataDir());
+			connection = this.createAcpConnection(proc);
+			let hello = await this.acpInitialize(connection);
+			let methods = hello.authMethods || [];
+			if (!methods.length) {
+				return { error: "This agent has no ACP sign-in methods. Sign in with its own CLI in a terminal.", methods: [] };
+			}
+			let method = methods[0];
+			try {
+				let result = await connection.request("authenticate", { methodId: method.id });
+				return { method, methods, result };
+			}
+			catch (e) {
+				return { error: e.message, methods, method };
+			}
+		}
+		catch (e) {
+			return { error: String((e && e.message) || e), methods: [] };
+		}
+		finally {
+			if (connection) {
+				await connection.close();
+			}
+		}
+	},
+
+	async runAcp(backend, request) {
+		let { ctx, onProgress, onSpawn } = request;
+		let label = this.BACKENDS[backend].label;
+		let command = await this.findBinary(backend);
+		let proc = await this.spawnAgent(command, this.acpArgs(backend), ctx.dir);
+		if (onSpawn) {
+			onSpawn(proc);
+		}
+
+		let state = { text: "", narration: "", thinking: false, thoughtAt: 0, tools: new Map(), emitted: new Set(), asking: false };
+		let connection = this.createAcpConnection(proc, {
+			onNotification: (method, params) => {
+				if (method === "session/update" && state.asking && params && params.update) {
+					this.acpProgress(params.update, state, onProgress);
+				}
+			},
+			onRequest: (method, params) => this.acpRequest(method, params, ctx.dir, label),
+		});
+
+		let sessionId = null;
+		let resumed = false;
+		try {
+			let hello = await this.acpInitialize(connection);
+			if (request.images && request.images.length &&
+				!(hello.agentCapabilities && hello.agentCapabilities.promptCapabilities && hello.agentCapabilities.promptCapabilities.image)) {
+				return { text: "", error: label + " does not accept images. Remove the attachment or switch assistant." };
+			}
+
+			let configOptions = null;
+			if (request.session && hello.agentCapabilities && hello.agentCapabilities.loadSession) {
+				try {
+					let loaded = await connection.request("session/load", {
+						sessionId: request.session.id, cwd: ctx.dir, mcpServers: [],
+					});
+					sessionId = request.session.id;
+					configOptions = loaded.configOptions || null;
+					resumed = true;
+					this.log("acp: session " + sessionId + " resumed");
+				}
+				catch (e) {
+					let help = this.acpSignInHelp(backend, e.message);
+					if (help) {
+						return { text: "", error: help, sessionId: request.session.id };
+					}
+					this.log("acp: session " + request.session.id + " could not be loaded (" + e.message + ")");
+					return { text: "", error: e.message, sessionId: request.session.id, resumeFailed: true };
+				}
+			}
+			if (!sessionId) {
+				let opened;
+				try {
+					opened = await connection.request("session/new", { cwd: ctx.dir, mcpServers: [] });
+				}
+				catch (e) {
+					return { text: "", error: this.acpSignInHelp(backend, e.message) || e.message };
+				}
+				sessionId = opened.sessionId;
+				configOptions = opened.configOptions || null;
+			}
+
+			this.rememberAcpConfig(backend, configOptions);
+			let refused = await this.applyAcpOptions(connection, sessionId, configOptions, request.model, request.effort, label);
+			if (refused) {
+				return { text: "", error: refused, sessionId };
+			}
+
+			let prompt = request.raw
+				? request.question
+				: resumed
+					? this.questionPrompt(request)
+					: this.sessionPrompt(Object.assign({}, request, { session: null }));
+			let blocks = await this.acpPromptBlocks(prompt, request.images);
+			state.asking = true;
+			let answer = await connection.request("session/prompt", { sessionId, prompt: blocks });
+			state.asking = false;
+			this.flushAcpTools(state, onProgress);
+
+			let text = (state.text || state.narration).trim();
+			if (answer.stopReason === "cancelled") {
+				return { text: "", error: label + " stopped the answer.", sessionId, partialText: text };
+			}
+			if (!text) {
+				return { text: "", error: answer.stopReason === "refusal" ? label + " declined to answer." : label + " returned no text.", sessionId };
+			}
+			return { text, sessionId, truncated: answer.stopReason === "max_tokens" };
+		}
+		catch (e) {
+			state.asking = false;
+			let { stderr, exitCode } = await connection.close();
+			let partialText = (state.text || state.narration).trim();
+			let help = this.acpSignInHelp(backend, e.message);
+			if (help) {
+				return { text: "", error: help, sessionId };
+			}
+			if (!e.acpClosed) {
+				this.logError(label + " ACP", e);
+			}
+			let why = exitCode === null ? "closed its output" : "exited with code " + exitCode;
+			let error = e.acpClosed
+				? label + " " + why + (stderr.trim() ? ": " + stderr.trim().slice(-1000) : ".")
+				: (e.message || label + " ACP failed.");
+			return { text: "", error, sessionId, partialText, resumeFailed: resumed && !partialText };
+		}
+		finally {
+			await connection.close();
+		}
+	},
+
+	acpProgress(update, state, onProgress) {
+		let textOf = (block) => block && block.type === "text" && block.text ? block.text : "";
+		if (update.sessionUpdate === "agent_message_chunk") {
+			let text = textOf(update.content);
+			if (!text) {
+				return;
+			}
+			if (state.thinking) {
+				state.thinking = false;
+				onProgress({ thinking: false, thoughtMs: Date.now() - state.thoughtAt });
+			}
+			state.text += text;
+			onProgress({ text: state.text, status: "writing" });
+			return;
+		}
+		if (update.sessionUpdate === "agent_thought_chunk") {
+			if (!textOf(update.content)) {
+				return;
+			}
+			if (!state.thinking) {
+				state.thinking = true;
+				state.thoughtAt = Date.now();
+			}
+			onProgress({ status: "thinking", thinking: true });
+			return;
+		}
+		if (update.sessionUpdate === "tool_call") {
+			let call = { title: update.title, kind: update.kind, rawInput: update.rawInput };
+			state.tools.set(update.toolCallId, call);
+			if (state.thinking) {
+				state.thinking = false;
+				onProgress({ thinking: false, thoughtMs: Date.now() - state.thoughtAt });
+			}
+			if (state.text) {
+				state.narration += (state.narration ? "\n\n" : "") + state.text;
+				state.text = "";
+				onProgress({ text: "" });
+			}
+			onProgress({ status: this.acpToolStatus(call) });
+			return;
+		}
+		if (update.sessionUpdate === "tool_call_update") {
+			let call = state.tools.get(update.toolCallId) || { title: update.title, kind: update.kind, rawInput: {} };
+			if (update.title) {
+				call.title = update.title;
+			}
+			state.tools.set(update.toolCallId, call);
+			if (update.status === "completed" || update.status === "failed") {
+				this.emitAcpTool(update.toolCallId, call, state, onProgress);
+			}
+			else if (update.status === "in_progress") {
+				onProgress({ status: this.acpToolStatus(call) });
+			}
+		}
+	},
+
+	acpToolStatus(call) {
+		if (call.kind === "read") {
+			return "reading the paper";
+		}
+		if (call.kind === "search" || call.kind === "fetch") {
+			return "searching the paper";
+		}
+		return "using " + (call.title || call.kind || "a tool");
+	},
+
+	emitAcpTool(id, call, state, onProgress) {
+		if (state.emitted.has(id)) {
+			return;
+		}
+		state.emitted.add(id);
+		onProgress({ step: this.acpStep(call) });
+	},
+
+	flushAcpTools(state, onProgress) {
+		for (let [id, call] of state.tools) {
+			this.emitAcpTool(id, call, state, onProgress);
+		}
+	},
+
+	async acpRequest(method, params, dir, label) {
+		if (method === "session/request_permission") {
+			return this.acpPermissionReply(params.toolCall || {}, params.options || []);
+		}
+		if (method === "fs/read_text_file") {
+			return this.acpReadFile(dir, params || {});
+		}
+		let error = new Error(label + " asked for " + method + ", which Zusia does not provide.");
+		error.code = -32601;
+		throw error;
+	},
+
+	async applyAcpOptions(connection, sessionId, configOptions, model, effort, label) {
+		let current = configOptions || [];
+		let set = async (id, value, required) => {
+			if (!value) {
+				return null;
+			}
+			let option = current.find(o => o.id === id || o.category === id);
+			if (!option) {
+				return null;
+			}
+			if (!Array.isArray(option.options) || !option.options.some(o => o.value === value)) {
+				return required ? label + " does not offer " + (option.name || id) + " “" + value + "”." : null;
+			}
+			let result;
+			try {
+				result = await connection.request("session/set_config_option", { sessionId, configId: option.id, value });
+			}
+			catch (e) {
+				return required ? label + " could not use " + value + ": " + e.message : null;
+			}
+			current = result.configOptions || current;
+			return null;
+		};
+		let refused = await set("model", model, true);
+		return refused ? refused : set("effort", effort, false);
+	},
+
+	acpSignInHelp(backend, output) {
+		if (!/not authenticated|not signed in|authentication required/i.test(output || "")) {
+			return null;
+		}
+		return this.BACKENDS[backend].label + " is not signed in. Sign in with its own CLI in a terminal, then ask again.";
+	},
+
+	rememberAcpConfig(backend, configOptions) {
+		if (!this.BACKENDS[backend]) {
+			return;
+		}
+		let models = this.acpModelChoices(configOptions);
+		if (models.length) {
+			this._acpModels[backend] = models;
+		}
+		delete this._acpModelErrors[backend];
 	},
 });

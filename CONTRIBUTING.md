@@ -37,6 +37,7 @@ The harness takes the state to render from its URL: `scenario` (`empty`, `pairs`
 | `src/content/modules/sidebar.js`, `chat.js`, `ask.js` | The chat itself: its skeleton, the messages, a question from send to answer |
 | `src/content/modules/layouts.js` | The four layouts and the parts only some of them show |
 | `src/content/modules/binaries.js`, `prompts.js`, `backends.js` | Finding the assistant CLIs, what they are told, running them |
+| `src/content/modules/acp-connection.js`, `acp.js`, `acp-agents.js` | The ACP pipe, the client that runs one agent, and the agents kept in the `acpAgents` pref |
 | `src/content/readingmap.js` | Pure functions that build a paper's reading map |
 | `src/content/styles/` | One stylesheet per area, linked in the order of `Zusia.STYLES`, which is the cascade: a later file overrides an earlier one. Every colour comes from Zotero's theme tokens or `--zs-*` variables |
 | `src/content/styles/layouts.css`, `layout-<name>.css` | What the layouts share, then one file per layout, last in the cascade |
