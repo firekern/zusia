@@ -11,6 +11,7 @@ Object.assign(Zusia, {
 			// so their .exe is found before an npm shim.
 			return [
 				OS.Path.join(home, ".local", "bin"),
+				OS.Path.join(home, ".opencode", "bin"),
 				OS.Path.join(home, "AppData", "Local", "agy", "bin"),
 				OS.Path.join(home, "AppData", "Local", "Programs", "OpenAI", "Codex", "bin"),
 				OS.Path.join(home, "AppData", "Roaming", "npm"),
@@ -21,6 +22,7 @@ Object.assign(Zusia, {
 			"/opt/homebrew/bin",
 			"/opt/local/bin",
 			OS.Path.join(home, ".local", "bin"),
+			OS.Path.join(home, ".opencode", "bin"),
 			OS.Path.join(home, ".claude", "local"),
 			OS.Path.join(home, ".npm-global", "bin"),
 			OS.Path.join(home, "bin"),
@@ -33,6 +35,21 @@ Object.assign(Zusia, {
 		if (override) {
 			// Windows itself takes C:/…, but Gecko's path functions refuse a forward slash.
 			return this.avoidBatchFile(backend, Zotero.isWin ? override.replace(/\//g, "\\") : override);
+		}
+
+		// A program named by full path, or by ~ for the home folder, is used as given.
+		if (command === "~" || command.startsWith("~/") || command.startsWith("~\\")) {
+			let env = this.buildChildEnvironment();
+			let home = Zotero.isWin ? (env.USERPROFILE || env.HOME || "") : (env.HOME || "");
+			command = OS.Path.join(home, command.slice(2));
+		}
+		let absolute = Zotero.isWin ? /^[A-Za-z]:[\\/]|^\\\\/.test(command) : command.startsWith("/");
+		if (absolute) {
+			let path = Zotero.isWin ? command.replace(/\//g, "\\") : command;
+			if (await OS.File.exists(path)) {
+				return this.avoidBatchFile(backend, path);
+			}
+			throw new Error("Could not find " + path + ". Check the path in Settings → Zusia → Assistants.");
 		}
 
 		let searchEnv = this.buildChildEnvironment();

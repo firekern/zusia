@@ -41,6 +41,7 @@ test("windows: the native installers' folders come first on the search path, all
 	const env = plugin.buildChildEnvironment();
 	assert.deepEqual(env.PATH.split(";"), [
 		HOME + "\\.local\\bin",
+		HOME + "\\.opencode\\bin",
 		HOME + "\\AppData\\Local\\agy\\bin",
 		HOME + "\\AppData\\Local\\Programs\\OpenAI\\Codex\\bin",
 		NPM,
