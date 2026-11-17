@@ -255,6 +255,33 @@ test("acp: close kills a process that is still running and is idempotent", async
 	assert.deepEqual(fake.writes, []);
 });
 
+test("acp: a stdin that will not close still ends in a kill, settled requests and a log line", async () => {
+	const env = loadPlugin();
+	const fake = fakeProcess();
+	fake.proc.stdin.close = async () => { throw new Error("pipe is broken"); };
+	// A hung agent: it neither exits nor closes stderr until it is killed, and then not even that.
+	fake.proc.wait = () => new Promise(() => {});
+	fake.proc.kill = () => { fake.proc.killed = true; };
+	const connection = env.plugin.createAcpConnection(fake.proc);
+	const pending = connection.request("session/prompt", { sessionId: "s", prompt: [] });
+	await connection.close();
+	assert.equal(fake.proc.killed, true);
+	await assert.rejects(pending, e => e.acpClosed === true);
+	assert.ok(env.plugin._logLines.some(line => line.includes("closing the ACP stdin: Error: pipe is broken")), "the failed close is in Zusia's log");
+});
+
+test("acp: a kill that throws still settles every pending request", async () => {
+	const env = loadPlugin();
+	const fake = fakeProcess();
+	fake.proc.wait = () => new Promise(() => {});
+	fake.proc.kill = () => { throw new Error("no such process"); };
+	const connection = env.plugin.createAcpConnection(fake.proc);
+	const pending = connection.request("session/new", { cwd: "/d", mcpServers: [] });
+	await connection.close();
+	await assert.rejects(pending, e => e.acpClosed === true);
+	assert.ok(env.plugin._logLines.some(line => line.includes("killing the ACP agent: Error: no such process")));
+});
+
 test("acp: permissions allow reading, refuse changes, and cancel when no option fits", () => {
 	const allowing = [
 		{ optionId: "once", name: "Allow once", kind: "allow_once" },

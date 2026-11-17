@@ -21,6 +21,7 @@ Object.assign(Zusia, {
 				exitCode = result && typeof result.exitCode === "number" ? result.exitCode : null;
 			}
 			catch (e) {
+				// A wait that fails still means the process is gone, only without a code to report.
 				exited = true;
 			}
 		})();
@@ -33,6 +34,7 @@ Object.assign(Zusia, {
 				}
 			}
 			catch (e) {
+				this.log("reading the ACP stderr: " + e);
 			}
 		})();
 
@@ -195,7 +197,7 @@ Object.assign(Zusia, {
 						await proc.stdin.close();
 					}
 					catch (e) {
-						log("closing the ACP stdin: " + e);
+						this.log("closing the ACP stdin: " + e);
 					}
 					await waitFor(exitPromise, 150);
 					let code = exited ? exitCode : null;
@@ -205,13 +207,13 @@ Object.assign(Zusia, {
 							proc.kill();
 						}
 						catch (e) {
-							log("killing the ACP agent: " + e);
+							this.log("killing the ACP agent: " + e);
 						}
 					}
 					await waitFor(stderrDone, 150);
 					rejectPending();
 					return { stderr, exitCode: code };
-				})().catch(() => ({ stderr, exitCode: exited ? exitCode : null }));
+				})();
 			}
 			return closing;
 		};
