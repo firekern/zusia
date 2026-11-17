@@ -6,7 +6,16 @@ import { JSDOM } from "jsdom";
 const root = new URL("../", import.meta.url);
 const read = path => readFileSync(new URL(path, root), "utf8");
 
+// The ACP agents a fresh install starts with live in src/prefs.js, so a test that renders
+// Settings or the model menu sees the same list a user does.
+const shipped = read("src/prefs.js").match(/pref\("extensions\.zusia\.acpAgents", "(.*)"\);/);
+if (!shipped) {
+	throw new Error("src/prefs.js no longer declares extensions.zusia.acpAgents");
+}
+const SHIPPED_ACP_AGENTS = JSON.parse(shipped[1].replace(/\\"/g, "\""));
+
 export function loadPlugin({ prefs = {}, files = new Map() } = {}) {
+	prefs = { "extensions.zusia.acpAgents": JSON.stringify(SHIPPED_ACP_AGENTS), ...prefs };
 	const dom = new JSDOM("<!doctype html><html><body></body></html>", { runScripts: "outside-only" });
 	const { window } = dom;
 	window.TextEncoder = TextEncoder;
@@ -15,6 +24,13 @@ export function loadPlugin({ prefs = {}, files = new Map() } = {}) {
 		Path: { join: (...p) => p.join("/"), dirname: p => p.replace(/[\\/][^\\/]*$/, ""), basename: p => p.replace(/^.*[\\/]/, "") },
 		File: {
 			exists: async p => files.has(p),
+			read: async (p) => {
+				if (!files.has(p)) {
+					throw new Error("read: no such file " + p);
+				}
+				let value = files.get(p);
+				return value instanceof Uint8Array ? value : new TextEncoder().encode(String(value));
+			},
 			remove: async (p) => { files.delete(p); },
 			// Real OS.File.move replaces the target, which is what makes writeAtomic atomic.
 			move: async (from, to) => {
@@ -33,7 +49,13 @@ export function loadPlugin({ prefs = {}, files = new Map() } = {}) {
 	window.Zotero = {
 		debug() {},
 		Promise: { delay: () => new Promise(() => {}) },
-		Prefs: { get: key => prefs[key], set: (key, value) => { prefs[key] = value; } },
+		Prefs: {
+			get: key => prefs[key],
+			set: (key, value) => { prefs[key] = value; },
+			clear: (key) => { delete prefs[key]; },
+			registerObserver: () => "observer",
+			unregisterObserver() {},
+		},
 		Utilities: { Internal: { copyTextToClipboard() {} } },
 		File: {
 			putContentsAsync: async (p, data) => { files.set(p, data); },
@@ -46,7 +68,8 @@ export function loadPlugin({ prefs = {}, files = new Map() } = {}) {
 			createDirectoryIfMissingAsync: async () => {},
 		},
 		getMainWindow: () => window,
-		getMainWindows: () => [window],
+		// As in Zotero, a window closed by the test is no longer one of them.
+		getMainWindows: () => (window.document ? [window] : []),
 	};
 	window.eval(read("src/content/lib/katex.min.js").replace(/^!function\(e,t\)\{/, "!function(e,t){var exports,module,define;"));
 	window.Services = { scriptloader: { loadSubScript: (url, scope) => {
@@ -64,6 +87,8 @@ export function loadPlugin({ prefs = {}, files = new Map() } = {}) {
 		window.eval(read("src/content/modules/" + name + ".js"));
 	}
 	plugin.rootURI = "./";
+	// What init() does on a real start: the stored ACP agents become backends a chat can pick.
+	plugin.loadAcpAgents();
 	// Memory jobs start on their own after answers, New chat and page turns, so no test
 	// reaches a CLI through them by accident: each call is recorded and gets no answer.
 	// Tests of the runner itself put `runBackgroundCall` back.
@@ -73,7 +98,18 @@ export function loadPlugin({ prefs = {}, files = new Map() } = {}) {
 		backgroundCalls.push({ backend, prompt });
 		return { text: "", error: "no model in tests", rateLimited: false };
 	};
-	return { window, document: window.document, plugin, map: window.ZusiaMap, prefs, files, Subprocess, backgroundCalls, runBackgroundCall };
+	// An agent's model list loads on its own once the agent is added, its Settings card
+	// renders or its menu section opens, which would start the agent's program. The same
+	// holds: each call is recorded and lists nothing. Tests of the loader put
+	// `loadAcpModels` back.
+	const modelLoads = [];
+	const loadAcpModels = plugin.loadAcpModels;
+	plugin.loadAcpModels = async (backend, options) => {
+		modelLoads.push({ backend, options });
+		return [];
+	};
+	return { window, document: window.document, plugin, map: window.ZusiaMap, prefs, files, Subprocess, backgroundCalls, runBackgroundCall,
+		modelLoads, loadAcpModels };
 }
 
 // A chat rendered in the page, with the view the plugin keeps for it: what Zotero's

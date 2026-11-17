@@ -164,7 +164,11 @@ async function testSidebar(win, CS) {
 	// Composer menus open inside the visible pane and change the model.
 	root.querySelector(".zs-model-btn").click();
 	let menu = await waitFor(() => root.querySelector(".zs-menu"), 5000, "model menu");
-	await waitFor(() => root.querySelector(".zs-menu").textContent.includes("Google Antigravity") && !root.querySelector(".zs-menu").textContent.includes("Loading"), 30000, "Antigravity models in menu");
+	await waitFor(() => root.querySelector(".zs-menu").textContent.includes("Google Antigravity"), 5000, "Antigravity section in menu");
+	let antigravity = [...root.querySelectorAll(".zs-menu-section")].find(n => n.textContent.includes("Google Antigravity"));
+	antigravity.click();
+	// A folded section lists nothing, so the first `agy models` run starts only here.
+	await waitFor(() => [...root.querySelectorAll(".zs-menu-item")].some(i => i.textContent.includes("Gemini")), 30000, "Antigravity models after expanding");
 	let menuRect = root.querySelector(".zs-menu").getBoundingClientRect();
 	let paneRect0 = win.document.getElementById("zotero-item-pane").getBoundingClientRect();
 	check("model menu fits in the pane", menuRect.left >= paneRect0.left - 1 && menuRect.right <= visibleRight() + 1 && menuRect.height > 100,
@@ -178,7 +182,23 @@ async function testSidebar(win, CS) {
 		return { row: [Math.round(row.top), Math.round(row.bottom)], text: [Math.round(text.top), Math.round(text.bottom)], held: text.top >= row.top - 0.5 && text.bottom <= row.bottom + 0.5 };
 	});
 	check("menu rows: a row with a description holds both its lines", described.length > 0 && described.every(d => d.held), described.filter(d => !d.held));
-	await snapshot(win, "zotero-model-menu", { x: paneRect0.x, y: paneRect0.bottom - 700, width: paneRect0.width, height: 700 });
+	let menuShot = (name) => {
+		let rect = root.querySelector(".zs-menu").getBoundingClientRect();
+		let width = Math.max(1, Math.round(Math.min(rect.width, win.innerWidth)));
+		let height = Math.max(1, Math.round(Math.min(rect.height, win.innerHeight)));
+		let x = Math.round(Math.max(0, Math.min(rect.x, win.innerWidth - width)));
+		let y = Math.round(Math.max(0, Math.min(rect.y, win.innerHeight - height)));
+		check(name + " has a region to capture", width > 100 && height > 60,
+			{ rect: [rect.x, rect.y, rect.width, rect.height], shot: [x, y, width, height] });
+		return { x, y, width, height };
+	};
+	await snapshot(win, "zotero-model-menu", menuShot("expanded model menu"));
+	let sectionFor = label => [...root.querySelectorAll(".zs-menu-section")].find(n => n.textContent.includes(label));
+	sectionFor("Claude Code").click();
+	sectionFor("Google Antigravity").click();
+	await Zotero.Promise.delay(250);
+	await snapshot(win, "zotero-model-menu-collapsed", menuShot("collapsed model menu"));
+	sectionFor("Claude Code").click();
 	let pick = (label) => {
 		let items = [...root.querySelectorAll(".zs-menu-item")];
 		let item = items.find(i => i.querySelector(".zs-menu-label")?.textContent === label);
@@ -376,6 +396,9 @@ async function testReaderWidth(win, CS) {
 	if (!root) {
 		return;
 	}
+	// The tree selects the attachment as it is imported, which can open this chat before
+	// chat.json was written, and Zotero does not render a section twice for one item.
+	CS.renderMessages(CS._views.get(root), await CS.loadHistory(dir));
 	root.closest("[data-pane]")?.scrollIntoView({ block: "start" });
 	await win.document.fonts.ready;
 	await Zotero.Promise.delay(800);
@@ -453,77 +476,6 @@ async function testReadingMap(CS, attachment, dir, full) {
 		check("reading map (info): Zotero.SDT answered for the test PDF", true,
 			sdt ? { labels: sdt.labels && sdt.labels.slice(0, 5), outline: sdt.outline && sdt.outline.length } : "still building after 5 s");
 	}
-}
-
-// Opt-in (LIVE=1): real Claude Code runs from inside the sandboxed Zotero.
-async function testLive(win, CS) {
-	let item = new Zotero.Item("journalArticle");
-	item.setField("title", "Live test paper");
-	item.setField("abstractNote", "The secret word of this paper is PELICAN.");
-	await item.saveTx();
-	let itemPane = win.ZoteroPane.itemPane;
-	itemPane.data = [item];
-	await itemPane.renderItemPane(item);
-	let root = await waitFor(() => {
-		let r = [...win.document.querySelectorAll(".zs-root")].find(el => el.isConnected);
-		return r && CS._views.get(r) && CS._views.get(r).ctx.paperItem.id === item.id && r;
-	}, 30000, "live sidebar");
-	let view = CS._views.get(root);
-	CS.setPref("backend", "claude");
-	CS.setPref("claude.model", "haiku");
-	CS.setPref("claude.effort", "low");
-
-	let type = (text) => {
-		view.input.value = text;
-		view.input.dispatchEvent(new win.Event("input", { bubbles: true }));
-	};
-	type("What is the secret word in metadata.md? Reply with only that word.");
-	check("live: Send is enabled once text is typed", !root.querySelector(".zs-send").disabled);
-	root.querySelector(".zs-send").click();
-	check("live: Send turns into Stop while running", root.querySelector(".zs-send").classList.contains("zs-stop"));
-	let history = await waitFor(async () => {
-		if (CS._pending.has(view.ctx.dir)) return null;
-		return CS.loadHistory(view.ctx.dir);
-	}, 180000, "live answer");
-	let answer = history[history.length - 1] || {};
-	check("live: Claude answers through the sidebar with the chosen model and effort",
-		/pelican/i.test(answer.text || "") && answer.model === "haiku" && answer.effort === "low",
-		{ text: (answer.text || "").slice(0, 80), model: answer.model, effort: answer.effort,
-			error: root.querySelector(".zs-error")?.textContent });
-	let steps = (answer.activity && answer.activity.steps) || [];
-	check("live: Claude's file reads are recorded as activity", steps.some(st => st.kind === "read"),
-		{ steps: steps.map(st => st.label), thoughtMs: answer.activity && answer.activity.thoughtMs });
-	await waitFor(() => root.querySelector(".zs-turn.zs-last .zs-activity"), 5000, "activity line").catch(() => null);
-	check("live: activity line shows above the answer", !!root.querySelector(".zs-turn.zs-last .zs-activity"),
-		root.querySelector(".zs-turn.zs-last .zs-activity-summary")?.textContent);
-	let logText = await IOUtils.readUTF8(CS.getLogPath()).catch(() => "");
-	check("live: CLI was called with --model haiku --effort low", /'--model' 'haiku'.*'--effort' 'low'/.test(logText));
-
-	type("List the secret word 400 times, numbered 1 to 400, one per line, no other text.");
-	root.querySelector(".zs-send").click();
-	check("live: second run started", CS._pending.has(view.ctx.dir));
-	// Stop only once the answer is visibly streaming.
-	let streaming = await waitFor(() => {
-		let p = CS._pending.get(view.ctx.dir);
-		return p && p.partial.length > 60 ? p : null;
-	}, 90000, "streamed text").catch(() => null);
-	check("live: answer streams into the sidebar before it finishes", !!streaming);
-	check("live: streamed text is rendered live", !!root.querySelector(".zs-live-content")?.textContent.trim());
-	let started = Date.now();
-	root.querySelector(".zs-send").click();
-	await waitFor(() => !CS._pending.has(view.ctx.dir), 20000, "stop to finish");
-	check("live: Stop ends the run quickly", Date.now() - started < 15000, Date.now() - started);
-	await Zotero.Promise.delay(500);
-	check("live: stop shows no error", !root.querySelector(".zs-error"), root.querySelector(".zs-error")?.textContent);
-	let afterStop = await CS.loadHistory(view.ctx.dir);
-	let last = afterStop[afterStop.length - 1] || {};
-	check("live: stopped run keeps the partial answer or returns the question",
-		(last.stopped === true && last.text.length > 0) || view.input.value.includes("400 times"),
-		{ stopped: last.stopped, chars: (last.text || "").length, input: view.input.value.slice(0, 40) });
-	await snapshot(win, "zotero-live", (() => {
-		let r = win.document.getElementById("zotero-item-pane").getBoundingClientRect();
-		return { x: r.x, y: r.y, width: r.width, height: r.height };
-	})());
 }
 
 // The headless items tree lays out no rows and cannot select one, so the selection is given
@@ -959,6 +911,7 @@ async function run() {
 		if (Zotero.Prefs.get("extensions.zusia-tester.live", true)) {
 			await testLive(win, CS);
 		}
+		await testAcp(win, CS, realBackgroundCall);
 		let logText = await IOUtils.readUTF8(CS.getLogPath()).catch(() => "");
 		let errors = logText.split("\n").filter(l => l.includes("ERROR"));
 		check("plugin logged no errors", errors.length === 0, errors.slice(0, 5));
@@ -971,7 +924,12 @@ async function run() {
 	Zotero.Utilities.Internal.quit();
 }
 
-function startup() {
+// The opt-in and ACP scenarios have files of their own, loaded into this scope as
+// src/bootstrap.js loads its modules, so they share check(), waitFor() and the results.
+function startup({ rootURI }) {
+	for (let name of ["acp", "live"]) {
+		Services.scriptloader.loadSubScript(rootURI + name + ".js");
+	}
 	run();
 }
 

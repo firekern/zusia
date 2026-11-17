@@ -2,7 +2,7 @@
 	"manifest_version": 2,
 	"name": "Zusia",
 	"version": "1.7.0",
-	"description": "Zusia, a study buddy for Zotero: ask Claude Code, Codex or Antigravity about the paper you're reading.",
+	"description": "Zusia, a study buddy for Zotero: ask Claude Code, Codex, Antigravity, or any ACP agent about the paper you're reading.",
 	"applications": {
 		"zotero": {
 			"id": "zusia@firekern.github.io",

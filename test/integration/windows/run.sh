@@ -42,7 +42,13 @@ node -e '
 const r = require(process.argv[1]);
 const cannotRunHere = new Set(["Antigravity models are listed from `agy models`"]);
 let failed = 0;
+let skipped = 0;
 for (const c of r.checks) {
+	if (c.skipped) {
+		console.log("  – " + c.name + "  (skipped: " + c.skipped + ")");
+		skipped++;
+		continue;
+	}
 	if (!c.ok && cannotRunHere.has(c.name)) {
 		console.log("  – " + c.name + "  (needs a child process, which this emulated Windows cannot start)");
 		continue;
@@ -51,7 +57,7 @@ for (const c of r.checks) {
 	failed += !c.ok;
 }
 for (const e of r.errors) { console.log("  ERROR " + e); failed++; }
-console.log(failed ? failed + " failed" : "all " + (r.checks.length - cannotRunHere.size) + " runnable checks passed");
+console.log(failed ? failed + " failed" : "all " + (r.checks.length - cannotRunHere.size - skipped) + " runnable checks passed" + (skipped ? ", " + skipped + " skipped" : ""));
 process.exit(failed ? 1 : 0);
 ' "$out/results.json" || exit 1
 exit "${probe_failed:-0}"

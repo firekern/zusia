@@ -173,6 +173,48 @@
 	background: color-mix(in srgb, var(--zs-card-head) 60%, var(--zs-card));
 }
 
+.zs-acp-desc {
+	padding: 0 14px 8px;
+}
+.zs-acp-list .zs-agent:first-child {
+	border-top: 1px solid var(--zs-stroke);
+}
+.zs-acp-add {
+	padding: 12px 14px;
+	border-top: 1px solid var(--zs-stroke);
+}
+.zs-acp-add-title {
+	margin-bottom: 6px;
+	font-weight: 600;
+}
+.zs-acp-signin-wrap {
+	padding: 10px 14px;
+	border-top: 1px solid var(--zs-stroke);
+}
+.zs-acp-signin-wrap .zs-row-hint {
+	margin-top: 6px;
+}
+.zs-acp-command {
+	display: block;
+	font-size: 0.9em;
+	overflow-wrap: anywhere;
+}
+/* As in the menu: three lines of the agent's error, the rest in the tooltip. */
+.zs-acp-model-error {
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 3;
+	overflow: hidden;
+	overflow-wrap: anywhere;
+	margin-bottom: 6px;
+}
+.zs-acp-error {
+	margin-top: 8px;
+	font-size: 0.88em;
+	line-height: 1.4;
+	color: var(--accent-red, #db2c3a);
+}
+
 /* Form controls */
 .zs-field,
 .zs-select,

@@ -29,6 +29,12 @@ Object.assign(Zusia, {
 		}
 	},
 
+	// Every assistant, kind by kind in KINDS order (the CLIs, the ACP agents, the APIs): an
+	// agent registers after the APIs, and would otherwise be listed after them.
+	orderedBackends() {
+		return Object.keys(this.KINDS).flatMap(kind => Object.entries(this.BACKENDS).filter(([, info]) => info.kind === kind));
+	},
+
 	getBackend() {
 		let backend = this.getPref("backend");
 		return this.BACKENDS[backend] ? backend : "claude";
@@ -50,24 +56,18 @@ Object.assign(Zusia, {
 		return this.BACKENDS[backend].efforts.includes(effort) ? effort : "";
 	},
 
-	// The models offered for a backend: fixed ones, the Codex models listed in
-	// Settings, and Antigravity's own catalogue once it has been fetched.
+	// The fixed models, then the live ones its kind lists, then a stored one neither offers,
+	// so an earlier choice still shows.
 	getModels(backend) {
-		let models = this.BACKENDS[backend].models.slice();
-		if (this.isAPIBackend(backend)) {
-			let cache = this._apiModels?.[backend];
-			try {
-				if (cache?.baseURL === this.normalizeAPIURL(this.getAPIConfig(backend).baseURL)) models.push(...cache.models);
-			}
-			catch (e) {}
+		let info = this.BACKENDS[backend];
+		// A clarification answered by an agent since removed still asks for its model's name.
+		if (!info) {
+			return [];
 		}
-		if (backend === "codex") {
-			for (let id of (this.getPref("codex.models") || "").split(/[,\n]/).map(m => m.trim()).filter(Boolean)) {
-				models.push({ id, label: id, desc: "" });
-			}
-		}
-		if (backend === "agy" && Array.isArray(this._agyModels)) {
-			models.push(...this._agyModels);
+		let models = info.models.slice();
+		let live = this[this.KINDS[info.kind].models](backend);
+		if (Array.isArray(live)) {
+			models.push(...live);
 		}
 		let current = this.getModel(backend);
 		if (current && !models.some(m => m.id === current)) {
@@ -76,9 +76,39 @@ Object.assign(Zusia, {
 		return models;
 	},
 
+	cliLiveModels(backend) {
+		if (backend === "agy") {
+			return this._agyModels;
+		}
+		if (backend === "codex") {
+			return (this.getPref("codex.models") || "").split(/[,\n]/)
+				.map(id => id.trim()).filter(Boolean)
+				.map(id => ({ id, label: id, desc: "" }));
+		}
+		return null;
+	},
+
+	acpLiveModels(backend) {
+		return this.acpModelEntry(backend).models;
+	},
+
+	apiLiveModels(backend) {
+		let cache = this._apiModels?.[backend];
+		try {
+			return cache?.baseURL === this.normalizeAPIURL(this.getAPIConfig(backend).baseURL) ? cache.models : null;
+		}
+		catch (e) {
+			return null;
+		}
+	},
+
 	modelLabel(backend, id) {
 		let model = this.getModels(backend).find(m => m.id === id);
 		return model ? model.label : id;
+	},
+
+	modelSelectOptions(backend) {
+		return this.getModels(backend).map(m => [m.id, m.label + (m.id && m.id !== m.label.toLowerCase() ? "  (" + m.id + ")" : "")]);
 	},
 
 	// agy keeps its login in the Secret Service keyring. Zotero's Flatpak has no
@@ -120,6 +150,27 @@ Object.assign(Zusia, {
 			})();
 		}
 		return this._agyModelsPromise;
+	},
+
+	// Of the CLIs only Antigravity lists its models; Codex's come from Settings.
+	async loadCliModels(backend) {
+		return backend === "agy" ? this.loadAgyModels() : [];
+	},
+
+	// Every kind's live model list through one door, then every chat's controls, so a
+	// model's name replaces its id wherever it shows. Never rejects: an API list that
+	// fails is logged here, an agent keeps its failure for its card and its menu note.
+	async loadLiveModels(backend, { retry = false } = {}) {
+		let { label, kind } = this.BACKENDS[backend];
+		try {
+			await this[this.KINDS[kind].loadModels](backend, { retry });
+		}
+		catch (e) {
+			this.log("Could not list " + label + " models: " + e);
+		}
+		for (let root of this.allRoots()) {
+			this.updateControls(root);
+		}
 	},
 
 	getAppearance() {
@@ -431,19 +482,40 @@ Object.assign(Zusia, {
 		return (this.getPref("explainPrompt") || "").trim() || this.DEFAULT_EXPLAIN_PROMPT;
 	},
 
+	watchBackendPrefs(backend) {
+		if (this._backendPrefObservers.has(backend)) {
+			return;
+		}
+		let ids = [];
+		for (let name of [backend + ".model", backend + ".effort", backend + ".api"]) {
+			ids.push(Zotero.Prefs.registerObserver(this.PREF_PREFIX + name, () => this.refreshAllSidebars(), true));
+		}
+		this._backendPrefObservers.set(backend, ids);
+		this._prefObservers.push(...ids);
+	},
+
+	unwatchBackendPrefs(backend) {
+		let ids = this._backendPrefObservers.get(backend) || [];
+		for (let id of ids) {
+			Zotero.Prefs.unregisterObserver(id);
+		}
+		this._backendPrefObservers.delete(backend);
+		this._prefObservers = this._prefObservers.filter(id => !ids.includes(id));
+	},
+
 	// Settings changed in the Settings window update every open sidebar at once.
 	watchPrefs() {
 		let names = ["appearance", "prompts", "backend", "codex.models", "modeButtons", "language", "behaviour", "onboarded"];
 		for (let id of Object.keys(this.MODES)) {
 			names.push("mode." + id);
 		}
-		for (let backend of Object.keys(this.BACKENDS)) {
-			names.push(backend + ".model", backend + ".effort", backend + ".api");
-		}
 		for (let name of names) {
 			this._prefObservers.push(
 				Zotero.Prefs.registerObserver(this.PREF_PREFIX + name, () => this.refreshAllSidebars(), true)
 			);
+		}
+		for (let backend of Object.keys(this.BACKENDS)) {
+			this.watchBackendPrefs(backend);
 		}
 	},
 
@@ -452,6 +524,7 @@ Object.assign(Zusia, {
 			Zotero.Prefs.unregisterObserver(id);
 		}
 		this._prefObservers = [];
+		this._backendPrefObservers = new Map();
 	},
 
 	refreshAllSidebars() {

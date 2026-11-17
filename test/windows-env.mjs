@@ -19,6 +19,7 @@ export const DATA_DIR = HOME + "\\Zotero";
 export const CLAUDE_NATIVE = HOME + "\\.local\\bin\\claude.exe";
 export const CLAUDE_NPM_EXE = NPM + "\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe";
 export const CODEX_JS = NPM + "\\node_modules\\@openai\\codex\\bin\\codex.js";
+export const COMMANDCODE_MJS = NPM + "\\node_modules\\command-code\\dist\\index.mjs";
 export const NODE_EXE = NODE_DIR + "\\node.exe";
 export const PATHEXT = ".COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC";
 

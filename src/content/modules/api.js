@@ -15,7 +15,7 @@ Object.assign(Zusia, {
 	// Unsloth and compatible servers use OpenAI Chat Completions; Ollama has a
 	// native adapter. All network access stays in Zotero's privileged HTTP layer.
 	isAPIBackend(backend) {
-		return this.BACKENDS[backend]?.transport === "http";
+		return this.BACKENDS[backend]?.kind === "api";
 	},
 
 	normalizeAPIURL(value) {
@@ -493,14 +493,8 @@ Object.assign(Zusia, {
 	},
 
 	async apiImagePart(path) {
-		let data = await OS.File.read(path);
-		if (data.length > 10 * 1024 * 1024) throw new Error("An image exceeds the 10 MB API limit.");
-		let binary = "";
-		for (let i = 0; i < data.length; i += 8192) binary += String.fromCharCode(...data.subarray(i, i + 8192));
-		let ext = path.split(".").pop().toLowerCase();
-		let mime = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp", gif: "image/gif" }[ext];
-		if (!mime) throw new Error("Use PNG, JPEG, WebP or GIF images with the API.");
-		return { type: "image_url", image_url: { url: "data:" + mime + ";base64," + Zotero.getMainWindow().btoa(binary) } };
+		let { data, mimeType } = await this.imageBase64(path);
+		return { type: "image_url", image_url: { url: "data:" + mimeType + ";base64," + data } };
 	},
 
 	async runAPIBackend(backend, request) {

@@ -7,7 +7,7 @@ import { loadPlugin, openChat } from "./load-plugin.mjs";
 const P = "extensions.zusia.";
 const env = (prefs = {}) => loadPlugin({ prefs: { [P + "onboarded"]: true, ...prefs } });
 const ollama = { [P + "ollama.model"]: "qwen3:4b" };
-const clis = ["Claude Code", "OpenAI Codex", "Google Antigravity"];
+const clis = ["Claude Code", "OpenAI Codex", "Google Antigravity", "Command Code"];
 
 function menuSections(e) {
 	const p = e.plugin, { root } = openChat(e);
@@ -33,7 +33,7 @@ test("the model menu names an API assistant only once it is set up", () => {
 	assert.ok(!menu.text.includes("Set the API URL"));
 	e.window.close();
 	e = env(ollama);
-	assert.deepEqual(menuSections(e).sections, [...clis, "Ollama API"]);
+	assert.deepEqual(menuSections(e).sections, [...clis, "Ollama API"], "the agent sits with the CLIs, before the API");
 	e.window.close();
 });
 
@@ -44,11 +44,15 @@ test("the wizard offers the CLIs, says where local models are, and adds one that
 		const wizard = root.querySelector(".zs-wizard");
 		wizard.querySelector(".zs-wizard-next").click();
 		assert.equal(wizard.dataset.step, "assistant");
-		return { labels: [...wizard.querySelectorAll(".zs-tile-label")].map(n => n.textContent), text: wizard.textContent };
+		return {
+			labels: [...wizard.querySelectorAll(".zs-tile-label")].map(n => n.textContent),
+			subs: [...wizard.querySelectorAll(".zs-wizard-sub")].map(n => n.textContent),
+		};
 	};
 	let e = env(), step = tiles(e);
-	assert.deepEqual(step.labels, ["Claude", "Codex", "Antigravity"]);
-	assert.match(step.text, /Settings → Zusia → Assistants/);
+	assert.deepEqual(step.labels, ["Claude", "Codex", "Antigravity"], "the shipped ACP agent is added in Settings, not here");
+	assert.deepEqual(step.subs, ["An ACP agent or a local model instead? Settings → Zusia → Assistants."],
+		"one line names the one place for both");
 	e.window.close();
 	e = env(ollama);
 	assert.deepEqual(tiles(e).labels, ["Claude", "Codex", "Antigravity", "Ollama"]);

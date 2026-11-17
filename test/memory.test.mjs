@@ -423,6 +423,51 @@ function fakeCli(env, { stdout = "", stderr = "", exitCode = 0 } = {}) {
 	return { runs, dirs };
 }
 
+// A Zotero.Promise.delay whose JOB_TIMEOUT_MS wait ends when the test says; every other wait never does.
+function jobDeadline(env) {
+	const deadline = { expire: null, asked: 0 };
+	env.window.Zotero.Promise.delay = (ms) => new Promise((resolve) => {
+		if (ms === env.plugin.JOB_TIMEOUT_MS) {
+			deadline.asked++;
+			deadline.expire = resolve;
+		}
+	});
+	return deadline;
+}
+
+test("runner: a call that hangs is killed at the deadline, reports it, and keeps its rate-limit verdict", async () => {
+	for (const [stderr, rateLimited] of [["API Error: 429 rate_limit_error, retrying…", true], ["still thinking", false]]) {
+		const env = loadPlugin();
+		const { dirs } = fakeCli(env);
+		const deadline = jobDeadline(env);
+		let killed = false;
+		env.plugin.runProcess = async (command, args, cwd, onEvent, onSpawn) => {
+			await new Promise(resolve => onSpawn({ kill: () => { killed = true; resolve(); } }));
+			return { stdout: "", stderr, exitCode: 143 };
+		};
+		const job = { key: "k", proc: null, cancelled: false };
+		const running = env.plugin.runBackgroundCall("claude", "P", job);
+		await new Promise(resolve => setImmediate(resolve));
+		assert.equal(deadline.asked, 1);
+		assert.ok(job.proc, "the job holds the process while it runs");
+		deadline.expire();
+		assert.deepEqual(plain(await running), { text: "", error: "no answer within 5 minutes", rateLimited }, stderr);
+		assert.equal(killed, true);
+		assert.equal(job.proc, null);
+		assert.deepEqual(dirs.removed, dirs.made, "the folder goes all the same");
+	}
+});
+
+test("runner: a call that answers before the deadline is not touched by it", async () => {
+	const env = loadPlugin();
+	fakeCli(env, { stdout: JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text: "{}" }] } }) + "\n" });
+	const deadline = jobDeadline(env);
+	const result = await env.plugin.runBackgroundCall("claude", "P");
+	deadline.expire();
+	await new Promise(resolve => setImmediate(resolve));
+	assert.deepEqual(plain(result), { text: "{}", error: "", rateLimited: false });
+});
+
 test("runner: Claude runs haiku with no tools, no session and no settings, in an empty folder, prompt on stdin", async () => {
 	const env = loadPlugin();
 	const { runs, dirs } = fakeCli(env, {
@@ -457,6 +502,15 @@ test("runner: Antigravity runs its default model at low effort in a sandbox, no 
 	assert.equal(env.plugin.jobBackend(), null);
 	env.files.set("/d/chat.json", JSON.stringify(turns(6)));
 	assert.equal(await env.plugin.scheduleConsolidation("/d", "turn"), false);
+});
+
+test("runner: a CLI runs memory jobs only once it is named for them", () => {
+	const env = loadPlugin();
+	env.plugin.BACKENDS.newcli = { label: "New", fullName: "New CLI", kind: "cli", command: "new", models: [], efforts: [""] };
+	env.prefs[PREFIX + "backend"] = "newcli";
+	assert.equal(env.plugin.jobBackend(), null, "it would get Antigravity's flags and could read the home folder");
+	env.prefs[PREFIX + "backend"] = "claude";
+	assert.equal(env.plugin.jobBackend(), "claude");
 });
 
 test("runner: stderr with a rate limit is reported as one, a failure is an error, and shutdown stops a running call", async () => {

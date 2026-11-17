@@ -212,7 +212,8 @@ Object.assign(Zusia, {
 		}
 		let input = root.querySelector(".zs-input");
 		if (input) {
-			input.placeholder = "Ask " + info.label + " about this paper…";
+			let modelName = model ? this.modelLabel(backend, model) : "";
+			input.placeholder = "Ask " + (modelName || info.label) + " about this paper…";
 		}
 		root.querySelector(".zs-menu")?.refresh?.();
 		this.renderAPIRuntime(root);
@@ -220,41 +221,61 @@ Object.assign(Zusia, {
 
 	async checkInstalledBackends(root) {
 		root._installed = root._installed || {};
+		root._refused = {};
 		for (let key of Object.keys(this.BACKENDS)) {
-			root._installed[key] = await this.probeBinary(key);
+			root._installed[key] = await this.probeBinary(key, root._refused);
 		}
 		root.querySelector(".zs-menu")?.refresh?.();
 	},
 
-	async probeBinary(key) {
+	// The program's path, or an API's URL, or null when there is none to use. A program that
+	// is there but refused (an npm .cmd on Windows) is not missing: why goes into `refused`.
+	async probeBinary(key, refused = {}) {
 		try {
 			if (this.isAPIBackend(key)) return this.getModel(key) ? this.normalizeAPIURL(this.getAPIConfig(key).baseURL) : null;
 			return await this.findBinary(key);
 		}
 		catch (e) {
+			if (!e.notFound) {
+				refused[key] = e.message;
+			}
 			return null;
 		}
 	},
 
 	openModelMenu(root, anchor) {
 		let doc = root.ownerDocument;
+		let expanded = new Set([this.getBackend()]);
+		// An API assistant is optional: it is listed once it is set up in Settings,
+		// where a CLI that is missing is named so that it can be installed.
+		let listed = key => !this.isAPIBackend(key) || this.getModel(key);
 		let menu = this.openMenu(root, anchor, (menu) => {
 			let current = this.getBackend();
-			for (let [key, backend] of Object.entries(this.BACKENDS)) {
+			for (let [key, backend] of this.orderedBackends().filter(([key]) => listed(key))) {
 				let installed = root._installed ? root._installed[key] : undefined;
-				// An API assistant is optional: it is listed once it is set up in Settings,
-				// where a CLI that is missing is named so that it can be installed.
-				if (this.isAPIBackend(key) && !this.getModel(key)) {
+				let open = expanded.has(key);
+				this.menuSection(doc, menu, backend.fullName, {
+					key,
+					expanded: open,
+					onToggle: () => {
+						if (expanded.has(key)) {
+							expanded.delete(key);
+						}
+						else {
+							expanded.add(key);
+							this.loadLiveModels(key);
+						}
+						menu.refresh();
+					},
+				});
+				if (!open) {
 					continue;
 				}
-				this.menuSection(doc, menu, backend.fullName);
-				if (installed === null) {
-					menu.appendChild(this.el(doc, "div", "zs-menu-note",
-						"Not installed. Install the " + backend.command + " CLI or set its path in Settings."));
-					continue;
-				}
-				for (let model of this.getModels(key)) {
+				// A program that is not there offers no models, only the note saying so.
+				let models = installed === null ? [] : this.getModels(key);
+				for (let model of models) {
 					this.menuItem(doc, menu, {
+						key: key + "/" + model.id,
 						label: model.label,
 						desc: this.isAPIBackend(key) || !model.id ? model.desc : "",
 						checked: key === current && model.id === this.getModel(key),
@@ -268,20 +289,30 @@ Object.assign(Zusia, {
 						},
 					});
 				}
-				if (key === "agy" && !Array.isArray(this._agyModels)) {
-					menu.appendChild(this.el(doc, "div", "zs-menu-note", "Loading models…"));
+				// The one note under the section's models: why its program cannot run, or how its
+				// list stands. Only Antigravity and the ACP agents keep how their listing went: an
+				// API list that fails is only logged.
+				let note = "";
+				if (installed === null) {
+					note = root._refused[key] || "Not installed. " + this.commandFixHint(key);
 				}
-				if (key === "agy" && this._agyModelsError) {
-					menu.appendChild(this.el(doc, "div", "zs-menu-note", "Sign-in not reachable from Zotero, so only the default model is listed. See Settings."));
+				else if (key === "agy" || backend.kind === "acp") {
+					let entry = key === "agy" ? { models: this._agyModels, error: this._agyModelsError } : this.acpModelEntry(key);
+					note = entry.promise || (!entry.models && !entry.error) ? "Loading models…"
+						: entry.error ? "Models could not be loaded. " + entry.error : "";
+				}
+				if (note) {
+					// Cut at three lines by the stylesheet, so the whole note is the tooltip.
+					menu.appendChild(this.el(doc, "div", "zs-menu-note", note)).title = note;
 				}
 			}
 		});
-		if (menu && !Array.isArray(this._agyModels)) {
-			this.loadAgyModels().then(() => menu.isConnected && menu.refresh());
-		}
+		// Only an open section lists models, so only its assistant is asked, whatever its kind:
+		// a folded one starts no agent and fetches no list. Each listing ends by refreshing every
+		// chat's controls, and this menu with them.
 		if (menu) {
-			for (let key of Object.keys(this.BACKENDS).filter(key => this.isAPIBackend(key) && this.getModel(key))) {
-				this.loadAPIModels(key).then(() => menu.isConnected && menu.refresh()).catch(() => {});
+			for (let key of [...expanded].filter(listed)) {
+				this.loadLiveModels(key);
 			}
 		}
 	},

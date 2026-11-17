@@ -10,7 +10,7 @@ Zusia = {
 		"settings", "window", "dom", "sidebar", "attachments", "chat", "history", "reader",
 		"theorems", "clarifications", "memory-sheet", "wizard", "search", "ask", "prefs-pane",
 		"notes", "markdown", "drawings", "math", "context", "reading", "progress", "memory",
-		"jobs", "consolidation", "binaries", "prompts", "backends", "api", "api-connections", "api-state", "api-diagnostics", "api-budget", "api-ui", "api-profiles", "api-ollama", "api-prefs", "dock", "layouts",
+		"jobs", "consolidation", "binaries", "prompts", "acp-connection", "acp", "acp-agents", "backends", "api", "api-connections", "api-state", "api-diagnostics", "api-budget", "api-ui", "api-profiles", "api-ollama", "api-prefs", "dock", "layouts",
 	],
 	// The stylesheets in src/content/styles, in cascade order: a later file overrides an earlier one.
 	STYLES: [
@@ -37,6 +37,7 @@ Zusia = {
 		claude: {
 			label: "Claude",
 			fullName: "Claude Code",
+			kind: "cli",
 			command: "claude",
 			pathPref: "claudePath",
 			models: [
@@ -52,6 +53,7 @@ Zusia = {
 		codex: {
 			label: "Codex",
 			fullName: "OpenAI Codex",
+			kind: "cli",
 			command: "codex",
 			pathPref: "codexPath",
 			models: [{ id: "", label: "Default", desc: "Your Codex default" }],
@@ -61,23 +63,24 @@ Zusia = {
 		agy: {
 			label: "Antigravity",
 			fullName: "Google Antigravity",
+			kind: "cli",
 			command: "agy",
 			pathPref: "agyPath",
 			models: [{ id: "", label: "Default", desc: "Your Antigravity default" }],
 			efforts: ["", "low", "medium", "high"],
 		},
 		ollama: {
-			label: "Ollama", fullName: "Ollama API", transport: "http", baseURL: "http://127.0.0.1:11434/v1",
+			label: "Ollama", fullName: "Ollama API", kind: "api", baseURL: "http://127.0.0.1:11434/v1",
 			models: [{ id: "", label: "Choose a model", desc: "Configure in Settings → Zusia → Assistants" }],
 			efforts: ["", "low", "medium", "high"], images: true,
 		},
 		unsloth: {
-			label: "Unsloth", fullName: "Unsloth API", transport: "http", baseURL: "http://127.0.0.1:8888/v1",
+			label: "Unsloth", fullName: "Unsloth API", kind: "api", baseURL: "http://127.0.0.1:8888/v1",
 			models: [{ id: "", label: "Choose a model", desc: "Configure in Settings → Zusia → Assistants" }],
 			efforts: ["", "low", "medium", "high"], images: true,
 		},
 		openai: {
-			label: "Custom API", fullName: "OpenAI-compatible API", transport: "http", baseURL: "https://api.openai.com/v1",
+			label: "Custom API", fullName: "OpenAI-compatible API", kind: "api", baseURL: "https://api.openai.com/v1",
 			models: [{ id: "", label: "Choose a model", desc: "Configure in Settings → Zusia → Assistants" }],
 			efforts: ["", "low", "medium", "high"], images: true,
 		},
@@ -159,6 +162,10 @@ Zusia = {
 	JOB_TIMEOUT_MS: 300000,
 	JOB_BACKOFF_MS: 900000,
 	JOB_BACKOFF_MAX_MS: 7200000,
+	// An agent that waits for input it will never get (a CLI started without its ACP
+	// argument, say) would keep "Loading…" up for good; past this its model list is given
+	// up, so the card offers Try again. A sign-in has no deadline: a browser login takes time.
+	ACP_MODELS_TIMEOUT_MS: 30000,
 	// Stored with each session next to a hash of the system prompt it started with. The hash
 	// catches edits to the prompt itself; raise this when what a session stores changes.
 	PROMPT_VERSION: 4,
@@ -261,6 +268,12 @@ Zusia = {
 	// inline budget, so it stays a fraction of the smallest one (12,000 on Windows).
 	CUSTOM_PROMPT_CHARS: 4000,
 	WIZARD_STEPS: ["welcome", "assistant", "look", "buddy", "answers", "voice", "done"],
+	// What each kind of assistant can do. A transport is a row here, not a branch at every call site.
+	KINDS: {
+		cli: { run: "runCliBackend", background: "runCliBackground", models: "cliLiveModels", loadModels: "loadCliModels" },
+		acp: { run: "runAcp", background: "runAcpBackground", models: "acpLiveModels", loadModels: "loadAcpModels" },
+		api: { run: "runAPIBackend", background: "runApiBackground", models: "apiLiveModels", loadModels: "loadAPIModels" },
+	},
 	BACKEND_ICONS: { claude: "sparkle", codex: "terminal", agy: "rocket", ollama: "ollama", unsloth: "unsloth", openai: "ref" },
 	// Study buddies: original drawings shown in the empty chat, with a matching header icon.
 	MASCOTS: {
@@ -378,8 +391,11 @@ Zusia = {
 	paneID: null,
 	prefsPaneID: null,
 	_prefObservers: [],
+	_backendPrefObservers: new Map(),
 	_katex: undefined,
 	_agyModels: null,
+	// Per ACP agent, from acpModelEntry(): { models, error, promise }.
+	_acpModels: {},
 	// True while building Zotero note HTML: maths becomes note-editor markup, not MathML.
 	_noteMode: false,
 	_logLines: [],
@@ -451,6 +467,7 @@ Zusia = {
 		this.stylesheetURLs = this.STYLES.map(name => rootURI + "content/styles/" + name + ".css" + stamp);
 		this.initialized = true;
 		this.log("init() version " + version + " with rootURI=" + rootURI);
+		this.loadAcpAgents();
 	},
 
 	// Logs go to Zotero's debug output and to zusia/debug.log in the

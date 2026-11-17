@@ -69,7 +69,9 @@
 	const CS = Zusia;
 	CS.rootURI = "../src/";
 	CS.iconBase = "../src/content/icons/";
-	CS.findBinary = async key => { if (key === "codex") throw new Error("missing"); return "/bin/" + key; };
+	// Codex is missing, marked as findBinary marks a program it cannot find: an unmarked failure
+	// reads as one found but refused.
+	CS.findBinary = async key => { if (key === "codex") throw Object.assign(new Error(CS.missingBinaryMessage("codex", "codex")), { notFound: true }); return "/bin/" + key; };
 	if (params.get("theme")) prefs["extensions.zusia.theme"] = params.get("theme");
 	// &appearance=<json> sets the Appearance pref; &bg=<url> stands in for the copied background image.
 	if (params.get("appearance")) prefs["extensions.zusia.appearance"] = params.get("appearance");

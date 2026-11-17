@@ -8,7 +8,7 @@
   <a href="https://github.com/firekern/zusia/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/firekern/zusia/ci.yml?branch=main&label=tests&color=d42a3c&labelColor=111111" alt="Tests"></a>
   <a href="https://github.com/firekern/zusia/releases/latest"><img src="https://img.shields.io/github/v/release/firekern/zusia?label=release&color=b85a38&labelColor=111111" alt="Latest release"></a>
   <img src="https://img.shields.io/badge/Zotero-7%20%E2%80%93%2010-c03a64?labelColor=111111" alt="Zotero 7 to 10">
-  <img src="https://img.shields.io/badge/Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20Antigravity-6d4fd6?labelColor=111111" alt="Works with Claude Code, Codex and Antigravity">
+  <img src="https://img.shields.io/badge/Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20Antigravity%20%C2%B7%20ACP-6d4fd6?labelColor=111111" alt="Works with Claude Code, Codex, Antigravity, and any ACP agent">
   <img src="https://img.shields.io/badge/no%20API%20keys-0d7f78?labelColor=111111" alt="No API keys">
   <a href="LICENSE"><img src="https://img.shields.io/badge/licence-MIT-2d7d46?labelColor=111111" alt="MIT licence"></a>
   <a href="https://github.com/sponsors/firekern"><img src="https://img.shields.io/badge/sponsor-a%20breakfast-b8862b?labelColor=111111&logo=githubsponsors&logoColor=white" alt="Sponsor a breakfast"></a>
@@ -20,7 +20,7 @@
 
 - 💬 A chat **next to the PDF** that reads the **whole paper**, in its own panel at the side of the window.
 - ✏️ Answers with **LaTeX**, **drawings** and numbered **theorem boxes**.
-- 🔑 Uses **Claude Code, Codex or Antigravity** with your own login. No API keys.
+- 🔑 Uses **Claude Code, Codex, Antigravity, or any ACP agent** with your own login. No API keys.
 - 🖥️ Optionally connect **Ollama, Unsloth or a custom API**: [connect a local model](#connect-a-local-model).
 - ⏱️ Install in 2 minutes: [jump to Install](#install).
 
@@ -87,7 +87,7 @@
 | 🩷 | **Clarifications** | Every Ask and Explain is saved: highlighter icon → passage, prompt, answer |
 | 🟣 | **Notes** | Save any answer or drawing as a Zotero note under the paper |
 | 🔵 | **Search** | 🔍 searches the chats of every paper |
-| 🟢 | **Models** | Pick assistant, model and reasoning effort from the message box |
+| 🟢 | **Models** | Pick assistant, model and reasoning effort from the message box; the menu opens on the assistant in use, and the others unfold with a click or from the keyboard |
 | 🟤 | **Memory** | `/remember` a note, `/forget` one; click the paper chip above the message box to see, edit or reset what Zusia keeps |
 | 🟡 | **Printed pages** | Ask about "page 18" and the assistant reads the page printed 18, whatever its PDF number |
 | ⚫ | **Setup** | A visual wizard on first run, including the assistant's voice: a preset or your own system prompt |
@@ -95,7 +95,7 @@
 
 ## Install
 
-1. **Choose an assistant:** install and sign in to [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex](https://github.com/openai/codex) or Antigravity (`agy`).
+1. **Choose an assistant:** install and sign in to [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex](https://github.com/openai/codex), Antigravity (`agy`), or an [ACP agent](https://agentclientprotocol.com).
 2. **Download `zusia.xpi`** from the [latest release](https://github.com/firekern/zusia/releases/latest).
 3. **In Zotero:** Tools → Plugins → ⚙ → *Install Plugin From File…* → pick the `.xpi`. Restart if asked.
 4. **Open a paper.** Zusia appears in a panel on the right and starts the setup wizard. To have it on the left or in Zotero's item pane instead, choose **Settings → Zusia → Chat → *Where the chat is***.
@@ -108,22 +108,38 @@ CLI assistants remain the default and need no API key. Optionally, start Ollama 
 
 Provider profiles are inherited by default. Remote endpoints require HTTPS; custom endpoints require an explicit opt-in for extra background calls. See [API setup and provider settings](docs/api-backends.md) for authentication, profiles, capabilities and troubleshooting.
 
+### Add an ACP agent
+
+ACP agents live under **Settings → Zusia → Assistants → ACP agents**. Command Code is there from the start: install it, or remove its card. To add another agent:
+
+1. Install the agent.
+2. Enter its name and ACP command in the **Add an ACP agent** form. The command is a name on your PATH, a full path, or a path starting with `~`. Put each argument on its own line.
+3. Click **Add agent**.
+4. If the agent needs a sign-in, use **Sign in** on its card, or sign in with its own CLI.
+
+An agent installed through nvm, fnm or volta is not on the PATH Zotero sees, so add it by its full path, for example `~/.nvm/versions/node/<version>/bin/command-code` (for Command Code, remove its card and add it again). On macOS and Linux the folder of that command goes first on the agent's PATH, so the `node` beside it is found. On Windows Zusia runs no batch file, and an npm `.cmd` shim starts only when Zusia knows the program behind it, as for Command Code: `npx` and other npm agents cannot start there, and their card says *Cannot start*.
+
+Zusia starts an agent to list its models only when you add it or open its card or its section of the model menu, and gives it 30 s to answer. A list that failed is not asked for again until you click **Try again** or **Sign in** on the card; the card and the menu say why it failed.
+
+Choose the model and reasoning effort from the chat box. The models are the agent's own; the effort is passed on when the agent offers that level. An agent that supports images receives attached images with the question.
+
 ## What the assistant reads
 
 - 📄 **The paper's full text**, as Zotero extracts it from the PDF (split by page), EPUB or web snapshot. Answers cite pages as *(p. N)*.
 - 🎯 **Where you are.** The page on screen and the passage you selected come first, with the pages you have turned to so far. Antigravity, which cannot read files, gets the pages that fit, chosen around that page and the question, and can ask for a few more.
 - 🗺️ **A reading map**: the printed page labels, the outline with page ranges, and where each equation, figure and table is. A book is split into section files, whatever its length.
-- 🧠 **What it remembers about this paper**: what you understood, what is still unclear, how you like answers, your `/remember` notes and a running summary. Every few questions a short call brings it up to date (Claude Haiku, Antigravity, or the selected API model). Custom API endpoints require an explicit opt-in for these extra calls. Codex does not run background memory jobs.
+- 🧠 **What it remembers about this paper**: what you understood, what is still unclear, how you like answers, your `/remember` notes and a running summary. Every few questions a short call brings it up to date (Claude Haiku, Antigravity, an ACP agent with the model and effort you chose for it, or the selected API model). Custom API endpoints and ACP agents require an explicit opt-in for these extra calls. Codex does not run background memory jobs.
 - 🏷️ **Metadata and your annotations**: title, authors, abstract, highlights and comments.
 - 🚫 **No text, no guessing.** For a scanned PDF with no text layer, the assistant says it cannot read the paper instead of answering from the abstract.
 
 ## Privacy
 
-- 🖥️ CLI assistants run **on your computer** with your own login. Zusia has no relay server. API backends connect directly to the URL you configure, using its own authentication.
-- 📄 They get the paper's **full text, metadata and your annotations**, its reading map, your reading progress and its memory, plus any image you attach. The CLI sends them to its provider (Anthropic, OpenAI or Google), as it does with anything you type into it.
+- 🖥️ CLI assistants and ACP agents run **on your computer** with your own login. Zusia has no relay server. API backends connect directly to the URL you configure, using its own authentication.
+- 📄 They get the paper's **full text, metadata and your annotations**, its reading map, your reading progress and its memory, plus any image you attach. The CLI or agent sends them to the provider behind it, as it does with anything you type into it.
 - API backends send selected document excerpts, reading context, conversation and optional images to the configured endpoint. A local URL can still route to a cloud model if the server is configured that way. Zusia never silently falls back to another provider.
+- 🔒 Zusia answers an ACP agent's permission requests itself: a read or a search is allowed once, and only when every path it names is inside the paper's folder. Changes, commands, network calls, and reads elsewhere or naming no path are refused. This binds only an agent that asks: what an agent does with its own tools without asking follows its own settings.
 - 🔕 To send only the metadata, abstract and annotations, turn off **Settings → Zusia → Chat → *Send the paper's full text***. *Track reading progress* in the same card stops noting the pages you turn to.
-- 🧠 Keeping the memory takes extra calls to the same assistant or API, in the background. API memory uses the selected model and can consume its quota or keep a local GPU busy. Extra background calls to custom endpoints are off until you enable them in that endpoint's assistant card. Turn jobs off in the Memory sheet (click the paper chip). Antigravity stores each of its background calls in your `agy` conversation history.
+- 🧠 Keeping the memory takes extra calls to the same assistant or API, in the background. API memory uses the selected model and can consume its quota or keep a local GPU busy. Extra background calls to custom endpoints are off until you enable them in that endpoint's assistant card, and an ACP agent runs them only once you turn on **Background memory** on its card. Turn jobs off in the Memory sheet (click the paper chip). Antigravity stores each of its background calls in your `agy` conversation history. ACP agents may keep these calls in their own session history.
 - 📁 Chats, clarifications, images, the reading map, your reading progress and the memory stay in `zusia/` inside Zotero's data folder.
 
 <p align="center"><img src="docs/rule.svg" alt="" width="100%"></p>

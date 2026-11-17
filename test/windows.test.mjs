@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { loadPlugin } from "./load-plugin.mjs";
 import {
 	loadWindowsPlugin, mixedSeparators, windowsPathUtils,
-	HOME, TEMP, NPM, NODE_DIR, NODE_EXE, DATA_DIR, CLAUDE_NATIVE, CLAUDE_NPM_EXE, CODEX_JS, PATHEXT,
+	HOME, TEMP, NPM, NODE_DIR, NODE_EXE, DATA_DIR, CLAUDE_NATIVE, CLAUDE_NPM_EXE, CODEX_JS, COMMANDCODE_MJS, PATHEXT,
 } from "./windows-env.mjs";
 
 const PREFIX = "extensions.zusia.";
@@ -86,7 +86,7 @@ test("windows: a batch file set as the path is refused, also with the trailing d
 		["claude", "C:\\tools\\claude.bat."],
 		["codex", "C:\\tools\\codex.cmd "],
 	]) {
-		const { plugin } = loadWindowsPlugin({ prefs: { [PREFIX + backend + "Path"]: path } });
+		const { plugin } = loadWindowsPlugin({ executables: [path], prefs: { [PREFIX + backend + "Path"]: path } });
 		await assert.rejects(plugin.findBinary(backend), /will not run batch files.*cmd\.exe/s, path);
 	}
 });
@@ -102,6 +102,36 @@ test("windows: npm's codex.cmd runs as node.exe codex.js, with node.exe found on
 	assert.equal(valueAfter(run.args, "-C"), PAPER);
 	assert.equal(run.args[run.args.length - 1], "-", "the prompt comes on stdin");
 	assert.ok(run.closed);
+});
+
+test("windows: the shipped ACP agent's npm .cmd resolves to the .mjs it runs with node.exe", async () => {
+	const env = loadWindowsPlugin({ executables: [NPM + "\\command-code.cmd", COMMANDCODE_MJS, NODE_EXE], environment: upperPath() });
+	assert.equal(await env.plugin.findBinary("acp:commandcode"), COMMANDCODE_MJS);
+	await env.plugin.spawnAgent(COMMANDCODE_MJS, ["acp"], PAPER);
+	const [run] = env.spawns;
+	assert.equal(run.command, NODE_EXE);
+	assert.deepEqual(run.args, [COMMANDCODE_MJS, "acp"]);
+	assert.equal(run.environment.PATH, env.plugin.buildChildEnvironment().PATH, "node.exe is named, so the PATH is left as it is");
+});
+
+// The form slugs "Command Code" to command-code, not the shipped commandcode, so the
+// shim's target must follow the program and not the agent's id.
+test("windows: Command Code removed and added back, or added under another name, still resolves its npm .cmd", async () => {
+	const { plugin } = loadWindowsPlugin({ executables: [NPM + "\\command-code.cmd", COMMANDCODE_MJS, NODE_EXE], environment: upperPath() });
+	assert.ok(plugin.removeAcpAgent("acp:commandcode"));
+	const readded = plugin.addAcpAgent({ name: "Command Code", command: "command-code", args: "acp" });
+	const renamed = plugin.addAcpAgent({ name: "My coder", command: "command-code", args: "acp" });
+	assert.deepEqual([readded.key, renamed.key], ["acp:command-code", "acp:my-coder"]);
+	assert.equal(await plugin.findBinary(readded.key), COMMANDCODE_MJS);
+	assert.equal(await plugin.findBinary(renamed.key), COMMANDCODE_MJS);
+});
+
+test("windows: an npm .cmd unknown to Zusia is refused, whatever the agent is called", async () => {
+	const { plugin } = loadWindowsPlugin({ executables: [NPM + "\\gemini.cmd", NPM + "\\node_modules\\@google\\gemini-cli\\dist\\index.js"], environment: upperPath() });
+	const { key } = plugin.addAcpAgent({ name: "Gemini", command: "gemini", args: "--experimental-acp" });
+	const error = await plugin.findBinary(key).then(() => null, e => e);
+	assert.match(error.message, /will not run batch files.*\\npm\\gemini\.cmd.*Install or update Gemini so it provides a native program\./s);
+	assert.ok(error.message.endsWith(plugin.commandFixHint(key)), error.message);
 });
 
 // Windows names the variable "Path" (cmd's `set` shows Path=...), and
@@ -132,8 +162,86 @@ test("windows: a HOME that is not a Windows path does not hide claude.exe on PAT
 // PathUtils.parent refuses "C:/..." on Windows, which a person may well type, so the
 // setting is turned into a native path before anything reads it.
 test("windows: a path setting written with forward slashes still resolves npm's claude.cmd", async () => {
-	const { plugin } = loadWindowsPlugin({ executables: [CLAUDE_NPM_EXE], prefs: { [PREFIX + "claudePath"]: "C:/Users/u/AppData/Roaming/npm/claude.cmd" } });
+	const { plugin } = loadWindowsPlugin({ executables: [NPM + "\\claude.cmd", CLAUDE_NPM_EXE], prefs: { [PREFIX + "claudePath"]: "C:/Users/u/AppData/Roaming/npm/claude.cmd" } });
 	assert.equal(await plugin.findBinary("claude"), CLAUDE_NPM_EXE);
+});
+
+// Windows matches file names without case and drops their trailing dots and spaces, so
+// these name npm's claude.cmd as surely as the spelling in the shim table does.
+test("windows: a path setting to npm's shim finds its target in any case, and with a trailing dot", async () => {
+	for (const shim of [NPM + "\\Claude.CMD", NPM + "\\claude.cmd."]) {
+		const { plugin } = loadWindowsPlugin({ executables: [shim, CLAUDE_NPM_EXE], prefs: { [PREFIX + "claudePath"]: shim } });
+		assert.equal(await plugin.findBinary("claude"), CLAUDE_NPM_EXE, shim);
+	}
+});
+
+test("windows: a path setting is searched like a command: without an extension it finds the .exe, and a missing one is reported", async () => {
+	const { plugin } = loadWindowsPlugin({ executables: ["C:\\tools\\claude.exe"], prefs: { [PREFIX + "claudePath"]: "C:/tools/claude" } });
+	assert.equal(await plugin.findBinary("claude"), "C:\\tools\\claude.exe");
+	const missing = loadWindowsPlugin({ prefs: { [PREFIX + "codexPath"]: "C:\\tools\\codex.exe" } });
+	await assert.rejects(missing.plugin.findBinary("codex"), /Could not find the 'C:\\tools\\codex\.exe' command/);
+});
+
+// The command an ACP agent was added with, as the form stores it.
+const typedAgent = (command, executables, environment = upperPath()) => loadWindowsPlugin({ executables, environment,
+	prefs: { [PREFIX + "acpAgents"]: JSON.stringify([{ id: "agent", name: "Agent", command, args: ["acp"] }]) } }).plugin;
+
+test("windows: a typed command keeps the extension it was given", async () => {
+	assert.equal(await typedAgent("opencode.exe", [NPM + "\\opencode.exe"]).findBinary("acp:agent"), NPM + "\\opencode.exe");
+	assert.equal(await typedAgent("opencode", [NPM + "\\opencode.exe"]).findBinary("acp:agent"), NPM + "\\opencode.exe");
+});
+
+test("windows: a ~ command is under USERPROFILE, with backslashes only", async () => {
+	for (const command of ["~/bin/agent.exe", "~\\bin\\agent.exe", "~/bin/agent"]) {
+		const found = await typedAgent(command, [HOME + "\\bin\\agent.exe"]).findBinary("acp:agent");
+		assert.equal(found, HOME + "\\bin\\agent.exe", command);
+		assert.ok(!mixedSeparators(found), found);
+	}
+});
+
+// Only the last segment's dot is an extension: read anywhere in the path, the dot in
+// john.doe would pass ~/bin/agent off as having one, and its .exe would never be tried.
+test("windows: a ~ command without an extension gets its .exe under a profile folder with a dot in its name", async () => {
+	const home = "C:\\Users\\john.doe";
+	const found = await typedAgent("~/bin/agent", [home + "\\bin\\agent.exe"], { USERPROFILE: home, PATH: NODE_DIR, PATHEXT }).findBinary("acp:agent");
+	assert.equal(found, home + "\\bin\\agent.exe");
+});
+
+// Zotero started from Git Bash inherits its HOME. Glued to that, ~ gives a path no
+// Windows program can open, and the native installers' folders are dropped from PATH.
+test("windows: with Git Bash's HOME set, ~ and the extra folders are under USERPROFILE", async () => {
+	const gitBash = { USERPROFILE: HOME, HOME: "/c/Users/u", PATH: NODE_DIR, PATHEXT };
+	const plugin = typedAgent("~/bin/agent.exe", [HOME + "\\bin\\agent.exe"], gitBash);
+	assert.equal(await plugin.findBinary("acp:agent"), HOME + "\\bin\\agent.exe");
+	assert.equal(plugin.buildChildEnvironment().PATH.split(";")[0], HOME + "\\.local\\bin");
+});
+
+test("windows: a full path is used as given, on a drive with either slash or on a share", async () => {
+	assert.equal(await typedAgent("C:/Tools/agent.exe", ["C:\\Tools\\agent.exe"]).findBinary("acp:agent"), "C:\\Tools\\agent.exe");
+	assert.equal(await typedAgent("\\\\srv\\share\\agent.exe", ["\\\\srv\\share\\agent.exe"]).findBinary("acp:agent"), "\\\\srv\\share\\agent.exe");
+	await assert.rejects(typedAgent("C:\\Tools\\agent.cmd", ["C:\\Tools\\agent.cmd"]).findBinary("acp:agent"), /will not run batch files.*C:\\Tools\\agent\.cmd/s);
+});
+
+// `where gemini` lists npm's sh shim first, which CreateProcess cannot start.
+test("windows: a full path without an extension never runs npm's sh shim: it takes the .exe, else the .cmd beside it", async () => {
+	assert.equal(await typedAgent(NPM + "\\agent", [NPM + "\\agent", NPM + "\\agent.exe"]).findBinary("acp:agent"), NPM + "\\agent.exe");
+	await assert.rejects(typedAgent(NPM + "\\gemini", [NPM + "\\gemini", NPM + "\\gemini.cmd"]).findBinary("acp:agent"), /will not run batch files.*\\npm\\gemini\.cmd/s);
+});
+
+// The way out the batch-file refusal suggests for an npm agent: name what its .cmd runs.
+test("windows: a full path to an npm agent's .mjs resolves to itself and runs with node.exe", async () => {
+	const env = loadWindowsPlugin({ executables: [COMMANDCODE_MJS, NODE_EXE], environment: upperPath(),
+		prefs: { [PREFIX + "acpAgents"]: JSON.stringify([{ id: "agent", name: "Agent", command: COMMANDCODE_MJS, args: ["acp"] }]) } });
+	const found = await env.plugin.findBinary("acp:agent");
+	assert.equal(found, COMMANDCODE_MJS);
+	await env.plugin.spawnAgent(found, ["acp"], PAPER);
+	assert.equal(env.spawns[0].command, NODE_EXE);
+	assert.deepEqual(env.spawns[0].args, [COMMANDCODE_MJS, "acp"]);
+});
+
+test("windows: a command that is nowhere is reported with the name or path that was looked for", async () => {
+	await assert.rejects(typedAgent("opencode", []).findBinary("acp:agent"), /Could not find the 'opencode' command/);
+	await assert.rejects(typedAgent("~/bin/agent.exe", []).findBinary("acp:agent"), /Could not find the 'C:\\Users\\u\\bin\\agent\.exe' command/);
 });
 
 test("windows: a chat run spawns the exe with --setting-sources= as one argument and the prompt on stdin only", async () => {

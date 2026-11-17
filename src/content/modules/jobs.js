@@ -11,12 +11,16 @@ Object.assign(Zusia, {
 		return this.getPref("memory.gists") === true;
 	},
 
-	// The CLI that runs memory jobs: the assistant in use, when it can run with nothing to
-	// read. Codex cannot: its read-only sandbox still reads the whole home folder.
+	// The assistant that runs memory jobs: the one in use, when it can run with nothing to
+	// read. Named, never by default: Claude and Antigravity can (backgroundArgs), Codex
+	// cannot, as its read-only sandbox still reads the whole home folder. An ACP agent's own
+	// tools are out of Zusia's sight unless it asks, so its card has to allow it first.
 	jobBackend() {
 		let backend = this.getBackend();
-		if (backend === "openai" && !this.getAPIConfig(backend).background) return null;
-		return backend === "claude" || backend === "agy" || this.isAPIBackend(backend) ? backend : null;
+		let { kind } = this.BACKENDS[backend];
+		if (kind === "api") return backend === "openai" && !this.getAPIConfig(backend).background ? null : backend;
+		if (kind === "acp") return this.acpAgentConfig(backend)?.background ? backend : null;
+		return backend === "claude" || backend === "agy" ? backend : null;
 	},
 
 	memoryJobsAvailable() {
@@ -138,36 +142,35 @@ Object.assign(Zusia, {
 			{ role: "user", content: prompt }];
 	},
 
-	// One prompt on stdin, no session, in an empty folder. Resolves to {text, error,
-	// rateLimited}; `job`, when given, can stop the call. A CLI that cannot be found or
-	// started is an error like one that answered nothing, so the failure counts apply.
-	// API callers may supply a prompt factory receiving the prepared model config.
+	// Resolves to {text, error, rateLimited}; `job`, when given, can stop the call.
 	async runBackgroundCall(backend, prompt, job = null) {
-		if (this.isAPIBackend(backend)) {
-			try {
-				let config = this.getAPIConfig(backend);
-				if (backend === "openai" && !config.background) {
-					if (job) job.cancelled = true;
-					return { text: "", error: "Background calls are disabled for this endpoint.", cancelled: true, rateLimited: false };
-				}
-				let result = await this.runAPIBackend(backend, {
-					model: this.getModel(backend), apiConfig: config,
-					effort: this.getEffort(backend, { deferCapabilities: true }),
-					messages: prepared => this.backgroundAPIMessages(typeof prompt === "function" ? prompt(prepared) : prompt),
-					onSpawn: proc => { if (job) { job.proc = proc; if (job.cancelled) proc.kill(); } },
-				});
-				return { ...result, rateLimited: this.isRateLimited(result.error || "") };
-			}
-			finally { if (job) job.proc = null; }
-		}
-		let command;
+		let kind = this.BACKENDS[backend].kind;
+		return this[this.KINDS[kind].background](backend, prompt, job);
+	},
+
+	// API callers may supply a prompt factory receiving the prepared model config.
+	async runApiBackground(backend, prompt, job) {
 		try {
-			command = await this.findBinary(backend);
+			let config = this.getAPIConfig(backend);
+			if (backend === "openai" && !config.background) {
+				if (job) job.cancelled = true;
+				return { text: "", error: "Background calls are disabled for this endpoint.", cancelled: true, rateLimited: false };
+			}
+			let result = await this.runAPIBackend(backend, {
+				model: this.getModel(backend), apiConfig: config,
+				effort: this.getEffort(backend, { deferCapabilities: true }),
+				messages: prepared => this.backgroundAPIMessages(typeof prompt === "function" ? prompt(prepared) : prompt),
+				onSpawn: proc => { if (job) { job.proc = proc; if (job.cancelled) proc.kill(); } },
+			});
+			return { ...result, rateLimited: this.isRateLimited(result.error || "") };
 		}
-		catch (e) {
-			this.logError("starting a memory job", e);
-			return { text: "", error: e.message, rateLimited: false };
-		}
+		finally { if (job) job.proc = null; }
+	},
+
+	// A call that hangs is killed at JOB_TIMEOUT_MS so the queue moves on, and its folder is
+	// removed whatever happened. `run` gets the folder and a spawn hook, and returns {text,
+	// error, rateLimited}.
+	async runJob(job, run) {
 		let cwd = await this.makeJobDir();
 		let proc = null;
 		let finished = false;
@@ -178,18 +181,55 @@ Object.assign(Zusia, {
 				proc.kill();
 			}
 		});
+		let onSpawn = (p) => {
+			proc = p;
+			if (job) {
+				job.proc = p;
+				if (job.cancelled) {
+					p.kill();
+				}
+			}
+		};
 		try {
+			let result = await run({ cwd, onSpawn });
+			// A CLI that keeps retrying a rate limit is the usual one to hang, and what it wrote
+			// before the kill says so: the jobs then pause instead of failing the batch.
+			if (timedOut) {
+				return { text: "", error: "no answer within " + Math.round(this.JOB_TIMEOUT_MS / 60000) + " minutes", rateLimited: result.rateLimited };
+			}
+			return result;
+		}
+		finally {
+			finished = true;
+			if (job) {
+				job.proc = null;
+			}
+			// A just-stopped CLI can still hold the folder on Windows; the call's outcome
+			// (a rate limit above all) matters more than a leftover empty folder.
+			try {
+				await OS.File.removeDir(cwd);
+			}
+			catch (e) {
+				this.logError("removing a job folder", e);
+			}
+		}
+	},
+
+	// One prompt on stdin, no session, in an empty folder. A CLI that cannot be found or
+	// started is an error like one that answered nothing, so the failure counts apply.
+	async runCliBackground(backend, prompt, job) {
+		let command;
+		try {
+			command = await this.findBinary(backend);
+		}
+		catch (e) {
+			this.logError("starting a memory job", e);
+			return { text: "", error: e.message, rateLimited: false };
+		}
+		return this.runJob(job, async ({ cwd, onSpawn }) => {
 			let run;
 			try {
-				run = await this.runProcess(command, this.backgroundArgs(backend), cwd, null, (p) => {
-					proc = p;
-					if (job) {
-						job.proc = p;
-						if (job.cancelled) {
-							p.kill();
-						}
-					}
-				}, prompt);
+				run = await this.runProcess(command, this.backgroundArgs(backend), cwd, null, onSpawn, prompt);
 			}
 			catch (e) {
 				this.logError("running a memory job", e);
@@ -207,30 +247,25 @@ Object.assign(Zusia, {
 				text = final && final.status === "SUCCESS" ? (final.response || "").trim() : "";
 				error = (final && final.error) || "";
 			}
-			if (timedOut) {
-				error = "no answer within " + Math.round(this.JOB_TIMEOUT_MS / 60000) + " minutes";
-			}
-			else if (exitCode !== 0 || !text) {
+			if (exitCode !== 0 || !text) {
 				error = error || stderr.trim() || backend + " exited with code " + exitCode;
 			}
 			if (error) {
 				return { text: "", error, rateLimited: this.isRateLimited(stderr + "\n" + error) };
 			}
 			return { text, error: "", rateLimited: false };
-		}
-		finally {
-			finished = true;
-			if (job) {
-				job.proc = null;
-			}
-			// A just-stopped CLI can still hold the folder on Windows; the call's outcome
-			// (a rate limit above all) matters more than a leftover empty folder.
-			try {
-				await OS.File.removeDir(cwd);
-			}
-			catch (e) {
-				this.logError("removing a job folder", e);
-			}
-		}
+		});
+	},
+
+	// The prompt alone, in a new session in the empty folder: the permission rule then
+	// leaves the agent nothing to read.
+	async runAcpBackground(backend, prompt, job = null) {
+		return this.runJob(job, async ({ cwd, onSpawn }) => {
+			let { text, error } = await this.acpTurn(backend, {
+				cwd, onSpawn, prompt: () => prompt,
+				model: this.getModel(backend), effort: this.getEffort(backend),
+			});
+			return error ? { text: "", error, rateLimited: this.isRateLimited(error) } : { text, error: "", rateLimited: false };
+		});
 	},
 });

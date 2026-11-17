@@ -36,6 +36,23 @@ Object.assign(Zusia, {
 		return OS.Path.join(dir, "attachments", "image-" + Date.now() + "-" + this._attachmentSeq + "." + ext);
 	},
 
+	async imageBase64(path) {
+		let data = await OS.File.read(path);
+		if (data.length > 10 * 1024 * 1024) {
+			throw new Error("An image exceeds the 10 MB limit.");
+		}
+		let binary = "";
+		for (let i = 0; i < data.length; i += 8192) {
+			binary += String.fromCharCode(...data.subarray(i, i + 8192));
+		}
+		let ext = path.split(".").pop().toLowerCase();
+		let mimeType = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp", gif: "image/gif" }[ext];
+		if (!mimeType) {
+			throw new Error("Use PNG, JPEG, WebP or GIF images.");
+		}
+		return { data: Zotero.getMainWindow().btoa(binary), mimeType };
+	},
+
 	async stageFiles(view, files) {
 		let dir = view.ctx.dir;
 		await Zotero.File.createDirectoryIfMissingAsync(OS.Path.join(dir, "attachments"));
