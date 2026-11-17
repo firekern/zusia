@@ -191,18 +191,24 @@ Object.assign(Zusia, {
 			}
 			card.body.appendChild(details);
 
-			let refreshStatus = () => this.probeBinary(key).then(async (found) => {
-				details.dataset.found = String(!!found);
-				status.textContent = found || "Not found — install the " + backend.command + " CLI or set its path";
-				if (found && key === "agy") {
-					await this.loadLiveModels(key);
-					if (this._agyModelsError) {
-						details.dataset.found = "false";
-						status.textContent = "Signed-in check failed — open for details";
-						body.insertBefore(this.row(doc, "Sign-in", this.el(doc, "div", "zs-row-hint", this._agyModelsError), null, { stack: true }), body.firstChild);
+			let refreshStatus = () => {
+				let refused = {};
+				return this.probeBinary(key, refused).then(async (found) => {
+					details.dataset.found = String(!!found);
+					// An npm .cmd on Windows with no program beside it is installed, yet cannot start,
+					// for the reason the model menu gives too.
+					status.textContent = found || (refused[key] ? "Cannot start" : "Not found — install the " + backend.command + " CLI or set its path");
+					status.title = found || refused[key] || "";
+					if (found && key === "agy") {
+						await this.loadLiveModels(key);
+						if (this._agyModelsError) {
+							details.dataset.found = "false";
+							status.textContent = "Signed-in check failed — open for details";
+							body.insertBefore(this.row(doc, "Sign-in", this.el(doc, "div", "zs-row-hint", this._agyModelsError), null, { stack: true }), body.firstChild);
+						}
 					}
-				}
-			});
+				});
+			};
 			refreshStatus();
 		}
 

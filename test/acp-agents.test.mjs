@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { loadPlugin, openChat } from "./load-plugin.mjs";
-import { loadWindowsPlugin, NODE_DIR } from "./windows-env.mjs";
+import { loadWindowsPlugin, NODE_DIR, NPM } from "./windows-env.mjs";
 import { fakeAgent, flush } from "./acp-fake.mjs";
 
 const PREF = "extensions.zusia.acpAgents";
@@ -842,6 +842,37 @@ test("an agent found but refused says it cannot start, and why, apart from one t
 	toggle("Other").click();
 	assert.deepEqual([...root.querySelectorAll(".zs-menu-note")].map(note => note.textContent),
 		[status("acp:gemini").title, "Not installed. " + p.commandFixHint("acp:other")]);
+});
+
+test("a CLI found but refused says it cannot start on its card, for the reason the menu gives", async () => {
+	const { plugin: p, document, window } = loadWindowsPlugin({
+		// npm's shim alone, without the codex.js it launches.
+		executables: [NPM + "\\codex.cmd"],
+		prefs: { "extensions.zusia.onboarded": true, [PREF]: "[]" },
+	});
+	const container = document.body.appendChild(document.createElement("div"));
+	p.renderPrefsPane(document, container);
+	const card = key => container.querySelector('.zs-agent[data-backend="' + key + '"]');
+	const status = key => card(key).querySelector(".zs-agent-status");
+	await settle(() => status("codex").textContent !== "Checking…" && status("claude").textContent !== "Checking…");
+	assert.equal(status("codex").textContent, "Cannot start");
+	assert.match(status("codex").title, /^Zusia will not run batch files \(\.cmd\/\.bat\) such as C:\\Users\\u\\AppData\\Roaming\\npm\\codex\.cmd/);
+	assert.equal(status("claude").textContent, "Not found — install the claude CLI or set its path");
+	assert.equal(status("claude").title, "");
+
+	p.setPref("backend", "codex");
+	const { root } = openChat({ plugin: p, document });
+	await p.checkInstalledBackends(root);
+	p.openModelMenu(root, root.querySelector(".zs-model-btn"));
+	assert.deepEqual([...root.querySelectorAll(".zs-menu-note")].map(note => note.textContent), [status("codex").title]);
+
+	// A path to nothing makes it missing, and the old reason leaves the tooltip.
+	const path = card("codex").querySelector('input[placeholder^="Detect"]');
+	path.value = "C:\\Nowhere\\codex.exe";
+	path.dispatchEvent(new window.Event("change"));
+	await settle(() => status("codex").textContent !== "Cannot start");
+	assert.equal(status("codex").textContent, "Not found — install the codex CLI or set its path");
+	assert.equal(status("codex").title, "");
 });
 
 test("removing the agent in use from its card hands the chat back to Claude", () => {
