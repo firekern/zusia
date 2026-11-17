@@ -106,7 +106,7 @@ test("adding an agent registers its backend, writes the pref, sets the icon and 
 		label: "OpenCode",
 		fullName: "OpenCode",
 		command: "opencode",
-		acp: true,
+		kind: "acp",
 		acpArgs: ["acp"],
 		models: [{ id: "", label: "Default", desc: "The agent's default model" }],
 		efforts: ["", "low", "medium", "high", "max"],
@@ -311,7 +311,7 @@ test("removing an agent switches the backend only when it pointed at that agent"
 
 test("registering a stored agent replaces the backend of the same id", () => {
 	const p = fresh().plugin;
-	p.BACKENDS["acp:opencode"] = { label: "Existing", command: "existing", acp: true, acpArgs: ["acp"], models: [], efforts: [""] };
+	p.BACKENDS["acp:opencode"] = { label: "Existing", command: "existing", kind: "acp", acpArgs: ["acp"], models: [], efforts: [""] };
 	assert.equal(p.registerAcpAgent({ id: "opencode", name: "OpenCode", command: "opencode", args: ["acp"] }), "acp:opencode");
 	assert.equal(p.BACKENDS["acp:opencode"].label, "OpenCode");
 	assert.equal(p.BACKENDS["acp:opencode"].command, "opencode");

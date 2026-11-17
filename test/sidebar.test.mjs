@@ -44,7 +44,7 @@ test("model menu lists every assistant and switches backend and model together",
 	plugin._agyModels = [{ id: "gemini-3.1-pro-high", label: "Gemini 3.1 Pro (High)" }];
 	root.querySelector(".zs-model-btn").click();
 	assert.deepEqual([...root.querySelectorAll(".zs-menu-section")].map(n => n.textContent),
-		Object.values(plugin.BACKENDS).filter(b => b.transport !== "http").map(b => b.fullName));
+		Object.values(plugin.BACKENDS).filter(b => b.kind !== "api").map(b => b.fullName));
 	let section = label => [...root.querySelectorAll(".zs-menu-section")].find(n => n.textContent.includes(label));
 	section("OpenAI Codex").click();
 	assert.ok(root.querySelector(".zs-menu").textContent.includes("Not installed"), "missing CLI is explained");

@@ -150,7 +150,7 @@ Object.assign(Zusia, {
 			label: config.name,
 			fullName: config.name,
 			command: config.command,
-			acp: true,
+			kind: "acp",
 			acpArgs: Array.isArray(config.args) ? config.args.slice() : [],
 			models: [{ id: "", label: "Default", desc: "The agent's default model" }],
 			efforts: ["", "low", "medium", "high", "max"],

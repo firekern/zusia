@@ -182,7 +182,7 @@ Object.assign(Zusia, {
 				card.body.appendChild(this.buildAPIAssistant(doc, key));
 				continue;
 			}
-			if (backend.acp) {
+			if (backend.kind === "acp") {
 				continue;
 			}
 			let details = this.el(doc, "details", "zs-agent");
@@ -265,7 +265,7 @@ Object.assign(Zusia, {
 
 		let renderAgents = () => {
 			list.textContent = "";
-			let keys = Object.keys(this.BACKENDS).filter(key => this.BACKENDS[key].acp);
+			let keys = Object.keys(this.BACKENDS).filter(key => this.BACKENDS[key].kind === "acp");
 			for (let key of keys) {
 				list.appendChild(this.buildAcpAgentCard(doc, key, { renderAgents, fillBackends, syncBadges }));
 			}

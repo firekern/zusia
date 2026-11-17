@@ -50,33 +50,48 @@ Object.assign(Zusia, {
 		return this.BACKENDS[backend].efforts.includes(effort) ? effort : "";
 	},
 
-	// The models offered for a backend: fixed ones, the Codex models listed in
-	// Settings, and Antigravity's own catalogue once it has been fetched.
+	// The models offered for a backend: the fixed ones, then whatever its kind listed live.
 	getModels(backend) {
-		let models = this.BACKENDS[backend].models.slice();
-		if (this.isAPIBackend(backend)) {
-			let cache = this._apiModels?.[backend];
-			try {
-				if (cache?.baseURL === this.normalizeAPIURL(this.getAPIConfig(backend).baseURL)) models.push(...cache.models);
-			}
-			catch (e) {}
+		let info = this.BACKENDS[backend];
+		if (!info) {
+			return [];
 		}
-		if (backend === "codex") {
-			for (let id of (this.getPref("codex.models") || "").split(/[,\n]/).map(m => m.trim()).filter(Boolean)) {
-				models.push({ id, label: id, desc: "" });
-			}
-		}
-		if (backend === "agy" && Array.isArray(this._agyModels)) {
-			models.push(...this._agyModels);
-		}
-		if (this.BACKENDS[backend].acp && Array.isArray(this._acpModels[backend])) {
-			models.push(...this._acpModels[backend]);
+		let models = info.models.slice();
+		let live = this[this.KINDS[info.kind].models](backend);
+		if (Array.isArray(live)) {
+			models.push(...live);
 		}
 		let current = this.getModel(backend);
 		if (current && !models.some(m => m.id === current)) {
 			models.push({ id: current, label: current, desc: "" });
 		}
 		return models;
+	},
+
+	cliLiveModels(backend) {
+		if (backend === "agy") {
+			return this._agyModels;
+		}
+		if (backend === "codex") {
+			return (this.getPref("codex.models") || "").split(/[,\n]/)
+				.map(id => id.trim()).filter(Boolean)
+				.map(id => ({ id, label: id, desc: "" }));
+		}
+		return null;
+	},
+
+	acpLiveModels(backend) {
+		return this._acpModels[backend];
+	},
+
+	apiLiveModels(backend) {
+		let cache = this._apiModels?.[backend];
+		try {
+			return cache?.baseURL === this.normalizeAPIURL(this.getAPIConfig(backend).baseURL) ? cache.models : null;
+		}
+		catch (e) {
+			return null;
+		}
 	},
 
 	modelLabel(backend, id) {

@@ -13,9 +13,11 @@ Object.assign(Zusia, {
 
 	jobBackend() {
 		let backend = this.getBackend();
-		if (backend === "openai" && !this.getAPIConfig(backend).background) return null;
 		let info = this.BACKENDS[backend];
-		return backend === "claude" || backend === "agy" || (info && info.acp) || this.isAPIBackend(backend) ? backend : null;
+		if (!info) return null;
+		if (info.kind === "api") return backend === "openai" && !this.getAPIConfig(backend).background ? null : backend;
+		if (info.kind === "acp") return backend;
+		return backend === "codex" ? null : backend;
 	},
 
 	memoryJobsAvailable() {
@@ -138,30 +140,31 @@ Object.assign(Zusia, {
 	},
 
 	// One prompt on stdin, no session, in an empty folder. Resolves to {text, error,
-	// rateLimited}; `job`, when given, can stop the call. A CLI that cannot be found or
-	// started is an error like one that answered nothing, so the failure counts apply.
-	// API callers may supply a prompt factory receiving the prepared model config.
+	// rateLimited}; `job`, when given, can stop the call.
 	async runBackgroundCall(backend, prompt, job = null) {
-		if (this.isAPIBackend(backend)) {
-			try {
-				let config = this.getAPIConfig(backend);
-				if (backend === "openai" && !config.background) {
-					if (job) job.cancelled = true;
-					return { text: "", error: "Background calls are disabled for this endpoint.", cancelled: true, rateLimited: false };
-				}
-				let result = await this.runAPIBackend(backend, {
-					model: this.getModel(backend), apiConfig: config,
-					effort: this.getEffort(backend, { deferCapabilities: true }),
-					messages: prepared => this.backgroundAPIMessages(typeof prompt === "function" ? prompt(prepared) : prompt),
-					onSpawn: proc => { if (job) { job.proc = proc; if (job.cancelled) proc.kill(); } },
-				});
-				return { ...result, rateLimited: this.isRateLimited(result.error || "") };
+		let kind = this.BACKENDS[backend].kind;
+		return this[this.KINDS[kind].background](backend, prompt, job);
+	},
+
+	async runApiBackground(backend, prompt, job) {
+		try {
+			let config = this.getAPIConfig(backend);
+			if (backend === "openai" && !config.background) {
+				if (job) job.cancelled = true;
+				return { text: "", error: "Background calls are disabled for this endpoint.", cancelled: true, rateLimited: false };
 			}
-			finally { if (job) job.proc = null; }
+			let result = await this.runAPIBackend(backend, {
+				model: this.getModel(backend), apiConfig: config,
+				effort: this.getEffort(backend, { deferCapabilities: true }),
+				messages: prepared => this.backgroundAPIMessages(typeof prompt === "function" ? prompt(prepared) : prompt),
+				onSpawn: proc => { if (job) { job.proc = proc; if (job.cancelled) proc.kill(); } },
+			});
+			return { ...result, rateLimited: this.isRateLimited(result.error || "") };
 		}
-		if (this.BACKENDS[backend] && this.BACKENDS[backend].acp) {
-			return this.runAcpBackground(backend, prompt, job);
-		}
+		finally { if (job) job.proc = null; }
+	},
+
+	async runCliBackground(backend, prompt, job) {
 		let command;
 		try {
 			command = await this.findBinary(backend);

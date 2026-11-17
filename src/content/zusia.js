@@ -37,6 +37,7 @@ Zusia = {
 		claude: {
 			label: "Claude",
 			fullName: "Claude Code",
+			kind: "cli",
 			command: "claude",
 			pathPref: "claudePath",
 			models: [
@@ -52,6 +53,7 @@ Zusia = {
 		codex: {
 			label: "Codex",
 			fullName: "OpenAI Codex",
+			kind: "cli",
 			command: "codex",
 			pathPref: "codexPath",
 			models: [{ id: "", label: "Default", desc: "Your Codex default" }],
@@ -61,23 +63,24 @@ Zusia = {
 		agy: {
 			label: "Antigravity",
 			fullName: "Google Antigravity",
+			kind: "cli",
 			command: "agy",
 			pathPref: "agyPath",
 			models: [{ id: "", label: "Default", desc: "Your Antigravity default" }],
 			efforts: ["", "low", "medium", "high"],
 		},
 		ollama: {
-			label: "Ollama", fullName: "Ollama API", transport: "http", baseURL: "http://127.0.0.1:11434/v1",
+			label: "Ollama", fullName: "Ollama API", kind: "api", baseURL: "http://127.0.0.1:11434/v1",
 			models: [{ id: "", label: "Choose a model", desc: "Configure in Settings → Zusia → Assistants" }],
 			efforts: ["", "low", "medium", "high"], images: true,
 		},
 		unsloth: {
-			label: "Unsloth", fullName: "Unsloth API", transport: "http", baseURL: "http://127.0.0.1:8888/v1",
+			label: "Unsloth", fullName: "Unsloth API", kind: "api", baseURL: "http://127.0.0.1:8888/v1",
 			models: [{ id: "", label: "Choose a model", desc: "Configure in Settings → Zusia → Assistants" }],
 			efforts: ["", "low", "medium", "high"], images: true,
 		},
 		openai: {
-			label: "Custom API", fullName: "OpenAI-compatible API", transport: "http", baseURL: "https://api.openai.com/v1",
+			label: "Custom API", fullName: "OpenAI-compatible API", kind: "api", baseURL: "https://api.openai.com/v1",
 			models: [{ id: "", label: "Choose a model", desc: "Configure in Settings → Zusia → Assistants" }],
 			efforts: ["", "low", "medium", "high"], images: true,
 		},
@@ -261,6 +264,12 @@ Zusia = {
 	// inline budget, so it stays a fraction of the smallest one (12,000 on Windows).
 	CUSTOM_PROMPT_CHARS: 4000,
 	WIZARD_STEPS: ["welcome", "assistant", "look", "buddy", "answers", "voice", "done"],
+	// What each kind of assistant can do. A transport is a row here, not a branch at every call site.
+	KINDS: {
+		cli: { run: "runCliBackend", background: "runCliBackground", models: "cliLiveModels" },
+		acp: { run: "runAcp", background: "runAcpBackground", models: "acpLiveModels" },
+		api: { run: "runAPIBackend", background: "runApiBackground", models: "apiLiveModels" },
+	},
 	BACKEND_ICONS: { claude: "sparkle", codex: "terminal", agy: "rocket", ollama: "ollama", unsloth: "unsloth", openai: "ref" },
 	// Study buddies: original drawings shown in the empty chat, with a matching header icon.
 	MASCOTS: {

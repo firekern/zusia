@@ -109,7 +109,7 @@ Object.assign(Zusia, {
 			hero("sparkle", "Your AI");
 			let installed = root._installed || {};
 			let offered = Object.entries(this.BACKENDS).filter(([value]) =>
-				!this.BACKENDS[value].acp && (!this.isAPIBackend(value) || this.getModel(value)));
+				this.BACKENDS[value].kind !== "acp" && (!this.isAPIBackend(value) || this.getModel(value)));
 			let tiles = this.tiles(doc, offered.map(([value, b]) => ({ value, label: b.label, icon: this.BACKEND_ICONS[value] })),
 				this.getBackend(), (v) => {
 					this.setPref("backend", v);

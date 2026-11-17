@@ -110,8 +110,11 @@ Object.assign(Zusia, {
 	},
 
 	runBackend(backend, request) {
-		if (this.isAPIBackend(backend)) return this.runAPIBackend(backend, request);
-		if (this.BACKENDS[backend].acp) return this.runAcp(backend, request);
+		let kind = this.BACKENDS[backend].kind;
+		return this[this.KINDS[kind].run](backend, request);
+	},
+
+	runCliBackend(backend, request) {
 		switch (backend) {
 			case "codex":
 				return this.runCodex(request);
@@ -220,8 +223,7 @@ Object.assign(Zusia, {
 	},
 
 	acpArgs(backend) {
-		let args = this.BACKENDS[backend].acpArgs;
-		return Array.isArray(args) ? args.slice() : ["acp"];
+		return this.BACKENDS[backend].acpArgs.slice();
 	},
 
 	acpInitialize(connection) {

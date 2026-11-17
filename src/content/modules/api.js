@@ -15,7 +15,7 @@ Object.assign(Zusia, {
 	// Unsloth and compatible servers use OpenAI Chat Completions; Ollama has a
 	// native adapter. All network access stays in Zotero's privileged HTTP layer.
 	isAPIBackend(backend) {
-		return this.BACKENDS[backend]?.transport === "http";
+		return this.BACKENDS[backend]?.kind === "api";
 	},
 
 	normalizeAPIURL(value) {

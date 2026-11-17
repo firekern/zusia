@@ -294,7 +294,7 @@ Object.assign(Zusia, {
 				if (key === "agy" && this._agyModelsError) {
 					menu.appendChild(this.el(doc, "div", "zs-menu-note", "Sign-in not reachable from Zotero, so only the default model is listed. See Settings."));
 				}
-				if (backend.acp && !Array.isArray(this._acpModels[key])) {
+				if (backend.kind === "acp" && !Array.isArray(this._acpModels[key])) {
 					let error = (this._acpModelErrors || {})[key];
 					menu.appendChild(this.el(doc, "div", "zs-menu-note",
 						error ? "Models could not be loaded. " + error : "Loading models…"));
@@ -306,7 +306,7 @@ Object.assign(Zusia, {
 		}
 		if (menu) {
 			for (let key of Object.keys(this.BACKENDS)) {
-				if (this.BACKENDS[key].acp && !Array.isArray(this._acpModels[key])) {
+				if (this.BACKENDS[key].kind === "acp" && !Array.isArray(this._acpModels[key])) {
 					this.loadAcpModels(key).then(() => menu.isConnected && menu.refresh()).catch(() => {});
 				}
 			}
