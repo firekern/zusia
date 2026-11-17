@@ -75,6 +75,22 @@ test("model menu starts with only the current provider expanded", () => {
 	assert.ok(![...root.querySelectorAll(".zs-menu-item")].some(i => i.textContent.includes("Gemini")), "its models are hidden again");
 });
 
+test("the model menu asks only an open section for its models, whatever the kind", async () => {
+	const { root, plugin } = sidebar({ [PREFIX + "ollama.model"]: "qwen3:4b" });
+	const asked = [];
+	plugin.loadAgyModels = async () => { asked.push("agy"); return []; };
+	plugin.loadAPIModels = async (backend) => { asked.push(backend); return []; };
+	root.querySelector(".zs-model-btn").click();
+	await new Promise(resolve => setTimeout(resolve, 0));
+	assert.deepEqual(asked, [], "folded, Antigravity starts no process and Ollama fetches no list");
+	const section = label => [...root.querySelectorAll(".zs-menu-section")].find(n => n.textContent.includes(label));
+	section("Google Antigravity").click();
+	section("Ollama API").click();
+	assert.deepEqual(asked, ["agy", "ollama"], "each is asked once its section opens");
+	section("Google Antigravity").click();
+	assert.deepEqual(asked, ["agy", "ollama"], "folding asks nothing");
+});
+
 test("effort menu offers the levels the current backend supports", () => {
 	const { root, prefs } = sidebar({ [PREFIX + "backend"]: "agy" });
 	root.querySelector(".zs-effort-btn").click();

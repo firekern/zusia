@@ -237,26 +237,16 @@ Object.assign(Zusia, {
 		}
 	},
 
-	// loadLiveModels refreshes every chat's controls, and with them this menu.
-	loadModelsForSection(key) {
-		if (this.BACKENDS[key].kind !== "acp" || this.acpModelEntry(key).models) {
-			return;
-		}
-		this.loadLiveModels(key);
-	},
-
 	openModelMenu(root, anchor) {
 		let doc = root.ownerDocument;
 		let expanded = new Set([this.getBackend()]);
+		// An API assistant is optional: it is listed once it is set up in Settings,
+		// where a CLI that is missing is named so that it can be installed.
+		let listed = key => !this.isAPIBackend(key) || this.getModel(key);
 		let menu = this.openMenu(root, anchor, (menu) => {
 			let current = this.getBackend();
-			for (let [key, backend] of Object.entries(this.BACKENDS)) {
+			for (let [key, backend] of Object.entries(this.BACKENDS).filter(([key]) => listed(key))) {
 				let installed = root._installed ? root._installed[key] : undefined;
-				// An API assistant is optional: it is listed once it is set up in Settings,
-				// where a CLI that is missing is named so that it can be installed.
-				if (this.isAPIBackend(key) && !this.getModel(key)) {
-					continue;
-				}
 				let open = expanded.has(key);
 				this.menuSection(doc, menu, backend.fullName, {
 					collapsible: true,
@@ -267,7 +257,7 @@ Object.assign(Zusia, {
 						}
 						else {
 							expanded.add(key);
-							this.loadModelsForSection(key);
+							this.loadLiveModels(key);
 						}
 						menu.refresh();
 					},
@@ -310,16 +300,12 @@ Object.assign(Zusia, {
 				}
 			}
 		});
-		if (menu && !Array.isArray(this._agyModels)) {
-			this.loadAgyModels().then(() => menu.isConnected && menu.refresh());
-		}
+		// Only an open section lists models, so only its assistant is asked, whatever its kind:
+		// a folded one starts no agent and fetches no list. Each listing ends by refreshing every
+		// chat's controls, and this menu with them.
 		if (menu) {
-			// Only an open section lists models, so only the agents in one are asked.
-			for (let key of expanded) {
-				this.loadModelsForSection(key);
-			}
-			for (let key of Object.keys(this.BACKENDS).filter(key => this.isAPIBackend(key) && this.getModel(key))) {
-				this.loadAPIModels(key).then(() => menu.isConnected && menu.refresh()).catch(() => {});
+			for (let key of [...expanded].filter(listed)) {
+				this.loadLiveModels(key);
 			}
 		}
 	},

@@ -159,7 +159,7 @@ Object.assign(Zusia, {
 				value => this.setPref(key + ".model", value));
 			body.appendChild(this.row(doc, "Model", modelSelect));
 			if (key === "agy") {
-				this.loadAgyModels().then(() => modelSelect.refill(this.getModels(key).map(m => [m.id, m.label]), this.getModel(key)));
+				this.loadLiveModels(key).then(() => modelSelect.refill(this.getModels(key).map(m => [m.id, m.label]), this.getModel(key)));
 			}
 			body.appendChild(this.effortRow(doc, key));
 			if (key === "codex") {
@@ -195,7 +195,7 @@ Object.assign(Zusia, {
 				details.dataset.found = String(!!found);
 				status.textContent = found || "Not found — install the " + backend.command + " CLI or set its path";
 				if (found && key === "agy") {
-					await this.loadAgyModels();
+					await this.loadLiveModels(key);
 					if (this._agyModelsError) {
 						details.dataset.found = "false";
 						status.textContent = "Signed-in check failed — open for details";
