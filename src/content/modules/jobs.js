@@ -142,13 +142,13 @@ Object.assign(Zusia, {
 			{ role: "user", content: prompt }];
 	},
 
-	// One prompt on stdin, no session, in an empty folder. Resolves to {text, error,
-	// rateLimited}; `job`, when given, can stop the call.
+	// Resolves to {text, error, rateLimited}; `job`, when given, can stop the call.
 	async runBackgroundCall(backend, prompt, job = null) {
 		let kind = this.BACKENDS[backend].kind;
 		return this[this.KINDS[kind].background](backend, prompt, job);
 	},
 
+	// API callers may supply a prompt factory receiving the prepared model config.
 	async runApiBackground(backend, prompt, job) {
 		try {
 			let config = this.getAPIConfig(backend);
@@ -167,8 +167,9 @@ Object.assign(Zusia, {
 		finally { if (job) job.proc = null; }
 	},
 
-	// One empty folder per call, a timeout that kills the process, and the folder removed after.
-	// `run` gets the folder and a spawn hook, and returns {text, error, rateLimited}.
+	// A call that hangs is killed at JOB_TIMEOUT_MS so the queue moves on, and its folder is
+	// removed whatever happened. `run` gets the folder and a spawn hook, and returns {text,
+	// error, rateLimited}.
 	async runJob(job, run) {
 		let cwd = await this.makeJobDir();
 		let proc = null;
@@ -214,6 +215,8 @@ Object.assign(Zusia, {
 		}
 	},
 
+	// One prompt on stdin, no session, in an empty folder. A CLI that cannot be found or
+	// started is an error like one that answered nothing, so the failure counts apply.
 	async runCliBackground(backend, prompt, job) {
 		let command;
 		try {
@@ -254,6 +257,8 @@ Object.assign(Zusia, {
 		});
 	},
 
+	// The prompt alone, in a new session in the empty folder: the permission rule then
+	// leaves the agent nothing to read.
 	async runAcpBackground(backend, prompt, job = null) {
 		return this.runJob(job, async ({ cwd, onSpawn }) => {
 			let { text, error } = await this.acpTurn(backend, {
