@@ -56,6 +56,7 @@ export function loadPlugin({ prefs = {}, files = new Map() } = {}) {
 			registerObserver: () => "observer",
 			unregisterObserver() {},
 		},
+		HTTP: { request: async () => { throw new Error("no HTTP in tests"); } },
 		Utilities: { Internal: { copyTextToClipboard() {} } },
 		File: {
 			putContentsAsync: async (p, data) => { files.set(p, data); },
