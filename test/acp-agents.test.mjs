@@ -610,12 +610,20 @@ test("an agent removed while it lists its models leaves no list behind", async (
 	const env = fresh();
 	const p = env.plugin;
 	const { key } = p.addAcpAgent(agent());
+	const recordLoads = p.loadAcpModels;
 	p.loadAcpModels = env.loadAcpModels;
-	listingAgent(p, MODEL);
-	const loading = p.loadAcpModels(key);
-	p.removeAcpAgent(key);
-	await loading;
+	p.getDataDir = () => "/d";
+	p.findBinary = async () => "/opt/opencode";
+	// Removed from Settings while the agent opens the session that carries its list.
+	p.spawnAgent = async () => fakeAgent({ on: { "session/new": (m, a) => {
+		p.removeAcpAgent(key);
+		a.reply(m, { sessionId: "s", configOptions: MODEL });
+	} } }).proc;
+	await p.loadAcpModels(key);
 	assert.equal(p._acpModels[key], undefined);
+	assert.ok(!p._logLines.some(line => line.includes("Could not list")), "the listing itself went through");
+	// The harness's recorder again, so adding the agent back starts no listing.
+	p.loadAcpModels = recordLoads;
 	const again = p.addAcpAgent(agent());
 	assert.equal(again.key, key, "the same id comes back");
 	assert.equal(p.acpModelEntry(key).models, null, "and starts with no list");
