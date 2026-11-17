@@ -162,6 +162,10 @@ Zusia = {
 	JOB_TIMEOUT_MS: 300000,
 	JOB_BACKOFF_MS: 900000,
 	JOB_BACKOFF_MAX_MS: 7200000,
+	// An agent that waits for input it will never get (a CLI started without its ACP
+	// argument, say) would keep "Loading…" up for good; past this its model list is given
+	// up, so the card offers Try again. A sign-in has no deadline: a browser login takes time.
+	ACP_MODELS_TIMEOUT_MS: 30000,
 	// Stored with each session next to a hash of the system prompt it started with. The hash
 	// catches edits to the prompt itself; raise this when what a session stores changes.
 	PROMPT_VERSION: 4,

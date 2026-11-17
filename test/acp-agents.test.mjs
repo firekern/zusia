@@ -562,6 +562,60 @@ test("a failed model list is kept until the card asks again", async () => {
 	assert.equal(p.acpModelEntry(key).error, "");
 });
 
+test("an agent that never lists its models is stopped after 30 s, and the card can try again", async () => {
+	const env = fresh();
+	const p = env.plugin;
+	const { key } = p.addAcpAgent(agent());
+	p.loadAcpModels = env.loadAcpModels;
+	let expire;
+	const deadlines = [];
+	env.window.Zotero.Promise.delay = (ms) => {
+		deadlines.push(ms);
+		return new Promise(resolve => { expire = resolve; });
+	};
+	// A CLI started without its ACP argument: it reads stdin, never answers and never exits.
+	const silent = fakeAgent();
+	silent.proc.stdin.write = async () => {};
+	silent.proc.stdin.close = async () => {};
+	const started = listingAgent(p, MODEL);
+	p.spawnAgent = async () => (++started.count === 1 ? silent.proc : fakeAgent({ configOptions: MODEL }).proc);
+	const loading = p.loadAcpModels(key);
+	await flush();
+	assert.deepEqual(deadlines, [30000]);
+	expire();
+	assert.deepEqual(plain(await loading), []);
+	assert.equal(silent.proc.killed, true, "the agent's process is stopped");
+	assert.equal(p.acpModelEntry(key).error, "OpenCode did not answer within 30 s.");
+	assert.equal(p.acpModelEntry(key).promise, null, "nothing stays pinned, so Try again starts afresh");
+	assert.deepEqual(plain(await p.loadAcpModels(key, { retry: true })).map(m => m.id), ["fast"]);
+	assert.equal(started.count, 2);
+});
+
+test("a sign-in runs without a deadline, and an answer before the deadline stands", async () => {
+	const env = fresh();
+	const p = env.plugin;
+	const { key } = p.addAcpAgent(agent());
+	p.loadAcpModels = env.loadAcpModels;
+	const deadlines = [];
+	let expire;
+	env.window.Zotero.Promise.delay = (ms) => {
+		deadlines.push(ms);
+		return new Promise(resolve => { expire = resolve; });
+	};
+	const fake = fakeAgent({ auth: [{ id: "oauth", name: "Google" }] });
+	p.getDataDir = () => "/d";
+	p.findBinary = async () => "/opt/opencode";
+	p.spawnAgent = async () => fake.proc;
+	assert.equal((await p.acpAuthenticate(key)).error, undefined);
+	assert.deepEqual(deadlines, [], "a sign-in may wait on a browser");
+
+	listingAgent(p, MODEL);
+	assert.deepEqual(plain(await p.loadAcpModels(key)).map(m => m.id), ["fast"]);
+	expire();
+	await flush();
+	assert.equal(p.acpModelEntry(key).error, "", "a deadline after the answer changes nothing");
+});
+
 test("an agent removed while it lists its models leaves no list behind", async () => {
 	const env = fresh();
 	const p = env.plugin;

@@ -136,9 +136,11 @@ Object.assign(Zusia, {
 
 	// Each exchange starts the agent afresh and closes it whatever happens, so no agent
 	// outlives the question, the sign-in or the model list that needed it.
-	async withAcpConnection(backend, cwd, { onSpawn, onNotification, onRequest }, exchange) {
+	async withAcpConnection(backend, cwd, { onSpawn, onNotification, onRequest, timeoutMs = 0 }, exchange) {
 		let label = this.BACKENDS[backend].label;
 		let connection = null;
+		let done = false;
+		let timedOut = false;
 		try {
 			let command = await this.findBinary(backend);
 			let proc = await this.spawnAgent(command, this.acpArgs(backend), cwd);
@@ -146,10 +148,26 @@ Object.assign(Zusia, {
 				onSpawn(proc);
 			}
 			connection = this.createAcpConnection(proc, { label, onNotification, onRequest });
+			if (timeoutMs) {
+				// Closing kills the agent and rejects what it still owes, which ends the exchange.
+				Zotero.Promise.delay(timeoutMs).then(() => {
+					if (!done) {
+						timedOut = true;
+						connection.close();
+					}
+				});
+			}
 			let hello = await this.acpInitialize(connection);
 			return await exchange(connection, hello);
 		}
+		catch (e) {
+			if (timedOut) {
+				throw new Error(label + " did not answer within " + Math.round(timeoutMs / 1000) + " s.", { cause: e });
+			}
+			throw e;
+		}
 		finally {
+			done = true;
 			if (connection) {
 				await connection.close();
 			}
@@ -177,7 +195,7 @@ Object.assign(Zusia, {
 		entry.error = "";
 		entry.promise = (async () => {
 			try {
-				let opened = await this.withAcpConnection(backend, this.getDataDir(), {}, connection =>
+				let opened = await this.withAcpConnection(backend, this.getDataDir(), { timeoutMs: this.ACP_MODELS_TIMEOUT_MS }, connection =>
 					connection.request("session/new", { cwd: this.getDataDir(), mcpServers: [] }));
 				this.rememberAcpConfig(backend, opened.configOptions);
 				// Listed, even when the agent offers no choice of model.
