@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { loadPlugin, openChat } from "./load-plugin.mjs";
 
 const PREFIX = "extensions.zusia.";
@@ -106,6 +107,19 @@ test("an open section carries one note: the program is missing, or why its list 
 	assert.deepEqual([...root.querySelectorAll(".zs-menu-note")].map(n => n.title), [...root.querySelectorAll(".zs-menu-note")].map(n => n.textContent),
 		"a note cut at three lines keeps all of it as its tooltip");
 	assert.match(plugin.commandFixHint("codex"), /full path as Command path/);
+});
+
+// The visual harness (test/harness.html) fakes findBinary, and a stub off its contract
+// shows a menu no reader sees.
+test("the visual harness's missing Codex reads as not installed, as a real missing one does", async () => {
+	const stub = readFileSync(new URL("harness.html", import.meta.url), "utf8").match(/^\tCS\.findBinary = .*$/m);
+	assert.ok(stub, "test/harness.html no longer stubs CS.findBinary on one line");
+	const { root, plugin } = sidebar({ [PREFIX + "backend"]: "codex" });
+	new Function("CS", stub[0])(plugin);
+	await plugin.checkInstalledBackends(root);
+	root.querySelector(".zs-model-btn").click();
+	assert.deepEqual([...root.querySelectorAll(".zs-menu-note")].map(n => n.textContent),
+		["Not installed. " + plugin.commandFixHint("codex")]);
 });
 
 test("effort menu offers the levels the current backend supports", () => {
