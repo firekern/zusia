@@ -149,10 +149,11 @@ async function testStubAcpAgent(win, CS) {
 	check("ACP stub: its Background memory switch lets it run the memory jobs, and takes that back",
 		allowed === key && CS.jobBackend() === null, { on: allowed, off: CS.jobBackend() });
 	card.querySelector(".zs-acp-remove").click();
+	// Only the stub's own entry: under ACP=1 the shipped agents stay configured.
 	check("ACP stub: Remove takes away the agent, its backend, its model list and its card, and puts Claude back in use",
-		!CS.BACKENDS[key] && CS.acpAgents().length === 0 && !(key in CS._acpModels) && CS.getBackend() === "claude" &&
-			!prefs.querySelector('.zs-acp-list .zs-agent[data-backend="' + key + '"]'),
-		{ agents: CS.acpAgents().map(a => a.name), backend: CS.getBackend(), listed: Object.keys(CS._acpModels) });
+		!CS.BACKENDS[key] && !CS.acpAgents().some(a => CS.acpAgentKey(a.id) === key) && !(key in CS._acpModels) &&
+			CS.getBackend() === "claude" && !prefs.querySelector('.zs-acp-list .zs-agent[data-backend="' + key + '"]'),
+		{ agents: CS.acpAgents().map(a => a.id), backend: CS.getBackend(), listed: Object.keys(CS._acpModels) });
 	prefsWin.close();
 
 	root.querySelector(".zs-model-btn").click();
