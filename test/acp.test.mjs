@@ -782,6 +782,29 @@ test("acp: an agent that dies mid-answer is reported with its exit code and the 
 	});
 });
 
+test("acp: an agent not signed in gets the sign-in help wherever it says so, even once removed meanwhile", async () => {
+	const help = "Command Code is not signed in. Sign in with its own CLI in a terminal, then ask again.";
+	for (const [where, capabilities, session, refuse] of [
+		["session/load", { loadSession: true }, { id: "s-old" }, (m, agent) => agent.fail(m, -32000, "not signed in")],
+		["session/new", {}, null, (m, agent) => agent.fail(m, -32000, "Authentication required")],
+		["session/prompt", {}, null, (m, agent) => {
+			agent.stderr("Error: Not authenticated\n");
+			agent.exit(1);
+		}],
+	]) {
+		const env = loadPlugin();
+		// Removed from Settings while it answered: the help must not look the agent up again.
+		const fake = fakeAgent({ capabilities, on: { [where]: (m, agent) => {
+			env.plugin.removeAcpAgent(KEY);
+			refuse(m, agent);
+		} } });
+		const { p } = withAgent(fake, env);
+		assert.deepEqual(plain(await p.runAcp(KEY, { ...question, session })), { text: "", error: help },
+			where + ": the help, and no failed resume to retry");
+		assert.equal(p.BACKENDS[KEY], undefined, where);
+	}
+});
+
 test("acp: Stop kills the agent mid-answer and keeps what it had written", async () => {
 	let started;
 	const writing = new Promise(resolve => { started = resolve; });
