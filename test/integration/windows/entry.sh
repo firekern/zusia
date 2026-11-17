@@ -19,7 +19,7 @@ user_pref("extensions.zotero.dataDir", "$(js "$base/data")");
 user_pref("extensions.zusia-tester.outDir", "$(js /out)");
 user_pref("extensions.zusia-tester.repo", "$(js /repo)");
 user_pref("extensions.zusia-tester.live", false);
-// As in ../run.sh: no ACP agent is configured, so none is started.
+// As in ../run.sh: no real agent is configured, and the tester skips its stub without node.
 user_pref("extensions.zusia.acpAgents", "[]");
 user_pref("ui.systemUsesDarkTheme", 0);
 // Wine under x86 emulation has no GPU and cannot run Gecko's sandboxed content

@@ -36,7 +36,7 @@ user_pref("extensions.zusia-tester.acp", $([ "${ACP:-0}" = 1 ] && echo true || e
 user_pref("ui.systemUsesDarkTheme", $([ "${DARK:-0}" = 1 ] && echo 1 || echo 0));
 PREFS
 # Settings lists an agent's models by starting it, and the shipped Command Code would
-# then run under your login. Without ACP=1 no agent is configured.
+# then run under your login. Without ACP=1 no agent is configured; the tester adds a stub.
 [ "${ACP:-0}" = 1 ] || echo 'user_pref("extensions.zusia.acpAgents", "[]");' >> "$base/profile/user.js"
 
 # KEYRING=1 lets this test instance (only) reach the Secret Service keyring,
@@ -74,11 +74,17 @@ fi
 node -e '
 const r = require(process.argv[1]);
 let failed = 0;
+let skipped = 0;
 for (const c of r.checks) {
+	if (c.skipped) {
+		console.log("  – " + c.name + "  (skipped: " + c.skipped + ")");
+		skipped++;
+		continue;
+	}
 	console.log((c.ok ? "  ✔ " : "  ✖ ") + c.name + (c.ok || c.detail === null ? "" : "  → " + JSON.stringify(c.detail)));
 	failed += !c.ok;
 }
 for (const e of r.errors) { console.log("  ERROR " + e); failed++; }
-console.log(failed ? failed + " failed" : "all " + r.checks.length + " checks passed");
+console.log(failed ? failed + " failed" : "all " + (r.checks.length - skipped) + " checks passed" + (skipped ? ", " + skipped + " skipped" : ""));
 process.exit(failed ? 1 : 0);
 ' "$out/results.json"
