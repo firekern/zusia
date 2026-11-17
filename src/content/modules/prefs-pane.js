@@ -323,6 +323,8 @@ Object.assign(Zusia, {
 			value => this.setPref(key + ".model", value));
 		body.appendChild(this.row(doc, "Model", model));
 		let hint = this.el(doc, "div", "zs-row-hint");
+		hint.setAttribute("role", "status");
+		hint.setAttribute("aria-live", "polite");
 		let reason = this.el(doc, "span", "zs-acp-model-error");
 		let again = this.el(doc, "button", "zs-button zs-acp-retry", "Try again");
 		again.type = "button";

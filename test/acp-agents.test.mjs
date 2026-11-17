@@ -730,6 +730,7 @@ test("a card whose agent could not list its models says why, and Try again lists
 	};
 	const { card, model } = agentCard(env, key);
 	const hint = card.querySelector(".zs-agent-body > .zs-row-hint");
+	assert.equal(hint.getAttribute("role"), "status", "a screen reader hears how the listing went");
 	await flush();
 	assert.equal(started, 0, "a card that is only built starts nothing");
 	await expand(card);
