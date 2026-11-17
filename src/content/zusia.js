@@ -10,7 +10,7 @@ Zusia = {
 		"settings", "window", "dom", "sidebar", "attachments", "chat", "history", "reader",
 		"theorems", "clarifications", "memory-sheet", "wizard", "search", "ask", "prefs-pane",
 		"notes", "markdown", "drawings", "math", "context", "reading", "progress", "memory",
-		"jobs", "consolidation", "binaries", "prompts", "acp", "backends", "api", "api-connections", "api-state", "api-diagnostics", "api-budget", "api-ui", "api-profiles", "api-ollama", "api-prefs", "dock", "layouts",
+		"jobs", "consolidation", "binaries", "prompts", "acp", "acp-agents", "backends", "api", "api-connections", "api-state", "api-diagnostics", "api-budget", "api-ui", "api-profiles", "api-ollama", "api-prefs", "dock", "layouts",
 	],
 	// The stylesheets in src/content/styles, in cascade order: a later file overrides an earlier one.
 	STYLES: [
@@ -389,6 +389,7 @@ Zusia = {
 	paneID: null,
 	prefsPaneID: null,
 	_prefObservers: [],
+	_backendPrefObservers: new Map(),
 	_katex: undefined,
 	_agyModels: null,
 	_acpModels: {},
@@ -465,6 +466,7 @@ Zusia = {
 		this.stylesheetURLs = this.STYLES.map(name => rootURI + "content/styles/" + name + ".css" + stamp);
 		this.initialized = true;
 		this.log("init() version " + version + " with rootURI=" + rootURI);
+		this.loadAcpAgents();
 	},
 
 	// Logs go to Zotero's debug output and to zusia/debug.log in the

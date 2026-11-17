@@ -40,7 +40,14 @@ export function loadPlugin({ prefs = {}, files = new Map() } = {}) {
 	window.Zotero = {
 		debug() {},
 		Promise: { delay: () => new Promise(() => {}) },
-		Prefs: { get: key => prefs[key], set: (key, value) => { prefs[key] = value; } },
+		Prefs: {
+			get: key => prefs[key],
+			set: (key, value) => { prefs[key] = value; },
+			clear: (key) => { delete prefs[key]; },
+			registerObserver: () => "observer",
+			unregisterObserver() {},
+		},
+		HTTP: { request: async () => { throw new Error("no HTTP in tests"); } },
 		Utilities: { Internal: { copyTextToClipboard() {} } },
 		File: {
 			putContentsAsync: async (p, data) => { files.set(p, data); },

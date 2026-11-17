@@ -456,19 +456,42 @@ Object.assign(Zusia, {
 		return (this.getPref("explainPrompt") || "").trim() || this.DEFAULT_EXPLAIN_PROMPT;
 	},
 
+	watchBackendPrefs(backend) {
+		this._backendPrefObservers = this._backendPrefObservers || new Map();
+		if (this._backendPrefObservers.has(backend)) {
+			return;
+		}
+		let ids = [];
+		for (let name of [backend + ".model", backend + ".effort", backend + ".api"]) {
+			ids.push(Zotero.Prefs.registerObserver(this.PREF_PREFIX + name, () => this.refreshAllSidebars(), true));
+		}
+		this._backendPrefObservers.set(backend, ids);
+		this._prefObservers.push(...ids);
+	},
+
+	unwatchBackendPrefs(backend) {
+		this._backendPrefObservers = this._backendPrefObservers || new Map();
+		let ids = this._backendPrefObservers.get(backend) || [];
+		for (let id of ids) {
+			Zotero.Prefs.unregisterObserver(id);
+		}
+		this._backendPrefObservers.delete(backend);
+		this._prefObservers = this._prefObservers.filter(id => !ids.includes(id));
+	},
+
 	// Settings changed in the Settings window update every open sidebar at once.
 	watchPrefs() {
 		let names = ["appearance", "prompts", "backend", "codex.models", "modeButtons", "language", "behaviour", "onboarded"];
 		for (let id of Object.keys(this.MODES)) {
 			names.push("mode." + id);
 		}
-		for (let backend of Object.keys(this.BACKENDS)) {
-			names.push(backend + ".model", backend + ".effort", backend + ".api");
-		}
 		for (let name of names) {
 			this._prefObservers.push(
 				Zotero.Prefs.registerObserver(this.PREF_PREFIX + name, () => this.refreshAllSidebars(), true)
 			);
+		}
+		for (let backend of Object.keys(this.BACKENDS)) {
+			this.watchBackendPrefs(backend);
 		}
 	},
 
@@ -477,6 +500,7 @@ Object.assign(Zusia, {
 			Zotero.Prefs.unregisterObserver(id);
 		}
 		this._prefObservers = [];
+		this._backendPrefObservers = new Map();
 	},
 
 	refreshAllSidebars() {

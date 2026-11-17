@@ -7,6 +7,7 @@ Object.assign(Zusia, {
 
 	renderPrefsPane(doc, container) {
 		container.textContent = "";
+		this.loadAcpAgents();
 		let prefs = this.el(doc, "div", "zs-prefs");
 		this.applyAppearance(prefs);
 		prefs.append(
@@ -138,23 +139,50 @@ Object.assign(Zusia, {
 
 	buildAssistantsCard(doc) {
 		let card = this.card(doc, "Assistants",
-			"Command-line agents that answer in the sidebar. Each one uses your own subscription login, so no API key is needed. Model and effort can also be changed from the chat box. A local model or another API can be connected below.");
+			"Command-line agents that answer in the sidebar. Each one uses your own subscription login, so no API key is needed. Model and effort can also be changed from the chat box. Add an agent that speaks ACP below, or connect a local model or another API last.");
 
+		let syncBadges = () => {
+			let current = this.getBackend();
+			card.querySelectorAll(".zs-agent").forEach(a => {
+				let badge = a.querySelector(".zs-badge");
+				if (badge) {
+					badge.hidden = a.dataset.backend !== current;
+				}
+			});
+		};
 		let backendSelect = this.select(doc,
 			Object.entries(this.BACKENDS).map(([key, b]) => [key, b.fullName]),
 			this.getBackend(),
 			(value) => {
 				this.setPref("backend", value);
-				card.querySelectorAll(".zs-agent").forEach(a => a.querySelector(".zs-badge").hidden = a.dataset.backend !== value);
+				syncBadges();
 			});
+		let fillBackends = () => backendSelect.refill(
+			Object.entries(this.BACKENDS).map(([key, b]) => [key, b.fullName]),
+			this.getBackend()
+		);
 		card.body.appendChild(this.row(doc, "Answer with", backendSelect));
+
+		let acpAdded = false;
+		let addAcpSection = () => {
+			if (acpAdded) {
+				return;
+			}
+			acpAdded = true;
+			card.body.appendChild(this.buildAcpAgentsSection(doc, { fillBackends, syncBadges }));
+		};
 
 		for (let [key, backend] of Object.entries(this.BACKENDS)) {
 			if (this.isAPIBackend(key)) {
-				if (!card.body.querySelector(".zs-card-subhead")) {
+				addAcpSection();
+				if (!card._apiSubheadAdded) {
+					card._apiSubheadAdded = true;
 					card.body.appendChild(this.el(doc, "div", "zs-card-subhead", "Optional: local models and other APIs"));
 				}
 				card.body.appendChild(this.buildAPIAssistant(doc, key));
+				continue;
+			}
+			if (backend.acp) {
 				continue;
 			}
 			let details = this.el(doc, "details", "zs-agent");
@@ -169,9 +197,7 @@ Object.assign(Zusia, {
 			details.appendChild(summary);
 
 			let body = this.el(doc, "div", "zs-agent-body");
-			let modelSelect = this.select(doc,
-				this.getModels(key).map(m => [m.id, m.label + (m.id && m.id !== m.label.toLowerCase() ? "  (" + m.id + ")" : "")]),
-				this.getModel(key),
+			let modelSelect = this.select(doc, this.modelSelectOptions(key), this.getModel(key),
 				value => this.setPref(key + ".model", value));
 			body.appendChild(this.row(doc, "Model", modelSelect));
 			if (key === "agy") {
@@ -225,7 +251,211 @@ Object.assign(Zusia, {
 			});
 			refreshStatus();
 		}
+		addAcpSection();
 		return card;
+	},
+
+	buildAcpAgentsSection(doc, { fillBackends, syncBadges }) {
+		let section = this.el(doc, "div", "zs-acp-section");
+		section.appendChild(this.el(doc, "div", "zs-card-subhead", "Optional: ACP agents"));
+		section.appendChild(this.el(doc, "div", "zs-card-desc zs-acp-desc",
+			"Any agent that speaks the Agent Client Protocol can answer here. Add the command and arguments from its registry entry. The agent must be installed and signed in with its own CLI."));
+		let list = this.el(doc, "div", "zs-acp-list");
+		section.appendChild(list);
+
+		let renderAgents = () => {
+			list.textContent = "";
+			let keys = Object.keys(this.BACKENDS).filter(key => this.BACKENDS[key].acp);
+			for (let key of keys) {
+				list.appendChild(this.buildAcpAgentCard(doc, key, { renderAgents, fillBackends, syncBadges }));
+			}
+			syncBadges();
+		};
+
+		let name = doc.createElement("input");
+		name.type = "text";
+		name.className = "zs-field";
+		name.placeholder = "e.g. OpenCode";
+		let command = doc.createElement("input");
+		command.type = "text";
+		command.className = "zs-field";
+		command.placeholder = "e.g. opencode, or /full/path/to/agent";
+		let args = this.el(doc, "textarea", "zs-textarea");
+		args.rows = 3;
+		args.placeholder = "One argument per line, e.g.\nacp";
+		let error = this.el(doc, "div", "zs-acp-error");
+		error.hidden = true;
+
+		let add = this.el(doc, "button", "zs-button zs-acp-add-button", "Add agent");
+		add.type = "button";
+		add.addEventListener("click", () => {
+			let result = this.addAcpAgent({ name: name.value, command: command.value, args: args.value });
+			if (result.error) {
+				error.textContent = result.error;
+				error.hidden = false;
+				return;
+			}
+			name.value = "";
+			command.value = "";
+			args.value = "";
+			error.hidden = true;
+			fillBackends();
+			renderAgents();
+			this.refreshAllSidebars();
+		});
+
+		let registry = this.el(doc, "div", "zs-acp-registry");
+		let browse = this.el(doc, "button", "zs-button zs-acp-browse", "Browse the ACP registry");
+		browse.type = "button";
+		let registryNote = this.el(doc, "div", "zs-row-hint zs-acp-registry-note",
+			"Fetch the official registry and fill the form with an agent's command and arguments.");
+		let registryChoice = this.el(doc, "div", "zs-acp-registry-choice");
+		registry.append(browse, registryNote, registryChoice);
+		browse.addEventListener("click", async () => {
+			browse.disabled = true;
+			browse.textContent = "Loading…";
+			registryNote.textContent = "Reading the ACP registry…";
+			try {
+				let response = await Zotero.HTTP.request("GET", this.ACP_REGISTRY_URL, { responseType: "json", timeout: 20000 });
+				let payload = response.response || JSON.parse(response.responseText || "{}");
+				let presets = this.acpRegistryPresets(payload);
+				registryChoice.textContent = "";
+				if (!presets.length) {
+					registryNote.textContent = "No ACP agents for this platform were listed.";
+					return;
+				}
+				let picker = this.select(doc, presets.map(p => [p.id, p.name + "  (" + p.source + ")"]), presets[0].id, () => {});
+				let use = this.el(doc, "button", "zs-button zs-acp-use", "Use this agent");
+				use.type = "button";
+				use.addEventListener("click", () => {
+					let preset = presets.find(p => p.id === picker.value);
+					if (!preset) {
+						return;
+					}
+					name.value = preset.name;
+					command.value = preset.command;
+					args.value = preset.args.join("\n");
+					registryNote.textContent = preset.archive
+						? "Download " + preset.archive + " and set the command to the extracted " + (preset.cmd || "program") + "."
+						: "Filled from the registry. Review the command and click Add agent.";
+				});
+				registryChoice.append(picker, use);
+				registryNote.textContent = "Pick an agent, then review its command and arguments.";
+			}
+			catch (e) {
+				registryNote.textContent = "Could not read the ACP registry: " + ((e && e.message) || e);
+			}
+			finally {
+				browse.disabled = false;
+				browse.textContent = "Browse the ACP registry";
+			}
+		});
+
+		let form = this.el(doc, "div", "zs-acp-add");
+		form.append(
+			this.el(doc, "div", "zs-acp-add-title", "Add an ACP agent"),
+			registry,
+			this.row(doc, "Name", name),
+			this.row(doc, "Command", command, "The ACP server command, a name on PATH or a full path."),
+			this.row(doc, "Arguments", args, "One argument per line, exactly as the registry lists them."),
+		);
+		let buttons = this.el(doc, "div", "zs-button-row");
+		buttons.appendChild(add);
+		form.append(buttons, error);
+		section.appendChild(form);
+
+		renderAgents();
+		return section;
+	},
+
+	acpModelSelect(doc, key, body) {
+		let select = this.select(doc, this.modelSelectOptions(key), this.getModel(key),
+			value => this.setPref(key + ".model", value));
+		body.appendChild(this.row(doc, "Model", select));
+		if (!Array.isArray(this._acpModels[key])) {
+			let hint = this.el(doc, "div", "zs-row-hint", "Loading the model list…");
+			body.appendChild(hint);
+			this.loadAcpModels(key).then(() => {
+				if (!this.BACKENDS[key] || !select.isConnected) {
+					return;
+				}
+				select.refill(this.modelSelectOptions(key), this.getModel(key));
+				if (!hint.isConnected) {
+					return;
+				}
+				let error = (this._acpModelErrors || {})[key];
+				if (error) {
+					hint.textContent = "Models could not be loaded. " + error;
+				}
+				else {
+					hint.remove();
+				}
+			});
+		}
+		return select;
+	},
+
+	buildAcpAgentCard(doc, key, { renderAgents, fillBackends, syncBadges }) {
+		let backend = this.BACKENDS[key];
+		let config = this.acpAgentConfig(key) || { command: backend.command, args: backend.acpArgs || [] };
+		let details = this.el(doc, "details", "zs-agent");
+		details.dataset.backend = key;
+		let summary = this.el(doc, "summary");
+		let name = this.el(doc, "span", "zs-agent-name");
+		let status = this.el(doc, "span", "zs-agent-status", "Checking…");
+		name.append(this.el(doc, "strong", null, backend.fullName), status);
+		let badge = this.el(doc, "span", "zs-badge", "In use");
+		badge.hidden = key !== this.getBackend();
+		summary.append(this.el(doc, "span", "zs-agent-dot"), name, badge, this.svgIcon(doc, "chevron", "zs-agent-chevron"));
+		details.appendChild(summary);
+
+		let body = this.el(doc, "div", "zs-agent-body");
+		body.appendChild(this.row(doc, "Command", this.el(doc, "code", "zs-acp-command", this.acpCommandLine(config))));
+		this.acpModelSelect(doc, key, body);
+		body.appendChild(this.row(doc, "Reasoning effort", this.select(doc,
+			backend.efforts.map(e => [e, this.EFFORTS[e].label + " — " + this.EFFORTS[e].desc]),
+			this.getEffort(key),
+			value => this.setPref(key + ".effort", value))));
+		let remove = this.el(doc, "button", "zs-button zs-acp-remove", "Remove");
+		remove.type = "button";
+		remove.addEventListener("click", () => {
+			this.removeAcpAgent(key);
+			fillBackends();
+			renderAgents();
+			this.refreshAllSidebars();
+		});
+		body.appendChild(this.buildAcpSignIn(doc, key, [remove]));
+		details.appendChild(body);
+
+		this.probeBinary(key).then(found => {
+			details.dataset.found = String(!!found);
+			status.textContent = found || "Not found";
+			status.title = found || "Check the command and that the agent is installed.";
+		});
+		return details;
+	},
+
+	buildAcpSignIn(doc, key, extras = []) {
+		let wrap = this.el(doc, "div", "zs-acp-signin-wrap");
+		let row = this.el(doc, "div", "zs-button-row");
+		let button = this.el(doc, "button", "zs-button zs-acp-signin", "Sign in");
+		button.type = "button";
+		let note = this.el(doc, "div", "zs-row-hint");
+		button.addEventListener("click", async () => {
+			button.disabled = true;
+			note.textContent = "Asking " + this.BACKENDS[key].label + " to sign in…";
+			let result = await this.acpAuthenticate(key).catch(e => ({ error: String((e && e.message) || e) }));
+			button.disabled = false;
+			note.textContent = result.error
+				? result.error
+				: "Sign-in step sent to " + this.BACKENDS[key].label + "." +
+					(result.methods && result.methods.length > 1
+						? " It also offers: " + result.methods.slice(1).map(m => m.name || m.id).join(", ") + "."
+						: "");
+		});
+		row.append(button, ...extras);
+		wrap.append(row, note);
+		return wrap;
 	},
 
 	buildChatCard(doc) {

@@ -42,6 +42,34 @@ test("assistant, default model and effort are saved per backend", () => {
 	assert.deepEqual([...effort.options].map(o => o.value), ["", "low", "medium", "high", "xhigh", "max"]);
 });
 
+test("an ACP agent can be added and removed from Settings", () => {
+	const { container, prefs, window } = pane();
+	const assistants = card(container, "Assistants");
+	const form = assistants.querySelector(".zs-acp-add");
+	assert.ok(form, "the add form is shown");
+	const [name, command] = form.querySelectorAll("input");
+	change(window, name, "OpenCode");
+	change(window, command, "opencode");
+	change(window, form.querySelector("textarea"), "acp\n--print-logs");
+	form.querySelector(".zs-acp-add-button").click();
+
+	assert.deepEqual(JSON.parse(prefs[PREFIX + "acpAgents"]),
+		[{ id: "opencode", name: "OpenCode", command: "opencode", args: ["acp", "--print-logs"] }]);
+	let agent = assistants.querySelector('.zs-acp-list .zs-agent[data-backend="acp:opencode"]');
+	assert.ok(agent, "the agent is listed");
+	assert.match(agent.textContent, /OpenCode/);
+	assert.ok([...assistants.querySelector(".zs-select").options].some(o => o.value === "acp:opencode"),
+		"the assistant picker offers it");
+	assert.equal(name.value, "", "the form is cleared");
+
+	agent.querySelector(".zs-acp-remove").click();
+	agent = assistants.querySelector('.zs-acp-list .zs-agent[data-backend="acp:opencode"]');
+	assert.equal(agent, null);
+	assert.deepEqual(JSON.parse(prefs[PREFIX + "acpAgents"]), []);
+	assert.ok(![...assistants.querySelector(".zs-select").options].some(o => o.value === "acp:opencode"),
+		"the picker drops it");
+});
+
 test("extra Codex models appear in its model list", () => {
 	const { container, window, plugin } = pane();
 	const codex = card(container, "Assistants").querySelector('[data-backend="codex"]');
@@ -297,4 +325,45 @@ test("clarifications file: records are appended to clarifications.json in the pa
 	assert.deepEqual(JSON.parse(files["/d/clarifications.json"]).map(r => r.id), ["a", "b"]);
 	files["/d/clarifications.json"] = "{broken";
 	assert.deepEqual([...await plugin.loadClarifications("/d")], [], "a damaged file does not break the panel");
+});
+
+test("the ACP registry fills the add form", async () => {
+	const env = pane();
+	const assistants = card(env.container, "Assistants");
+	env.window.Zotero.HTTP.request = async () => ({ response: { agents: [
+		{ id: "gemini", name: "Gemini CLI", description: "Google",
+			distribution: { npx: { package: "@google/gemini-cli@1", args: ["--acp"] } } },
+	] } });
+	assistants.querySelector(".zs-acp-browse").click();
+	await new Promise(resolve => setTimeout(resolve, 0));
+	const picker = assistants.querySelector(".zs-acp-registry-choice .zs-select");
+	assert.ok(picker, "the registry picker appears");
+	assert.deepEqual([...picker.options].map(o => o.value), ["gemini"]);
+	assistants.querySelector(".zs-acp-use").click();
+	const inputs = assistants.querySelectorAll(".zs-acp-add input");
+	assert.equal(inputs[0].value, "Gemini CLI");
+	assert.equal(inputs[1].value, "npx");
+	assert.equal(assistants.querySelector(".zs-acp-add textarea").value, "@google/gemini-cli@1\n--acp");
+});
+
+test("an ACP agent can be asked to sign in from Settings", async () => {
+	const { container, window, plugin } = pane();
+	const assistants = card(container, "Assistants");
+	const form = assistants.querySelector(".zs-acp-add");
+	const [name, command] = form.querySelectorAll("input");
+	change(window, name, "OpenCode");
+	change(window, command, "opencode");
+	form.querySelector(".zs-acp-add-button").click();
+	const agent = assistants.querySelector('.zs-acp-list .zs-agent[data-backend="acp:opencode"]');
+	assert.ok(agent.querySelector(".zs-acp-signin"), "the agent offers a sign-in action");
+
+	let asked = null;
+	plugin.acpAuthenticate = async (backend) => {
+		asked = backend;
+		return { methods: [{ name: "Google" }, { name: "API key" }], method: { name: "Google" }, result: {} };
+	};
+	agent.querySelector(".zs-acp-signin").click();
+	await new Promise(resolve => setTimeout(resolve, 0));
+	assert.equal(asked, "acp:opencode");
+	assert.match(agent.querySelector(".zs-acp-signin-wrap .zs-row-hint").textContent, /API key/);
 });
