@@ -2,27 +2,47 @@
 
 Object.assign(Zusia, {
 
-	acpPermissionReply(toolCall, options) {
-		// The agent reads the paper folder and nothing else: no network, no change, no command.
-		let kind = String((toolCall && toolCall.kind) || "").toLowerCase();
-		let wanted = ["read", "search", "think"].includes(kind) ? "allow" : "reject";
-		let best = null;
-		let bestRank = -1;
-		for (let option of options || []) {
-			let optionKind = String((option && option.kind) || "").toLowerCase();
-			if (!optionKind.startsWith(wanted)) {
-				continue;
-			}
-			let rank = optionKind === wanted + "_always" ? 2 : optionKind === wanted + "_once" ? 1 : 0;
-			if (rank > bestRank) {
-				bestRank = rank;
-				best = option;
-			}
+	// Zusia answers the agent's permission prompts itself. Thinking is allowed, and so is a
+	// read or a search whose every named path lies in the folder; anything else (a change,
+	// a command, the network, a path elsewhere or none at all) is refused. This binds only
+	// an agent that asks: one that reads with its own tools unasked is beyond Zusia's reach,
+	// which is why an agent runs memory jobs only once its card allows it.
+	acpPermissionReply(toolCall, options, dir) {
+		let raw = toolCall.rawInput || {};
+		let named = list => list.filter(path => typeof path === "string" && path);
+		let paths = named((Array.isArray(toolCall.locations) ? toolCall.locations : []).map(location => location && location.path));
+		if (!paths.length) {
+			paths = named([raw.path, raw.file_path, raw.AbsolutePath]);
 		}
-		if (!best || !best.optionId) {
+		let allow = toolCall.kind === "think" ||
+			(["read", "search"].includes(toolCall.kind) && paths.length > 0 && paths.every(path => this.acpInside(dir, path)));
+		let find = kind => options.find(option => option && option.kind === kind && option.optionId);
+		// Never allow_always: the agent would remember it and skip this check for later paths.
+		let pick = (allow && find("allow_once")) || find("reject_once") || find("reject_always");
+		if (!pick) {
 			return { outcome: { outcome: "cancelled" } };
 		}
-		return { outcome: { outcome: "selected", optionId: best.optionId } };
+		return { outcome: { outcome: "selected", optionId: pick.optionId } };
+	},
+
+	// The native full path `path` names when it is `dir` or lies under it, else null. Gecko on
+	// Windows takes only "\" and Windows compares names without case; elsewhere only "/"
+	// separates, so a "\" is part of a name.
+	acpInside(dir, path) {
+		let win = Zotero.isWin;
+		let sep = win ? "\\" : "/";
+		let native = text => (win ? text.replace(/\//g, "\\") : text);
+		let fold = text => (win ? text.toLowerCase() : text);
+		let base = native(dir).replace(win ? /\\+$/ : /\/+$/, "");
+		let given = native(path);
+		if (given.split(sep).includes("..")) {
+			return null;
+		}
+		// A drive, even "C:x", or a leading "\" (a \\server share among them) is never
+		// joined onto the folder.
+		let absolute = win ? /^([A-Za-z]:|\\)/.test(given) : given.startsWith("/");
+		let full = absolute ? given : OS.Path.join(base, given);
+		return fold(full) === fold(base) || fold(full).startsWith(fold(base) + sep) ? full : null;
 	},
 
 	acpStep({ title, kind, rawInput } = {}) {
@@ -53,22 +73,15 @@ Object.assign(Zusia, {
 			error.code = code;
 			return error;
 		};
-		if (!path) {
+		if (typeof path !== "string" || !path) {
 			throw fail(-32602, "fs/read_text_file needs a path");
 		}
-		let base = String(dir || "").replace(/[\\/]+$/, "");
-		let outside = () => fail(-32001, "Zusia only reads inside the paper folder: " + path);
-		if (String(path).split(/[\\/]/).includes("..")) {
-			throw outside();
-		}
-		let absolute = /^([\\/]|[A-Za-z]:[\\/])/.test(path);
-		let full = absolute ? String(path) : OS.Path.join(dir, path);
-		if (!(full === base || full.startsWith(base + "/") || full.startsWith(base + "\\"))) {
-			throw outside();
+		let full = this.acpInside(dir, path);
+		if (!full) {
+			throw fail(-32001, "Zusia only reads inside the paper folder: " + path);
 		}
 
 		let text = await Zotero.File.getContentsAsync(full);
-		text = typeof text === "string" ? text : String(text || "");
 		let lines = text.split("\n");
 		let start = Math.max(1, Math.floor(Number(line) || 1)) - 1;
 		let count = Math.floor(Number(limit) || 0);
@@ -378,7 +391,7 @@ Object.assign(Zusia, {
 
 	async acpRequest(method, params, dir, label) {
 		if (method === "session/request_permission") {
-			return this.acpPermissionReply(params.toolCall || {}, params.options || []);
+			return this.acpPermissionReply(params.toolCall || {}, params.options || [], dir);
 		}
 		if (method === "fs/read_text_file") {
 			return this.acpReadFile(dir, params || {});

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { loadPlugin } from "./load-plugin.mjs";
+import { loadWindowsPlugin } from "./windows-env.mjs";
 
 const { plugin } = loadPlugin();
 
@@ -282,31 +283,84 @@ test("acp: a kill that throws still settles every pending request", async () => 
 	assert.ok(env.plugin._logLines.some(line => line.includes("killing the ACP agent: Error: no such process")));
 });
 
-test("acp: permissions allow reading, refuse changes, and cancel when no option fits", () => {
-	const allowing = [
-		{ optionId: "once", name: "Allow once", kind: "allow_once" },
-		{ optionId: "always", name: "Always allow", kind: "allow_always" },
-		{ optionId: "never", name: "Reject", kind: "reject_once" },
-	];
-	const refusing = [
-		{ optionId: "no", name: "No", kind: "reject_once" },
-		{ optionId: "never", name: "Never", kind: "reject_always" },
-	];
-	for (const kind of ["read", "search", "think"]) {
-		assert.deepEqual(plain(plugin.acpPermissionReply({ kind }, allowing)),
-			{ outcome: { outcome: "selected", optionId: "always" } }, "allow_always is preferred for " + kind);
+const OPTIONS = [
+	{ optionId: "once", name: "Allow once", kind: "allow_once" },
+	{ optionId: "always", name: "Always allow", kind: "allow_always" },
+	{ optionId: "no", name: "Reject", kind: "reject_once" },
+	{ optionId: "never", name: "Never", kind: "reject_always" },
+];
+const chosen = reply => (reply.outcome.outcome === "selected" ? reply.outcome.optionId : reply.outcome.outcome);
+
+test("acp: thinking, and a read or search inside the folder, are allowed once and never always", () => {
+	for (const call of [
+		{ kind: "think" },
+		{ kind: "read", locations: [{ path: "/d/paper.txt" }] },
+		{ kind: "read", locations: [{ path: "/d/text/03.md", line: 4 }, { path: "/d" }] },
+		{ kind: "search", locations: [{ path: "/d/text" }] },
+		{ kind: "search", rawInput: { path: "/d", pattern: "FFT" } },
+		{ kind: "read", rawInput: { file_path: "text/03.md" } },
+		{ kind: "read", locations: [{}], rawInput: { AbsolutePath: "/d/metadata.md" } },
+	]) {
+		assert.equal(chosen(plugin.acpPermissionReply(call, OPTIONS, "/d")), "once", JSON.stringify(call));
 	}
-	assert.deepEqual(plain(plugin.acpPermissionReply({ kind: "read" }, [allowing[0], allowing[2]])),
-		{ outcome: { outcome: "selected", optionId: "once" } }, "allow_once when there is no allow_always");
-	for (const kind of ["edit", "delete", "move", "execute", "fetch", "other"]) {
-		assert.deepEqual(plain(plugin.acpPermissionReply({ kind }, refusing)),
-			{ outcome: { outcome: "selected", optionId: "never" } }, "refused for " + kind);
+});
+
+test("acp: a read or search elsewhere, or of nothing named, is refused", () => {
+	for (const call of [
+		{ kind: "read", locations: [{ path: "/home/u/.ssh/id_rsa" }] },
+		{ kind: "read", locations: [{ path: "/d/paper.txt" }, { path: "/home/u/.aws/credentials" }] },
+		{ kind: "read", locations: [{ path: "/d/../secrets.txt" }] },
+		{ kind: "read", locations: [{ path: "/dx/paper.txt" }] },
+		{ kind: "read", locations: [{ path: "/d\\..\\x" }], rawInput: {} },
+		{ kind: "search", locations: [{ path: "/home/u" }] },
+		{ kind: "search", title: "Web search" },
+		{ kind: "search", locations: [] },
+		{ kind: "read", rawInput: { file_path: "/etc/passwd" } },
+		{ kind: "read", locations: [{ path: 7 }] },
+		{},
+	]) {
+		assert.equal(chosen(plugin.acpPermissionReply(call, OPTIONS, "/d")), "no", JSON.stringify(call));
 	}
-	assert.deepEqual(plain(plugin.acpPermissionReply({ kind: "execute" }, [allowing[0], allowing[1]])),
-		{ outcome: { outcome: "cancelled" } }, "no reject option offered: nothing is chosen");
-	assert.deepEqual(plain(plugin.acpPermissionReply({ kind: "read" }, [])), { outcome: { outcome: "cancelled" } });
-	assert.deepEqual(plain(plugin.acpPermissionReply({ kind: "read" }, [{ name: "Allow", kind: "allow_once" }])),
-		{ outcome: { outcome: "cancelled" } });
+	for (const kind of ["edit", "delete", "move", "execute", "fetch", "switch_mode", "other"]) {
+		assert.equal(chosen(plugin.acpPermissionReply({ kind, locations: [{ path: "/d/paper.txt" }] }, OPTIONS, "/d")), "no",
+			kind + " is refused even inside the folder");
+	}
+});
+
+test("acp: a permission answer takes only the option kinds it knows", () => {
+	const inside = { kind: "read", locations: [{ path: "/d/paper.txt" }] };
+	const outside = { kind: "read", locations: [{ path: "/etc/passwd" }] };
+	const [once, always, no, never] = OPTIONS;
+	assert.equal(chosen(plugin.acpPermissionReply(inside, [always, no], "/d")), "no", "no allow_once: refused rather than allowed for good");
+	assert.equal(chosen(plugin.acpPermissionReply(inside, [always], "/d")), "cancelled");
+	assert.equal(chosen(plugin.acpPermissionReply(outside, [once, never], "/d")), "never", "reject_always when there is no reject_once");
+	assert.equal(chosen(plugin.acpPermissionReply(outside, [once, always], "/d")), "cancelled", "no reject option: nothing is chosen");
+	assert.equal(chosen(plugin.acpPermissionReply(inside, [{ optionId: "all", kind: "allow_everything_forever" }, no], "/d")), "no",
+		"an unknown allow kind is never picked");
+	assert.equal(chosen(plugin.acpPermissionReply(inside, [{ name: "Allow", kind: "allow_once" }], "/d")), "cancelled", "an option needs an id");
+	assert.equal(chosen(plugin.acpPermissionReply(inside, [], "/d")), "cancelled");
+	assert.equal(chosen(plugin.acpPermissionReply({ kind: "READ", locations: inside.locations }, OPTIONS, "/d")), "no", "kinds are exact");
+});
+
+test("acp: an agent's permission request is judged against the folder it runs in", async () => {
+	const ask = path => plugin.acpRequest("session/request_permission",
+		{ sessionId: "s", toolCall: { toolCallId: "t", kind: "read", locations: [{ path }] }, options: OPTIONS }, "/tmp/zusia-job-1", "Agent");
+	assert.equal(chosen(await ask("/Users/me/.ssh/id_ed25519")), "no", "a memory job's empty folder holds nothing to read");
+	assert.equal(chosen(await ask("/tmp/zusia-job-1/x")), "once");
+});
+
+test("acp: on Windows a permission accepts the folder in any case or slash, and nothing beside it", () => {
+	const win = loadWindowsPlugin().plugin;
+	const dir = "C:\\Users\\u\\Zotero\\zusia\\papers\\ABC";
+	const read = path => chosen(win.acpPermissionReply({ kind: "read", locations: [{ path }] }, OPTIONS, dir));
+	for (const path of [dir + "\\paper.txt", "C:/Users/u/Zotero/zusia/papers/ABC/paper.txt", "c:\\users\\u\\zotero\\zusia\\papers\\abc\\paper.txt",
+		"text/03.md", dir + "\\text/03.md"]) {
+		assert.equal(read(path), "once", path);
+	}
+	for (const path of [dir + "2\\paper.txt", "C:\\Users\\u\\.ssh\\id_rsa", dir + "\\..\\x", "text\\..\\..\\x", "C:/Users/u/Zotero/zusia/papers/ABC/../x",
+		"\\\\server\\share\\paper.txt", "\\Users\\u\\Zotero\\zusia\\papers\\ABC\\paper.txt", "D:\\Users\\u\\Zotero\\zusia\\papers\\ABC\\paper.txt", "C:paper.txt"]) {
+		assert.equal(read(path), "no", path);
+	}
 });
 
 test("acp: a tool call becomes one of the four activity steps", () => {
@@ -352,6 +406,43 @@ test("acp: a path outside the paper folder is refused", async () => {
 		assert.equal(e.code, -32602);
 		return true;
 	});
+});
+
+test("acp: elsewhere than Windows a backslash is part of a name, never a way out", async () => {
+	const files = new Map([["/d\\x", "a sibling of the folder"], ["/d/a\\..\\b", "one odd name inside"], ["/dx/y", "next door"]]);
+	const { plugin: p } = loadPlugin({ files });
+	for (const path of ["/d\\x", "/dx/y"]) {
+		await assert.rejects(p.acpReadFile("/d", { path }), e => e.code === -32001, path);
+	}
+	assert.deepEqual(plain(await p.acpReadFile("/d", { path: "a\\..\\b" })), { content: "one odd name inside" });
+	assert.equal(p.acpInside("/d/", "/d/paper.txt"), "/d/paper.txt", "a trailing slash on the folder changes nothing");
+	assert.equal(p.acpInside("/d", "/d"), "/d");
+});
+
+test("acp: on Windows the agent reads with any slash or case, through a native path, and only in the folder", async () => {
+	const env = loadWindowsPlugin();
+	const dir = "C:\\Users\\u\\Zotero\\zusia\\papers\\ABC";
+	const asked = [];
+	env.window.Zotero.File.getContentsAsync = async (path) => {
+		asked.push(path);
+		return "text";
+	};
+	for (const [path, native] of [
+		["C:/Users/u/Zotero/zusia/papers/ABC/paper.txt", dir + "\\paper.txt"],
+		["c:\\users\\u\\zotero\\zusia\\papers\\abc\\paper.txt", "c:\\users\\u\\zotero\\zusia\\papers\\abc\\paper.txt"],
+		["text/03.md", dir + "\\text\\03.md"],
+		[dir + "\\text/03.md", dir + "\\text\\03.md"],
+		["paper.txt", dir + "\\paper.txt"],
+	]) {
+		asked.length = 0;
+		assert.deepEqual(plain(await env.plugin.acpReadFile(dir, { path })), { content: "text" }, path);
+		assert.deepEqual(asked, [native], path + " reaches Gecko as a native path");
+	}
+	asked.length = 0;
+	for (const path of [dir + "2\\x", "C:\\Users\\u\\.ssh\\id_rsa", "..\\secrets.txt", "text\\..\\..\\x", "\\\\server\\share\\x", "C:x"]) {
+		await assert.rejects(env.plugin.acpReadFile(dir, { path }), e => e.code === -32001, path);
+	}
+	assert.deepEqual(asked, [], "nothing outside was read");
 });
 
 test("acp: a huge file is cut at 400000 characters", async () => {
