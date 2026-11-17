@@ -91,7 +91,7 @@ function fakeAgent({ answer = "It is the FFT.", sessionId = "s-1", auth = [], co
 		proc.killed = true;
 		proc.finish(1);
 	};
-	return { proc, messages };
+	return { proc, messages, stderr: text => stderr.push(text) };
 }
 
 const request = { ctx: { dir: "/d" }, question: "Why?", history: [], session: null, files: { metadata: "# T\n", annotations: "" } };
@@ -486,6 +486,41 @@ test("a configured ACP agent runs a background call with the raw memory prompt",
 	assert.equal(fake.messages[2].method, "session/prompt");
 	assert.equal(fake.messages[2].params.prompt.length, 1);
 	assert.equal(fake.messages[2].params.prompt[0].text, "MEMORY TASK", "the raw prompt, not Zusia's system prompt");
+});
+
+test("an ACP memory job that hangs is killed at the deadline and keeps the rate limit its stderr names", async () => {
+	const env = loadPlugin();
+	const p = env.plugin;
+	const fake = fakeAgent();
+	let expire;
+	env.window.Zotero.Promise.delay = ms => new Promise((resolve) => {
+		if (ms === p.JOB_TIMEOUT_MS) {
+			expire = resolve;
+		}
+	});
+	const prompted = new Promise((resolve) => {
+		const write = fake.proc.stdin.write;
+		fake.proc.stdin.write = async (text) => {
+			if (JSON.parse(text).method === "session/prompt") {
+				fake.stderr("429 Too Many Requests, retrying in 60s\n");
+				resolve();
+				return;
+			}
+			return write(text);
+		};
+	});
+	p.findBinary = async () => "/opt/opencode";
+	p.spawnAgent = async () => fake.proc;
+	p.makeJobDir = async () => "/tmp/job";
+	env.window.OS.File.removeDir = async () => {};
+	const { key } = p.addAcpAgent(agent());
+	const job = { key: "k", proc: null, cancelled: false };
+	const running = env.runBackgroundCall.call(p, key, "MEMORY TASK", job);
+	await prompted;
+	assert.equal(job.proc, fake.proc);
+	expire();
+	assert.deepEqual(plain(await running), { text: "", error: "no answer within 5 minutes", rateLimited: true });
+	assert.equal(fake.proc.killed, true);
 });
 
 test("a configured ACP agent can be asked to sign in", async () => {

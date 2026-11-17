@@ -191,8 +191,10 @@ Object.assign(Zusia, {
 		};
 		try {
 			let result = await run({ cwd, onSpawn });
+			// A CLI that keeps retrying a rate limit is the usual one to hang, and what it wrote
+			// before the kill says so: the jobs then pause instead of failing the batch.
 			if (timedOut) {
-				return { text: "", error: "no answer within " + Math.round(this.JOB_TIMEOUT_MS / 60000) + " minutes", rateLimited: false };
+				return { text: "", error: "no answer within " + Math.round(this.JOB_TIMEOUT_MS / 60000) + " minutes", rateLimited: result.rateLimited };
 			}
 			return result;
 		}
