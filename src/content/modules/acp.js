@@ -101,14 +101,25 @@ Object.assign(Zusia, {
 		return blocks;
 	},
 
+	// The agent's option for "model" or "effort": found by the spec's category (a reasoning
+	// level is "thought_level"), or by the id agents used before there were categories.
+	acpConfigOption(configOptions, which) {
+		let category = which === "effort" ? "thought_level" : which;
+		return (Array.isArray(configOptions) ? configOptions : []).find(o => o && (o.category === category || o.id === which)) || null;
+	},
+
+	// A select's values, flat: the spec lets an agent group them as { group, name, options }.
+	acpSelectValues(option) {
+		return (Array.isArray(option.options) ? option.options : [])
+			.flatMap(o => (o && Array.isArray(o.options) ? o.options : [o]))
+			.filter(o => o && o.value !== undefined);
+	},
+
 	acpModelChoices(configOptions) {
-		let option = (configOptions || []).find(o => o && (o.category === "model" || o.id === "model"));
-		if (!option || !Array.isArray(option.options)) {
-			return [];
-		}
-		return option.options
-			.filter(o => o && o.value !== undefined)
-			.map(o => ({ id: o.value, label: o.name || o.value, desc: o.description || "" }));
+		let option = this.acpConfigOption(configOptions, "model");
+		return option
+			? this.acpSelectValues(option).map(o => ({ id: o.value, label: o.name || o.value, desc: o.description || "" }))
+			: [];
 	},
 
 	acpArgs(backend) {
@@ -402,17 +413,17 @@ Object.assign(Zusia, {
 	},
 
 	async applyAcpOptions(connection, sessionId, configOptions, model, effort, label) {
-		let current = configOptions || [];
-		let set = async (id, value, required) => {
+		let current = configOptions;
+		let set = async (which, value, required) => {
 			if (!value) {
 				return null;
 			}
-			let option = current.find(o => o.id === id || o.category === id);
+			let option = this.acpConfigOption(current, which);
 			if (!option) {
 				return null;
 			}
-			if (!Array.isArray(option.options) || !option.options.some(o => o.value === value)) {
-				return required ? label + " does not offer " + (option.name || id) + " “" + value + "”." : null;
+			if (!this.acpSelectValues(option).some(o => o.value === value)) {
+				return required ? label + " does not offer " + (option.name || which) + " “" + value + "”." : null;
 			}
 			let result;
 			try {
@@ -421,7 +432,8 @@ Object.assign(Zusia, {
 			catch (e) {
 				return required ? label + " could not use " + value + ": " + e.message : null;
 			}
-			current = result.configOptions || current;
+			// A change can reshape the other options, the efforts a model offers above all.
+			current = Array.isArray(result && result.configOptions) ? result.configOptions : current;
 			return null;
 		};
 		let refused = await set("model", model, true);

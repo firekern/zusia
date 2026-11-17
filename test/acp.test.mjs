@@ -455,8 +455,8 @@ test("acp: a huge file is cut at 400000 characters", async () => {
 
 test("acp: the model menu comes from the agent's own config options", () => {
 	const options = [
-		{ id: "effort", name: "Effort", category: "effort", options: [{ value: "high", name: "High" }] },
-		{ id: "model", name: "Model", category: "model", options: [
+		{ id: "reasoning", name: "Reasoning", category: "thought_level", type: "select", options: [{ value: "high", name: "High" }] },
+		{ id: "model", name: "Model", category: "model", type: "select", options: [
 			{ value: "cmd-fast", name: "Command Fast", description: "Quick answers" },
 			{ value: "cmd-best", name: "Command Best" },
 		] },
@@ -468,7 +468,64 @@ test("acp: the model menu comes from the agent's own config options", () => {
 	assert.deepEqual(plain(plugin.acpModelChoices([{ id: "model", options: [{ value: "m", name: "M" }] }])),
 		[{ id: "m", label: "M", desc: "" }], "matched by id as well as by category");
 	assert.deepEqual(plain(plugin.acpModelChoices(null)), []);
-	assert.deepEqual(plain(plugin.acpModelChoices([{ id: "effort", category: "effort" }])), []);
+	assert.deepEqual(plain(plugin.acpModelChoices([{ id: "reasoning", category: "thought_level" }])), []);
+	assert.deepEqual(plain(plugin.acpModelChoices([{ id: "model", category: "model" }])), [], "a select with no values offers none");
+});
+
+test("acp: a model list in groups is offered flat", () => {
+	const options = [{ id: "model", name: "Model", category: "model", type: "select", options: [
+		{ group: "anthropic", name: "Anthropic", options: [{ value: "a", name: "A" }, { value: "b", name: "B", description: "Bigger" }] },
+		{ group: "local", name: "Local", options: [{ value: "c", name: "C" }] },
+		{ value: "d", name: "D" },
+	] }];
+	assert.deepEqual(plain(plugin.acpModelChoices(options)), [
+		{ id: "a", label: "A", desc: "" },
+		{ id: "b", label: "B", desc: "Bigger" },
+		{ id: "c", label: "C", desc: "" },
+		{ id: "d", label: "D", desc: "" },
+	]);
+});
+
+// A connection that answers session/set_config_option and records what it was asked.
+function configConnection(reply = params => ({ configOptions: null, params })) {
+	const sent = [];
+	return {
+		sent,
+		request: async (method, params) => {
+			sent.push([method, params]);
+			return reply(params);
+		},
+	};
+}
+
+test("acp: the effort goes to the agent's thought_level option, or to one with the id effort", async () => {
+	const reasoning = { id: "reasoning", name: "Reasoning", category: "thought_level", type: "select", options: [{ value: "low", name: "Low" }, { value: "high", name: "High" }] };
+	let connection = configConnection();
+	assert.equal(await plugin.applyAcpOptions(connection, "s", [reasoning], "", "high", "Agent"), null);
+	assert.deepEqual(plain(connection.sent), [["session/set_config_option", { sessionId: "s", configId: "reasoning", value: "high" }]]);
+
+	connection = configConnection();
+	await plugin.applyAcpOptions(connection, "s", [{ id: "effort", name: "Effort", options: [{ value: "low", name: "Low" }] }], "", "low", "Agent");
+	assert.deepEqual(plain(connection.sent), [["session/set_config_option", { sessionId: "s", configId: "effort", value: "low" }]]);
+
+	connection = configConnection();
+	assert.equal(await plugin.applyAcpOptions(connection, "s", [reasoning], "", "max", "Agent"), null, "an effort the agent lacks is skipped quietly");
+	assert.deepEqual(connection.sent, []);
+});
+
+test("acp: a model from inside a group is set; one the agent lacks is refused by name", async () => {
+	const model = { id: "model", name: "Model", category: "model", type: "select", options: [
+		{ group: "fast", name: "Fast", options: [{ value: "a", name: "A" }] },
+		{ group: "best", name: "Best", options: [{ value: "b", name: "B" }] },
+	] };
+	const reasoning = { id: "reasoning", category: "thought_level", options: [{ value: "high" }] };
+	// Choosing model b leaves it no reasoning levels, so the effort that follows is not sent.
+	const connection = configConnection(() => ({ configOptions: [model] }));
+	assert.equal(await plugin.applyAcpOptions(connection, "s", [model, reasoning], "b", "high", "Agent"), null);
+	assert.deepEqual(plain(connection.sent), [["session/set_config_option", { sessionId: "s", configId: "model", value: "b" }]]);
+	assert.equal(await plugin.applyAcpOptions(configConnection(), "s", [model], "z", "", "Agent"), "Agent does not offer Model “z”.");
+	const failing = { request: async () => { throw new Error("model is busy"); } };
+	assert.equal(await plugin.applyAcpOptions(failing, "s", [model], "a", "", "Agent"), "Agent could not use a: model is busy");
 });
 
 test("acp: attached images travel as image blocks", async () => {
