@@ -269,9 +269,6 @@ Object.assign(Zusia, {
 			this.flushAcpTools(state, onProgress);
 
 			let text = (state.text || state.narration).trim();
-			if (answer.stopReason === "cancelled") {
-				return { text: "", error: label + " stopped the answer.", sessionId, partialText: text };
-			}
 			if (!text) {
 				return { text: "", error: answer.stopReason === "refusal" ? label + " declined to answer." : label + " returned no text.", sessionId };
 			}

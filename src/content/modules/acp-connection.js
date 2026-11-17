@@ -1,8 +1,8 @@
 "use strict";
 
 Object.assign(Zusia, {
-	// The JSON-RPC pipe to an agent: one request per id, notifications, an agent's own
-	// request answered by the caller, and a close that leaves nothing pending.
+	// The JSON-RPC pipe to an agent: one request per id, the agent's notifications and
+	// its own requests answered by the caller, and a close that leaves nothing pending.
 
 	createAcpConnection(proc, { onNotification, onRequest } = {}) {
 		let pending = new Map();
@@ -186,8 +186,6 @@ Object.assign(Zusia, {
 			return promise;
 		};
 
-		let notify = (method, params) => write({ jsonrpc: "2.0", method, params });
-
 		let close = () => {
 			if (!closing) {
 				closing = (async () => {
@@ -218,6 +216,6 @@ Object.assign(Zusia, {
 			return closing;
 		};
 
-		return { request, notify, close };
+		return { request, close };
 	},
 });

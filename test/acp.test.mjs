@@ -221,17 +221,18 @@ test("acp: writes go out one at a time, in order", async () => {
 		order.push("end " + method);
 	};
 	const connection = plugin.createAcpConnection(fake.proc);
-	connection.notify("session/cancel", { sessionId: "s" });
-	connection.notify("session/update", {});
+	const asked = [connection.request("initialize", { protocolVersion: 1 }), connection.request("session/new", { cwd: "/d", mcpServers: [] })];
 	await flush();
-	assert.deepEqual(order, ["start session/cancel"], "nothing is written while the first write is in flight");
+	assert.deepEqual(order, ["start initialize"], "nothing is written while the first write is in flight");
 	releaseFirst();
 	await flush();
-	assert.deepEqual(order, ["start session/cancel", "end session/cancel", "start session/update", "end session/update"]);
-	assert.deepEqual(fake.messages().map(message => message.method), ["session/cancel", "session/update"]);
-	assert.ok(fake.messages().every(message => message.id === undefined), "a notification carries no id");
+	assert.deepEqual(order, ["start initialize", "end initialize", "start session/new", "end session/new"]);
+	assert.deepEqual(fake.messages().map(message => [message.id, message.method]), [[1, "initialize"], [2, "session/new"]]);
 	fake.finish(0);
 	await connection.close();
+	for (const request of asked) {
+		await assert.rejects(request, e => e.acpClosed === true, "unanswered when the agent went");
+	}
 });
 
 test("acp: close kills a process that is still running and is idempotent", async () => {
@@ -251,8 +252,7 @@ test("acp: close kills a process that is still running and is idempotent", async
 		assert.equal(e.acpClosed, true);
 		return true;
 	});
-	await connection.notify("session/cancel", { sessionId: "s" });
-	assert.deepEqual(fake.writes, []);
+	assert.deepEqual(fake.writes, [], "a closed pipe writes nothing more");
 });
 
 test("acp: a stdin that will not close still ends in a kill, settled requests and a log line", async () => {
