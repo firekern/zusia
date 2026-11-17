@@ -151,9 +151,9 @@ test("a slug comes from the name, and two names that slug alike get numbered ids
 	assert.equal(p.acpSlug("日本語"), "agent");
 	assert.equal(p.acpSlug(""), "agent");
 	assert.equal(p.acpSlug("x".repeat(60), new Set()).length, 40);
-	assert.equal(p.acpSlug("Opencode", ["opencode"]), "opencode-2");
+	assert.equal(p.acpSlug("Opencode", new Set(["opencode"])), "opencode-2");
 	assert.equal(p.acpSlug("Opencode", new Set(["opencode", "opencode-2"])), "opencode-3");
-	assert.equal(p.acpSlug("x".repeat(40), ["x".repeat(40)]), "x".repeat(38) + "-2", "the suffix fits inside the 40 characters");
+	assert.equal(p.acpSlug("x".repeat(40), new Set(["x".repeat(40)])), "x".repeat(38) + "-2", "the suffix fits inside the 40 characters");
 
 	const first = p.addAcpAgent({ name: "My Agent", command: "my-agent", args: [] });
 	const second = p.addAcpAgent({ name: "My-Agent", command: "my-agent", args: [] });
@@ -252,8 +252,7 @@ test("malformed stored JSON and invalid stored entries are dropped, valid ones l
 	], "the duplicate keeps the first entry");
 	assert.deepEqual(plain(p.acpAgentConfig("acp:ok")).args, ["acp", "--flag"]);
 
-	p.loadAcpAgents();
-	assert.equal(p.BACKENDS["acp:opencode"].command, "opencode");
+	assert.equal(p.BACKENDS["acp:opencode"].command, "opencode", "the start registered the valid ones");
 	assert.equal(p.BACKENDS["acp:ok"].label, "Trimmed");
 	assert.equal(p.BACKEND_ICONS["acp:ok"], "code");
 	assert.equal(p.BACKENDS["acp:twin"], undefined, "a duplicate id is not registered twice");
@@ -270,22 +269,17 @@ test("more than twenty stored agents load only the first twenty", () => {
 	assert.equal(p.acpAgents()[0].id, "agent-0");
 });
 
-test("loading the stored agents runs once", () => {
+test("the stored agents are registered at start, each with its prefs watched once", () => {
 	const env = loadPlugin({ prefs: { [PREF]: JSON.stringify([storedAgent()]) } });
 	const p = env.plugin;
-	p.loadAcpAgents();
-	assert.equal(p._acpAgentsLoaded, true);
 	assert.equal(p.BACKENDS["acp:opencode"].command, "opencode");
-	const observed = p._prefObservers.length;
 	assert.equal(p._backendPrefObservers.get("acp:opencode").length, 3, "model, effort and api prefs are watched");
+	const observed = p._prefObservers.length;
 
-	p.loadAcpAgents();
-	assert.equal(p._prefObservers.length, observed, "a second load adds no observers");
+	const container = env.document.createElement("div");
+	p.renderPrefsPane(env.document, container);
+	assert.equal(p._prefObservers.length, observed, "Settings registers no agent a second time");
 	assert.equal(p._backendPrefObservers.get("acp:opencode").length, 3);
-
-	p.saveAcpAgentConfigs([...p.acpAgents(), { id: "later", name: "Later", command: "later", args: [] }]);
-	p.loadAcpAgents();
-	assert.equal(p.BACKENDS["acp:later"], undefined);
 });
 
 test("removing an agent deletes its backend, icon, model cache and prefs", () => {
@@ -307,6 +301,7 @@ test("removing an agent deletes its backend, icon, model cache and prefs", () =>
 	assert.deepEqual(stored(env.prefs), []);
 	assert.equal(p.acpAgents().length, 0);
 	assert.equal(p.removeAcpAgent(key), false, "an agent that is no longer stored cannot be removed again");
+	assert.equal(p.modelLabel(key, "m"), "m", "a clarification it answered still names its model");
 });
 
 test("removing an agent switches the backend only when it pointed at that agent", () => {
@@ -503,9 +498,7 @@ test("a configured ACP agent can be asked to sign in", async () => {
 
 	const result = await p.acpAuthenticate(key);
 	await flush();
-	assert.equal(result.method.id, "oauth");
-	assert.deepEqual(plain(result.methods), [{ id: "oauth", name: "Log in with Google" }, { id: "key", name: "API key" }]);
-	assert.deepEqual(plain(result.result), { ok: true });
+	assert.deepEqual(plain(result), { methods: [{ id: "oauth", name: "Log in with Google" }, { id: "key", name: "API key" }] });
 	assert.deepEqual(fake.messages.map(message => message.method), ["initialize", "authenticate"]);
 	assert.equal(fake.messages[1].params.methodId, "oauth");
 });

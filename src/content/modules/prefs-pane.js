@@ -7,7 +7,6 @@ Object.assign(Zusia, {
 
 	renderPrefsPane(doc, container) {
 		container.textContent = "";
-		this.loadAcpAgents();
 		let prefs = this.el(doc, "div", "zs-prefs");
 		this.applyAppearance(prefs);
 		prefs.append(
@@ -395,12 +394,12 @@ Object.assign(Zusia, {
 		button.addEventListener("click", async () => {
 			button.disabled = true;
 			note.textContent = "Asking " + this.BACKENDS[key].label + " to sign in…";
-			let result = await this.acpAuthenticate(key).catch(e => ({ error: String((e && e.message) || e) }));
+			let result = await this.acpAuthenticate(key);
 			button.disabled = false;
 			note.textContent = result.error
 				? result.error
 				: "Sign-in step sent to " + this.BACKENDS[key].label + "." +
-					(result.methods && result.methods.length > 1
+					(result.methods.length > 1
 						? " It also offers: " + result.methods.slice(1).map(m => m.name || m.id).join(", ") + "."
 						: "");
 		});

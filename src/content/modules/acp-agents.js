@@ -4,7 +4,6 @@ Object.assign(Zusia, {
 
 	MAX_ACP_AGENTS: 20,
 	ACP_AGENT_ID: /^[a-z0-9][a-z0-9-]{0,39}$/,
-	_acpAgentsLoaded: false,
 
 	acpAgents() {
 		let stored = this.getJSONPref("acpAgents", null);
@@ -36,10 +35,10 @@ Object.assign(Zusia, {
 	},
 
 	saveAcpAgentConfigs(configs) {
-		this.setPref("acpAgents", JSON.stringify(configs || []));
+		this.setPref("acpAgents", JSON.stringify(configs));
 	},
 
-	acpSlug(name, taken) {
+	acpSlug(name, taken = new Set()) {
 		let base = String(name || "")
 			.normalize("NFKD")
 			.replace(/\p{M}+/gu, "")
@@ -48,9 +47,8 @@ Object.assign(Zusia, {
 			.replace(/^-+|-+$/g, "")
 			.slice(0, 40)
 			.replace(/-+$/g, "") || "agent";
-		let ids = taken && typeof taken.has === "function" ? taken : new Set(Array.isArray(taken) ? taken : []);
 		let id = base;
-		for (let n = 2; ids.has(id); n++) {
+		for (let n = 2; taken.has(id); n++) {
 			let suffix = "-" + n;
 			id = base.slice(0, 40 - suffix.length).replace(/-+$/g, "") + suffix;
 		}
@@ -132,7 +130,7 @@ Object.assign(Zusia, {
 			fullName: config.name,
 			command: config.command,
 			kind: "acp",
-			acpArgs: Array.isArray(config.args) ? config.args.slice() : [],
+			acpArgs: config.args,
 			models: [{ id: "", label: "Default", desc: "The agent's default model" }],
 			efforts: ["", "low", "medium", "high", "max"],
 			images: true,
@@ -142,11 +140,8 @@ Object.assign(Zusia, {
 		return key;
 	},
 
+	// Once, from init(): an agent added later registers itself.
 	loadAcpAgents() {
-		if (this._acpAgentsLoaded) {
-			return;
-		}
-		this._acpAgentsLoaded = true;
 		try {
 			let configs = this.acpAgents();
 			for (let config of configs) {

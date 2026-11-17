@@ -123,7 +123,7 @@ Object.assign(Zusia, {
 	},
 
 	acpArgs(backend) {
-		return this.BACKENDS[backend].acpArgs.slice();
+		return this.BACKENDS[backend].acpArgs;
 	},
 
 	acpInitialize(connection) {
@@ -213,6 +213,8 @@ Object.assign(Zusia, {
 		return entry.promise;
 	},
 
+	// Resolves to {methods} once the agent took the first sign-in method, or {error, methods};
+	// never rejects.
 	async acpAuthenticate(backend) {
 		try {
 			return await this.withAcpConnection(backend, this.getDataDir(), {}, async (connection, hello) => {
@@ -220,18 +222,17 @@ Object.assign(Zusia, {
 				if (!methods.length) {
 					return { error: "This agent has no ACP sign-in methods. Sign in with its own CLI in a terminal.", methods: [] };
 				}
-				let method = methods[0];
 				try {
-					let result = await connection.request("authenticate", { methodId: method.id });
-					return { method, methods, result };
+					await connection.request("authenticate", { methodId: methods[0].id });
+					return { methods };
 				}
 				catch (e) {
-					return { error: e.message, methods, method };
+					return { error: e.message, methods };
 				}
 			});
 		}
 		catch (e) {
-			return { error: String((e && e.message) || e), methods: [] };
+			return { error: e.message, methods: [] };
 		}
 	},
 

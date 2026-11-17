@@ -50,9 +50,11 @@ Object.assign(Zusia, {
 		return this.BACKENDS[backend].efforts.includes(effort) ? effort : "";
 	},
 
-	// The models offered for a backend: the fixed ones, then whatever its kind listed live.
+	// The fixed models, then the live ones its kind lists, then a stored one neither offers,
+	// so an earlier choice still shows.
 	getModels(backend) {
 		let info = this.BACKENDS[backend];
+		// A clarification answered by an agent since removed still asks for its model's name.
 		if (!info) {
 			return [];
 		}
