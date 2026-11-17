@@ -167,15 +167,9 @@ Object.assign(Zusia, {
 		finally { if (job) job.proc = null; }
 	},
 
-	async runCliBackground(backend, prompt, job) {
-		let command;
-		try {
-			command = await this.findBinary(backend);
-		}
-		catch (e) {
-			this.logError("starting a memory job", e);
-			return { text: "", error: e.message, rateLimited: false };
-		}
+	// One empty folder per call, a timeout that kills the process, and the folder removed after.
+	// `run` gets the folder and a spawn hook, and returns {text, error, rateLimited}.
+	async runJob(job, run) {
 		let cwd = await this.makeJobDir();
 		let proc = null;
 		let finished = false;
@@ -186,45 +180,21 @@ Object.assign(Zusia, {
 				proc.kill();
 			}
 		});
+		let onSpawn = (p) => {
+			proc = p;
+			if (job) {
+				job.proc = p;
+				if (job.cancelled) {
+					p.kill();
+				}
+			}
+		};
 		try {
-			let run;
-			try {
-				run = await this.runProcess(command, this.backgroundArgs(backend), cwd, null, (p) => {
-					proc = p;
-					if (job) {
-						job.proc = p;
-						if (job.cancelled) {
-							p.kill();
-						}
-					}
-				}, prompt);
-			}
-			catch (e) {
-				this.logError("running a memory job", e);
-				return { text: "", error: e.message, rateLimited: false };
-			}
-			let { stdout, stderr, exitCode } = run;
-			let events = this.parseJsonLines(stdout);
-			let text = "";
-			let error = "";
-			if (backend === "claude") {
-				({ text, error = "" } = this.parseClaudeEvents(events));
-			}
-			else {
-				let { final } = this.parseAntigravityEvents(events);
-				text = final && final.status === "SUCCESS" ? (final.response || "").trim() : "";
-				error = (final && final.error) || "";
-			}
+			let result = await run({ cwd, onSpawn });
 			if (timedOut) {
-				error = "no answer within " + Math.round(this.JOB_TIMEOUT_MS / 60000) + " minutes";
+				return { text: "", error: "no answer within " + Math.round(this.JOB_TIMEOUT_MS / 60000) + " minutes", rateLimited: false };
 			}
-			else if (exitCode !== 0 || !text) {
-				error = error || stderr.trim() || backend + " exited with code " + exitCode;
-			}
-			if (error) {
-				return { text: "", error, rateLimited: this.isRateLimited(stderr + "\n" + error) };
-			}
-			return { text, error: "", rateLimited: false };
+			return result;
 		}
 		finally {
 			finished = true;
@@ -242,66 +212,75 @@ Object.assign(Zusia, {
 		}
 	},
 
-	async runAcpBackground(backend, prompt, job = null) {
-		let cwd = await this.makeJobDir();
-		let proc = null;
-		let finished = false;
-		let timedOut = false;
-		Zotero.Promise.delay(this.JOB_TIMEOUT_MS).then(() => {
-			if (!finished && proc) {
-				timedOut = true;
-				proc.kill();
-			}
-		});
+	async runCliBackground(backend, prompt, job) {
+		let command;
 		try {
-			let result = await this.runAcp(backend, {
-				ctx: { dir: cwd },
-				files: {},
-				history: [],
-				session: null,
-				question: prompt,
-				raw: true,
-				model: "",
-				effort: "low",
-				onProgress: () => {},
-				onSpawn: (p) => {
-					proc = p;
-					if (job) {
-						job.proc = p;
-						if (job.cancelled) {
-							p.kill();
-						}
-					}
-				},
-			});
-			let error = result.error || "";
-			if (timedOut) {
-				error = "no answer within " + Math.round(this.JOB_TIMEOUT_MS / 60000) + " minutes";
-			}
-			if (error) {
-				return { text: "", error, rateLimited: this.isRateLimited(error) };
-			}
-			let text = (result.text || "").trim();
-			if (!text) {
-				return { text: "", error: backend + " returned no text", rateLimited: false };
-			}
-			return { text, error: "", rateLimited: false };
+			command = await this.findBinary(backend);
 		}
 		catch (e) {
-			this.logError("running an ACP memory job", e);
-			return { text: "", error: String((e && e.message) || e), rateLimited: this.isRateLimited(e && e.message) };
+			this.logError("starting a memory job", e);
+			return { text: "", error: e.message, rateLimited: false };
 		}
-		finally {
-			finished = true;
-			if (job) {
-				job.proc = null;
-			}
+		return this.runJob(job, async ({ cwd, onSpawn }) => {
+			let run;
 			try {
-				await OS.File.removeDir(cwd);
+				run = await this.runProcess(command, this.backgroundArgs(backend), cwd, null, onSpawn, prompt);
 			}
 			catch (e) {
-				this.logError("removing a job folder", e);
+				this.logError("running a memory job", e);
+				return { text: "", error: e.message, rateLimited: false };
 			}
-		}
+			let { stdout, stderr, exitCode } = run;
+			let events = this.parseJsonLines(stdout);
+			let text = "";
+			let error = "";
+			if (backend === "claude") {
+				({ text, error = "" } = this.parseClaudeEvents(events));
+			}
+			else {
+				let { final } = this.parseAntigravityEvents(events);
+				text = final && final.status === "SUCCESS" ? (final.response || "").trim() : "";
+				error = (final && final.error) || "";
+			}
+			if (exitCode !== 0 || !text) {
+				error = error || stderr.trim() || backend + " exited with code " + exitCode;
+			}
+			if (error) {
+				return { text: "", error, rateLimited: this.isRateLimited(stderr + "\n" + error) };
+			}
+			return { text, error: "", rateLimited: false };
+		});
+	},
+
+	async runAcpBackground(backend, prompt, job = null) {
+		return this.runJob(job, async ({ cwd, onSpawn }) => {
+			try {
+				let result = await this.runAcp(backend, {
+					ctx: { dir: cwd },
+					files: {},
+					history: [],
+					session: null,
+					question: prompt,
+					raw: true,
+					model: this.getModel(backend),
+					effort: this.getEffort(backend, { deferCapabilities: true }),
+					onProgress: () => {},
+					onSpawn,
+				});
+				let error = result.error || "";
+				if (error) {
+					return { text: "", error, rateLimited: this.isRateLimited(error) };
+				}
+				let text = (result.text || "").trim();
+				if (!text) {
+					return { text: "", error: backend + " returned no text", rateLimited: false };
+				}
+				return { text, error: "", rateLimited: false };
+			}
+			catch (e) {
+				this.logError("running an ACP memory job", e);
+				return { text: "", error: String((e && e.message) || e), rateLimited: this.isRateLimited(e && e.message) };
+			}
+		});
 	},
 });

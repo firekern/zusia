@@ -110,6 +110,23 @@ Object.assign(Zusia, {
 		});
 	},
 
+	// One agent process for one exchange: find it, start it, say hello, and close it whatever happens.
+	async withAcpConnection(backend, cwd, exchange) {
+		let connection = null;
+		try {
+			let command = await this.findBinary(backend);
+			let proc = await this.spawnAgent(command, this.acpArgs(backend), cwd);
+			connection = this.createAcpConnection(proc);
+			let hello = await this.acpInitialize(connection);
+			return await exchange(connection, hello);
+		}
+		finally {
+			if (connection) {
+				await connection.close();
+			}
+		}
+	},
+
 	async loadAcpModels(backend) {
 		if (Array.isArray(this._acpModels[backend])) {
 			return this._acpModels[backend];
@@ -119,13 +136,9 @@ Object.assign(Zusia, {
 		}
 		delete this._acpModelErrors[backend];
 		this._acpModelPromises[backend] = (async () => {
-			let connection = null;
 			try {
-				let command = await this.findBinary(backend);
-				let proc = await this.spawnAgent(command, this.acpArgs(backend), this.getDataDir());
-				connection = this.createAcpConnection(proc);
-				await this.acpInitialize(connection);
-				let opened = await connection.request("session/new", { cwd: this.getDataDir(), mcpServers: [] });
+				let opened = await this.withAcpConnection(backend, this.getDataDir(), connection =>
+					connection.request("session/new", { cwd: this.getDataDir(), mcpServers: [] }));
 				if (!this.BACKENDS[backend]) {
 					return [];
 				}
@@ -145,44 +158,32 @@ Object.assign(Zusia, {
 			}
 			finally {
 				delete this._acpModelPromises[backend];
-				if (connection) {
-					await connection.close();
-				}
 			}
 		})();
 		return this._acpModelPromises[backend];
 	},
 
 	async acpAuthenticate(backend) {
-		let connection = null;
 		try {
-			let command = await this.findBinary(backend);
-			let proc = await this.spawnAgent(command, this.acpArgs(backend), this.getDataDir());
-			connection = this.createAcpConnection(proc);
-			let hello = await this.acpInitialize(connection);
-			let methods = hello.authMethods || [];
-			if (!methods.length) {
-				return { error: "This agent has no ACP sign-in methods. Sign in with its own CLI in a terminal.", methods: [] };
-			}
-			let method = methods[0];
-			try {
-				let result = await connection.request("authenticate", { methodId: method.id });
-				return { method, methods, result };
-			}
-			catch (e) {
-				return { error: e.message, methods, method };
-			}
+			return await this.withAcpConnection(backend, this.getDataDir(), async (connection, hello) => {
+				let methods = hello.authMethods || [];
+				if (!methods.length) {
+					return { error: "This agent has no ACP sign-in methods. Sign in with its own CLI in a terminal.", methods: [] };
+				}
+				let method = methods[0];
+				try {
+					let result = await connection.request("authenticate", { methodId: method.id });
+					return { method, methods, result };
+				}
+				catch (e) {
+					return { error: e.message, methods, method };
+				}
+			});
 		}
 		catch (e) {
 			return { error: String((e && e.message) || e), methods: [] };
 		}
-		finally {
-			if (connection) {
-				await connection.close();
-			}
-		}
 	},
-
 	async runAcp(backend, request) {
 		let { ctx, onProgress, onSpawn } = request;
 		let label = this.BACKENDS[backend].label;
