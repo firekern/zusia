@@ -11,7 +11,6 @@ Object.assign(Zusia, {
 			// so their .exe is found before an npm shim.
 			return [
 				OS.Path.join(home, ".local", "bin"),
-				OS.Path.join(home, ".opencode", "bin"),
 				OS.Path.join(home, "AppData", "Local", "agy", "bin"),
 				OS.Path.join(home, "AppData", "Local", "Programs", "OpenAI", "Codex", "bin"),
 				OS.Path.join(home, "AppData", "Roaming", "npm"),
@@ -22,7 +21,6 @@ Object.assign(Zusia, {
 			"/opt/homebrew/bin",
 			"/opt/local/bin",
 			OS.Path.join(home, ".local", "bin"),
-			OS.Path.join(home, ".opencode", "bin"),
 			OS.Path.join(home, ".claude", "local"),
 			OS.Path.join(home, ".npm-global", "bin"),
 			OS.Path.join(home, "bin"),
