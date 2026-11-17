@@ -166,6 +166,15 @@ test("windows: a path setting written with forward slashes still resolves npm's 
 	assert.equal(await plugin.findBinary("claude"), CLAUDE_NPM_EXE);
 });
 
+// Windows matches file names without case and drops their trailing dots and spaces, so
+// these name npm's claude.cmd as surely as the spelling in the shim table does.
+test("windows: a path setting to npm's shim finds its target in any case, and with a trailing dot", async () => {
+	for (const shim of [NPM + "\\Claude.CMD", NPM + "\\claude.cmd."]) {
+		const { plugin } = loadWindowsPlugin({ executables: [shim, CLAUDE_NPM_EXE], prefs: { [PREFIX + "claudePath"]: shim } });
+		assert.equal(await plugin.findBinary("claude"), CLAUDE_NPM_EXE, shim);
+	}
+});
+
 test("windows: a path setting is searched like a command: without an extension it finds the .exe, and a missing one is reported", async () => {
 	const { plugin } = loadWindowsPlugin({ executables: ["C:\\tools\\claude.exe"], prefs: { [PREFIX + "claudePath"]: "C:/tools/claude" } });
 	assert.equal(await plugin.findBinary("claude"), "C:\\tools\\claude.exe");
