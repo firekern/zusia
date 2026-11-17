@@ -395,6 +395,9 @@ async function testReaderWidth(win, CS) {
 	if (!root) {
 		return;
 	}
+	// The tree selects the attachment as it is imported, which can open this chat before
+	// chat.json was written, and Zotero does not render a section twice for one item.
+	CS.renderMessages(CS._views.get(root), await CS.loadHistory(dir));
 	root.closest("[data-pane]")?.scrollIntoView({ block: "start" });
 	await win.document.fonts.ready;
 	await Zotero.Promise.delay(800);
