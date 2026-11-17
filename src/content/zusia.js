@@ -380,6 +380,9 @@ Zusia = {
 	_prefObservers: [],
 	_katex: undefined,
 	_agyModels: null,
+	_acpModels: {},
+	_acpModelPromises: {},
+	_acpModelErrors: {},
 	// True while building Zotero note HTML: maths becomes note-editor markup, not MathML.
 	_noteMode: false,
 	_logLines: [],
