@@ -12,15 +12,15 @@ Object.assign(Zusia, {
 	},
 
 	// The assistant that runs memory jobs: the one in use, when it can run with nothing to
-	// read. Codex cannot: its read-only sandbox still reads the whole home folder. An ACP
-	// agent is a program of its own, so its card asks first.
+	// read. Named, never by default: Claude and Antigravity can (backgroundArgs), Codex
+	// cannot, as its read-only sandbox still reads the whole home folder. An ACP agent's own
+	// tools are out of Zusia's sight unless it asks, so its card has to allow it first.
 	jobBackend() {
 		let backend = this.getBackend();
-		let info = this.BACKENDS[backend];
-		if (!info) return null;
-		if (info.kind === "api") return backend === "openai" && !this.getAPIConfig(backend).background ? null : backend;
-		if (info.kind === "acp") return this.acpAgentConfig(backend)?.background ? backend : null;
-		return backend === "codex" ? null : backend;
+		let { kind } = this.BACKENDS[backend];
+		if (kind === "api") return backend === "openai" && !this.getAPIConfig(backend).background ? null : backend;
+		if (kind === "acp") return this.acpAgentConfig(backend)?.background ? backend : null;
+		return backend === "claude" || backend === "agy" ? backend : null;
 	},
 
 	memoryJobsAvailable() {

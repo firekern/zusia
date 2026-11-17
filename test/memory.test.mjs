@@ -459,6 +459,15 @@ test("runner: Antigravity runs its default model at low effort in a sandbox, no 
 	assert.equal(await env.plugin.scheduleConsolidation("/d", "turn"), false);
 });
 
+test("runner: a CLI runs memory jobs only once it is named for them", () => {
+	const env = loadPlugin();
+	env.plugin.BACKENDS.newcli = { label: "New", fullName: "New CLI", kind: "cli", command: "new", models: [], efforts: [""] };
+	env.prefs[PREFIX + "backend"] = "newcli";
+	assert.equal(env.plugin.jobBackend(), null, "it would get Antigravity's flags and could read the home folder");
+	env.prefs[PREFIX + "backend"] = "claude";
+	assert.equal(env.plugin.jobBackend(), "claude");
+});
+
 test("runner: stderr with a rate limit is reported as one, a failure is an error, and shutdown stops a running call", async () => {
 	const env = loadPlugin();
 	fakeCli(env, { stderr: "API Error: 429 {\"type\":\"rate_limit_error\"}", exitCode: 1 });
