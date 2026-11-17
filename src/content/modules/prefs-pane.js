@@ -360,8 +360,10 @@ Object.assign(Zusia, {
 		});
 		again.addEventListener("click", () => listModels(true));
 		body.appendChild(this.effortRow(doc, key));
-		body.appendChild(this.row(doc, "Background memory",
-			this.switchControl(doc, !!config.background, value => this.setAcpAgentBackground(key, value)),
+		let background = this.switchControl(doc, !!config.background, value => this.setAcpAgentBackground(key, value));
+		// A switch is a button, which the row's <label> does not name.
+		background.setAttribute("aria-label", "Background memory");
+		body.appendChild(this.row(doc, "Background memory", background,
 			"Runs the study-memory calls through this agent, in the background. Off until you turn it on."));
 
 		let signIn = this.el(doc, "button", "zs-button zs-acp-signin", "Sign in");

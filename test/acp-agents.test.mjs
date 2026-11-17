@@ -683,6 +683,7 @@ test("an agent's card turns its background memory on and off", () => {
 	p.renderPrefsPane(env.document, container);
 	const card = container.querySelector('.zs-acp-list .zs-agent[data-backend="' + key + '"]');
 	const toggle = [...card.querySelectorAll(".zs-row")].find(row => row.textContent.includes("Background memory")).querySelector(".zs-switch");
+	assert.equal(toggle.getAttribute("aria-label"), "Background memory", "a screen reader names the switch the memory rule depends on");
 	assert.equal(toggle.getAttribute("aria-checked"), "false");
 	toggle.click();
 	assert.equal(stored(env.prefs)[0].background, true);
