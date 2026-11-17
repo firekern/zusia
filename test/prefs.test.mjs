@@ -22,7 +22,7 @@ test("settings pane renders its cards", () => {
 	const { container } = pane();
 	assert.deepEqual([...container.querySelectorAll(".zs-card-title")].map(h => h.textContent),
 		["Assistants", "Chat", "Appearance", "Behaviour", "Troubleshooting"]);
-	assert.equal(container.querySelectorAll(".zs-agent").length, 6);
+	assert.equal(container.querySelectorAll(".zs-agent").length, 7);
 });
 
 test("assistant, default model and effort are saved per backend", () => {

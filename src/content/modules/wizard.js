@@ -108,8 +108,8 @@ Object.assign(Zusia, {
 		else if (name === "assistant") {
 			hero("sparkle", "Your AI");
 			let installed = root._installed || {};
-			// The CLIs are the way in. An API assistant joins them once it has a model.
-			let offered = Object.entries(this.BACKENDS).filter(([value]) => !this.isAPIBackend(value) || this.getModel(value));
+			let offered = Object.entries(this.BACKENDS).filter(([value]) =>
+				!this.BACKENDS[value].acp && (!this.isAPIBackend(value) || this.getModel(value)));
 			let tiles = this.tiles(doc, offered.map(([value, b]) => ({ value, label: b.label, icon: this.BACKEND_ICONS[value] })),
 				this.getBackend(), (v) => {
 					this.setPref("backend", v);
@@ -123,6 +123,8 @@ Object.assign(Zusia, {
 				}
 			}
 			step.appendChild(tiles);
+			step.appendChild(this.el(doc, "div", "zs-wizard-sub",
+				"ACP agents instead? Settings → Zusia → Assistants."));
 			step.appendChild(this.el(doc, "div", "zs-wizard-sub", "A local model instead? Settings → Zusia → Assistants."));
 		}
 		else if (name === "look") {

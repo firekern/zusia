@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { loadPlugin } from "./load-plugin.mjs";
 import {
 	loadWindowsPlugin, mixedSeparators, windowsPathUtils,
-	HOME, TEMP, NPM, NODE_DIR, NODE_EXE, DATA_DIR, CLAUDE_NATIVE, CLAUDE_NPM_EXE, CODEX_JS, PATHEXT,
+	HOME, TEMP, NPM, NODE_DIR, NODE_EXE, DATA_DIR, CLAUDE_NATIVE, CLAUDE_NPM_EXE, CODEX_JS, COMMANDCODE_MJS, PATHEXT,
 } from "./windows-env.mjs";
 
 const PREFIX = "extensions.zusia.";
@@ -103,6 +103,15 @@ test("windows: npm's codex.cmd runs as node.exe codex.js, with node.exe found on
 	assert.equal(valueAfter(run.args, "-C"), PAPER);
 	assert.equal(run.args[run.args.length - 1], "-", "the prompt comes on stdin");
 	assert.ok(run.closed);
+});
+
+test("windows: the preconfigured ACP agent's npm .cmd resolves to the .mjs it runs with node.exe", async () => {
+	const env = loadWindowsPlugin({ executables: [NPM + "\\command-code.cmd", COMMANDCODE_MJS, NODE_EXE], environment: upperPath() });
+	assert.equal(await env.plugin.findBinary("commandcode"), COMMANDCODE_MJS);
+	await env.plugin.spawnAgent(COMMANDCODE_MJS, ["acp"], PAPER);
+	const [run] = env.spawns;
+	assert.equal(run.command, NODE_EXE);
+	assert.deepEqual(run.args, [COMMANDCODE_MJS, "acp"]);
 });
 
 // Windows names the variable "Path" (cmd's `set` shows Path=...), and

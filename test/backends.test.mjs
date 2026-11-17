@@ -25,6 +25,7 @@ test("no backend passes an empty argument", () => {
 		plugin.claudeArgs({ ...base, session }),
 		plugin.codexArgs({ ...base, session }),
 		plugin.antigravityArgs({ ...base, session }),
+		plugin.acpArgs("commandcode"),
 	]) {
 		assert.ok(!args.includes(""), "empty argument in: " + args.slice(0, 12).join(" | "));
 		// The prompt and the system prompt are multi-line, so a newline means one leaked into argv.
@@ -57,6 +58,7 @@ test("every backend offers only efforts its CLI accepts", () => {
 	assert.deepEqual([...plugin.BACKENDS.claude.efforts], ["", "low", "medium", "high", "xhigh", "max"]);
 	assert.deepEqual([...plugin.BACKENDS.codex.efforts], ["", "low", "medium", "high", "xhigh"]);
 	assert.deepEqual([...plugin.BACKENDS.agy.efforts], ["", "low", "medium", "high"]);
+	assert.deepEqual([...plugin.BACKENDS.commandcode.efforts], ["", "low", "medium", "high", "max"]);
 	for (const backend of Object.values(plugin.BACKENDS)) {
 		for (const effort of backend.efforts) {
 			assert.ok(plugin.EFFORTS[effort], "label for " + effort);

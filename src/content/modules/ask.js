@@ -198,7 +198,7 @@ Object.assign(Zusia, {
 
 			let images = pending.images || [];
 			if (images.length && !this.BACKENDS[backend].images) {
-				return { error: label + " cannot see images from the sidebar. Switch to Claude or Codex, or remove the image and ask again." };
+				return { error: label + " cannot see images from the sidebar. Switch to an assistant that accepts images, or remove the attachment and ask again." };
 			}
 			let request = {
 				ctx, files, history, session, images,

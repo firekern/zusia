@@ -7,7 +7,7 @@ import { loadPlugin, openChat } from "./load-plugin.mjs";
 const P = "extensions.zusia.";
 const env = (prefs = {}) => loadPlugin({ prefs: { [P + "onboarded"]: true, ...prefs } });
 const ollama = { [P + "ollama.model"]: "qwen3:4b" };
-const clis = ["Claude Code", "OpenAI Codex", "Google Antigravity"];
+const clis = ["Claude Code", "OpenAI Codex", "Google Antigravity", "Command Code"];
 
 function menuSections(e) {
 	const p = e.plugin, { root } = openChat(e);
@@ -48,6 +48,8 @@ test("the wizard offers the CLIs, says where local models are, and adds one that
 	};
 	let e = env(), step = tiles(e);
 	assert.deepEqual(step.labels, ["Claude", "Codex", "Antigravity"]);
+	assert.match(step.text, /ACP agents instead/);
+	assert.match(step.text, /A local model instead/);
 	assert.match(step.text, /Settings → Zusia → Assistants/);
 	e.window.close();
 	e = env(ollama);

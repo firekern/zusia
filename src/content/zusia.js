@@ -66,6 +66,17 @@ Zusia = {
 			models: [{ id: "", label: "Default", desc: "Your Antigravity default" }],
 			efforts: ["", "low", "medium", "high"],
 		},
+		commandcode: {
+			label: "Command Code",
+			fullName: "Command Code",
+			command: "command-code",
+			pathPref: "commandcodePath",
+			acp: true,
+			acpArgs: ["acp"],
+			models: [{ id: "", label: "Default", desc: "The agent's default model" }],
+			efforts: ["", "low", "medium", "high", "max"],
+			images: true,
+		},
 		ollama: {
 			label: "Ollama", fullName: "Ollama API", transport: "http", baseURL: "http://127.0.0.1:11434/v1",
 			models: [{ id: "", label: "Choose a model", desc: "Configure in Settings → Zusia → Assistants" }],
@@ -261,7 +272,7 @@ Zusia = {
 	// inline budget, so it stays a fraction of the smallest one (12,000 on Windows).
 	CUSTOM_PROMPT_CHARS: 4000,
 	WIZARD_STEPS: ["welcome", "assistant", "look", "buddy", "answers", "voice", "done"],
-	BACKEND_ICONS: { claude: "sparkle", codex: "terminal", agy: "rocket", ollama: "ollama", unsloth: "unsloth", openai: "ref" },
+	BACKEND_ICONS: { claude: "sparkle", codex: "terminal", agy: "rocket", commandcode: "code", ollama: "ollama", unsloth: "unsloth", openai: "ref" },
 	// Study buddies: original drawings shown in the empty chat, with a matching header icon.
 	MASCOTS: {
 		cat: { label: "Cat", icon: "mascot-cat", header: "cat" },
