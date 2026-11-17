@@ -231,7 +231,8 @@ Object.assign(Zusia, {
 
 	// One prompt, `prompt(resumed)`, through a fresh agent process: `session` resumed when the
 	// agent can load it, else a new one, the model and effort applied, and the answer streamed
-	// to onProgress. Resolves to {text, error, sessionId, partialText, truncated, resumeFailed}.
+	// to onProgress. Resolves to {text, error, sessionId, partialText, truncated, resumeFailed},
+	// with a sessionId only from an agent that can load it again.
 	async acpTurn(backend, { cwd, prompt, session = null, images = [], model, effort, onProgress = () => {}, onSpawn }) {
 		let label = this.BACKENDS[backend].label;
 		let state = { text: "", narration: "", thinking: false, thoughtAt: 0, tools: new Map(), emitted: new Set() };
@@ -239,7 +240,11 @@ Object.assign(Zusia, {
 		// a config change do not.
 		let onUpdate = null;
 		let sessionId = null;
+		let resumable = false;
 		let resumed = false;
+		// Only a session the agent can load again is worth keeping: ask() would otherwise take
+		// the next question for a follow-up and record no instructions for what it sends.
+		let kept = () => (resumable && sessionId ? { sessionId } : {});
 		try {
 			return await this.withAcpConnection(backend, cwd, {
 				onSpawn,
@@ -251,12 +256,13 @@ Object.assign(Zusia, {
 				onRequest: (method, params) => this.acpRequest(method, params, cwd, label),
 			}, async (connection, hello) => {
 				let capabilities = hello.agentCapabilities || {};
+				resumable = !!capabilities.loadSession;
 				if (images.length && !(capabilities.promptCapabilities && capabilities.promptCapabilities.image)) {
 					return { text: "", error: label + " does not accept images. Remove the attachment or switch assistant." };
 				}
 
 				let configOptions = null;
-				if (session && capabilities.loadSession) {
+				if (session && resumable) {
 					try {
 						let loaded = await connection.request("session/load", { sessionId: session.id, cwd, mcpServers: [] });
 						sessionId = session.id;
@@ -267,10 +273,10 @@ Object.assign(Zusia, {
 					catch (e) {
 						let help = this.acpSignInHelp(label, e.message);
 						if (help) {
-							return { text: "", error: help, sessionId: session.id };
+							return { text: "", error: help };
 						}
 						this.log("acp: session " + session.id + " could not be loaded (" + e.message + ")");
-						return { text: "", error: e.message, sessionId: session.id, resumeFailed: true };
+						return { text: "", error: e.message, resumeFailed: true };
 					}
 				}
 				if (!sessionId) {
@@ -288,7 +294,7 @@ Object.assign(Zusia, {
 				this.rememberAcpConfig(backend, configOptions);
 				let refused = await this.applyAcpOptions(connection, sessionId, configOptions, model, effort, label);
 				if (refused) {
-					return { text: "", error: refused, sessionId };
+					return { text: "", error: refused, ...kept() };
 				}
 
 				let blocks = await this.acpPromptBlocks(prompt(resumed), images);
@@ -299,9 +305,9 @@ Object.assign(Zusia, {
 
 				let text = (state.text || state.narration).trim();
 				if (!text) {
-					return { text: "", error: answer.stopReason === "refusal" ? label + " declined to answer." : label + " returned no text.", sessionId };
+					return { text: "", error: answer.stopReason === "refusal" ? label + " declined to answer." : label + " returned no text.", ...kept() };
 				}
-				return { text, sessionId, truncated: answer.stopReason === "max_tokens" };
+				return { text, ...kept(), truncated: answer.stopReason === "max_tokens" };
 			});
 		}
 		catch (e) {
@@ -309,12 +315,12 @@ Object.assign(Zusia, {
 			let partialText = (state.text || state.narration).trim();
 			let help = this.acpSignInHelp(label, e.message);
 			if (help) {
-				return { text: "", error: help, sessionId };
+				return { text: "", error: help, ...kept() };
 			}
 			if (!e.acpClosed) {
 				this.logError(label + " ACP", e);
 			}
-			return { text: "", error: e.message, sessionId, partialText, resumeFailed: resumed && !partialText };
+			return { text: "", error: e.message, ...kept(), partialText, resumeFailed: resumed && !partialText };
 		}
 	},
 

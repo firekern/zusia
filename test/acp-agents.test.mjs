@@ -39,7 +39,7 @@ function stream() {
 	};
 }
 
-function fakeAgent({ answer = "It is the FFT.", sessionId = "s-1", auth = [], configOptions = [] } = {}) {
+function fakeAgent({ answer = "It is the FFT.", sessionId = "s-1", auth = [], configOptions = [], capabilities = {} } = {}) {
 	const stdout = stream();
 	const stderr = stream();
 	const messages = [];
@@ -53,7 +53,7 @@ function fakeAgent({ answer = "It is the FFT.", sessionId = "s-1", auth = [], co
 				const message = JSON.parse(text);
 				messages.push(message);
 				if (message.method === "initialize") {
-					send({ jsonrpc: "2.0", id: message.id, result: { protocolVersion: 1, agentCapabilities: { loadSession: false }, authMethods: auth } });
+					send({ jsonrpc: "2.0", id: message.id, result: { protocolVersion: 1, agentCapabilities: { loadSession: false, ...capabilities }, authMethods: auth } });
 				}
 				else if (message.method === "authenticate") {
 					send({ jsonrpc: "2.0", id: message.id, result: { ok: true } });
@@ -365,7 +365,8 @@ test("a custom ACP agent runs its own command and arguments", async () => {
 	const result = await p.runAcp(key, { ...request, onProgress: ({ text }) => { if (text !== undefined) shown.push(text); } });
 	await flush();
 
-	assert.deepEqual(plain(result), { text: "The FFT turns 8 samples into 8 frequencies.", sessionId: "s-1", truncated: false });
+	assert.deepEqual(plain(result), { text: "The FFT turns 8 samples into 8 frequencies.", truncated: false },
+		"no session id: this agent cannot load the session again");
 	assert.deepEqual(lookups, [key], "the agent is looked up under its own backend key");
 	assert.deepEqual(spawns, [{ command: "/opt/opencode/bin/opencode", args: ["acp", "--print-logs"], workdir: "/d" }]);
 	assert.deepEqual(fake.messages.map(message => message.method), ["initialize", "session/new", "session/prompt"]);
@@ -373,6 +374,26 @@ test("a custom ACP agent runs its own command and arguments", async () => {
 	assert.equal(fake.messages[1].params.cwd, "/d");
 	assert.match(fake.messages[2].params.prompt[0].text, /Why\?/);
 	assert.equal(shown[shown.length - 1], "The FFT turns 8 samples into 8 frequencies.");
+});
+
+test("only an agent that can load its sessions gets one kept, so a follow-up is sent in full otherwise", async () => {
+	for (const [loadSession, sessions] of [[false, {}], [true, { "acp:opencode": "s-7" }]]) {
+		const env = fresh();
+		const p = env.plugin;
+		p.findBinary = async () => "/opt/opencode";
+		p.spawnAgent = async () => fakeAgent({ sessionId: "s-7", capabilities: { loadSession } }).proc;
+		const { key } = p.addAcpAgent(agent());
+		const store = { history: [], sessions: {} };
+		p.exportContext = async () => ({ metadata: "# T\n", annotations: "" });
+		p.loadHistory = async () => plain(store.history);
+		p.appendHistory = async (dir, messages) => { store.history.push(...messages); };
+		p.loadSessions = async () => ({ ...store.sessions });
+		p.saveSessions = async (dir, saved) => { store.sessions = saved; };
+		const pending = { backend: key, partial: "", cancelled: false, progress: () => {} };
+		assert.deepEqual(plain(await p.ask({ dir: "/d" }, "Why?", pending)), {});
+		assert.deepEqual(Object.fromEntries(Object.entries(store.sessions).map(([k, v]) => [k, v.id])), sessions,
+			"loadSession " + loadSession);
+	}
 });
 
 test("a custom agent that is not signed in gets its own name in the help", async () => {
