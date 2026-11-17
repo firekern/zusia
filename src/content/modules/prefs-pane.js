@@ -322,31 +322,41 @@ Object.assign(Zusia, {
 		let model = this.select(doc, this.modelSelectOptions(key), this.getModel(key),
 			value => this.setPref(key + ".model", value));
 		body.appendChild(this.row(doc, "Model", model));
-		if (!this.acpModelEntry(key).models) {
-			let hint = this.el(doc, "div", "zs-row-hint", "Loading the model list…");
-			body.appendChild(hint);
-			let load = () => this.loadLiveModels(key, { retry: true }).then(() => {
+		let hint = this.el(doc, "div", "zs-row-hint");
+		let reason = this.el(doc, "span", "zs-acp-model-error");
+		let again = this.el(doc, "button", "zs-button zs-acp-retry", "Try again");
+		again.type = "button";
+		body.appendChild(hint);
+		let showModels = () => {
+			let { models, error } = this.acpModelEntry(key);
+			model.refill(this.modelSelectOptions(key), this.getModel(key));
+			hint.hidden = !!models;
+			if (!error) {
+				hint.textContent = "Loading the model list…";
+				return;
+			}
+			reason.textContent = "Models could not be loaded. " + error;
+			hint.replaceChildren(reason, again);
+		};
+		let listModels = (retry) => {
+			this.loadLiveModels(key, { retry }).then(() => {
 				// The agent may have been removed, or Settings closed, while it listed its models.
-				if (!this.BACKENDS[key] || !model.isConnected) {
-					return;
+				if (this.BACKENDS[key] && model.isConnected) {
+					showModels();
 				}
-				model.refill(this.modelSelectOptions(key), this.getModel(key));
-				let { error } = this.acpModelEntry(key);
-				if (!error) {
-					hint.remove();
-					return;
-				}
-				hint.textContent = "Models could not be loaded. " + error + " ";
-				let again = this.el(doc, "button", "zs-button zs-acp-retry", "Try again");
-				again.type = "button";
-				again.addEventListener("click", () => {
-					hint.textContent = "Loading the model list…";
-					load();
-				});
-				hint.appendChild(again);
 			});
-			load();
-		}
+			showModels();
+		};
+		// Building the card starts nothing, and opening it asks without retrying: an agent that
+		// is not signed in, or an npx one offline, would otherwise start again on every visit to
+		// Settings and every Add or Remove, which rebuild the cards. A failure stays until Try again.
+		showModels();
+		details.addEventListener("toggle", () => {
+			if (details.open) {
+				listModels(false);
+			}
+		});
+		again.addEventListener("click", () => listModels(true));
 		body.appendChild(this.effortRow(doc, key));
 		body.appendChild(this.row(doc, "Background memory",
 			this.switchControl(doc, !!config.background, value => this.setAcpAgentBackground(key, value)),

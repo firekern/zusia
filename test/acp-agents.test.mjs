@@ -709,26 +709,80 @@ async function settle(done) {
 	}
 }
 
+// Opens a card as a click on its summary does; the toggle event comes a task later.
+async function expand(card) {
+	card.open = true;
+	await new Promise(resolve => setTimeout(resolve, 0));
+}
+
 test("a card whose agent could not list its models says why, and Try again lists them", async () => {
 	const env = fresh();
 	const p = env.plugin;
 	const { key } = p.addAcpAgent(agent());
 	p.loadAcpModels = env.loadAcpModels;
 	p.getDataDir = () => "/d";
-	p.spawnAgent = async () => deadAgent(1, "npx: network unreachable\n");
+	let started = 0;
+	// Antigravity's card lists its models through the same spawn; only the agent's count here.
+	p.spawnAgent = async (command) => {
+		started += command === "/opt/opencode";
+		return deadAgent(1, "npx: network unreachable\n");
+	};
 	const { card, model } = agentCard(env, key);
 	const hint = card.querySelector(".zs-agent-body > .zs-row-hint");
-	assert.equal(hint.textContent, "Loading the model list…");
+	await flush();
+	assert.equal(started, 0, "a card that is only built starts nothing");
+	await expand(card);
+	assert.equal(started, 1, "opening it asks the agent");
 	await settle(() => hint.querySelector(".zs-acp-retry"));
-	assert.equal(hint.textContent, "Models could not be loaded. OpenCode exited with code 1: npx: network unreachable Try again");
+	assert.equal(hint.querySelector(".zs-acp-model-error").textContent, "Models could not be loaded. OpenCode exited with code 1: npx: network unreachable");
 	assert.deepEqual([...model.options].map(o => o.value), [""]);
 
 	p.spawnAgent = async () => fakeAgent({ configOptions: MODEL }).proc;
 	hint.querySelector(".zs-acp-retry").click();
 	assert.equal(hint.textContent, "Loading the model list…");
-	await settle(() => !hint.isConnected);
-	assert.equal(hint.isConnected, false, "the hint goes once the list is in");
+	await settle(() => hint.hidden);
+	assert.equal(hint.hidden, true, "the hint goes once the list is in");
 	assert.deepEqual([...model.options].map(o => o.value), ["", "fast"]);
+});
+
+test("Settings shows a failed list as it is, and only Try again starts the agent again", async () => {
+	const env = loadPlugin();
+	const p = env.plugin;
+	const key = "acp:commandcode";
+	p.loadAcpModels = env.loadAcpModels;
+	p.getDataDir = () => "/d";
+	p.findBinary = async backend => "/bin/" + backend;
+	const started = [];
+	// Antigravity's card lists its models through the same spawn; only the agents count here.
+	p.spawnAgent = async (command) => {
+		if (command.startsWith("/bin/acp:")) {
+			started.push(command);
+		}
+		return deadAgent(1, "Authentication required\n");
+	};
+	await p.loadLiveModels(key);
+	assert.deepEqual(started, ["/bin/" + key], "the menu's listing failed once");
+
+	const container = env.document.body.appendChild(env.document.createElement("div"));
+	p.renderPrefsPane(env.document, container);
+	p.renderPrefsPane(env.document, container);
+	const form = container.querySelector(".zs-acp-add");
+	const [name, command] = form.querySelectorAll("input");
+	name.value = "OpenCode";
+	command.value = "opencode";
+	form.querySelector(".zs-acp-add-button").click();
+	const card = container.querySelector('.zs-acp-list .zs-agent[data-backend="' + key + '"]');
+	const hint = card.querySelector(".zs-agent-body > .zs-row-hint");
+	assert.equal(hint.querySelector(".zs-acp-model-error").textContent,
+		"Models could not be loaded. Command Code exited with code 1: Authentication required", "the failure shows at once");
+	await expand(card);
+	await settle(() => started.length > 2);
+	assert.deepEqual(started, ["/bin/" + key, "/bin/acp:opencode"],
+		"two renders, an Add and an opened card start nothing but the added agent's own listing");
+
+	hint.querySelector(".zs-acp-retry").click();
+	await settle(() => started.length > 2);
+	assert.deepEqual(started, ["/bin/" + key, "/bin/acp:opencode", "/bin/" + key], "Try again starts it once");
 });
 
 test("removing the agent in use from its card hands the chat back to Claude", () => {
