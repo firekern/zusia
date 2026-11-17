@@ -198,6 +198,15 @@ test("windows: a ~ command without an extension gets its .exe under a profile fo
 	assert.equal(found, home + "\\bin\\agent.exe");
 });
 
+// Zotero started from Git Bash inherits its HOME. Glued to that, ~ gives a path no
+// Windows program can open, and the native installers' folders are dropped from PATH.
+test("windows: with Git Bash's HOME set, ~ and the extra folders are under USERPROFILE", async () => {
+	const gitBash = { USERPROFILE: HOME, HOME: "/c/Users/u", PATH: NODE_DIR, PATHEXT };
+	const plugin = typedAgent("~/bin/agent.exe", [HOME + "\\bin\\agent.exe"], gitBash);
+	assert.equal(await plugin.findBinary("acp:agent"), HOME + "\\bin\\agent.exe");
+	assert.equal(plugin.buildChildEnvironment().PATH.split(";")[0], HOME + "\\.local\\bin");
+});
+
 test("windows: a full path is used as given, on a drive with either slash or on a share", async () => {
 	assert.equal(await typedAgent("C:/Tools/agent.exe", ["C:\\Tools\\agent.exe"]).findBinary("acp:agent"), "C:\\Tools\\agent.exe");
 	assert.equal(await typedAgent("\\\\srv\\share\\agent.exe", ["\\\\srv\\share\\agent.exe"]).findBinary("acp:agent"), "\\\\srv\\share\\agent.exe");
