@@ -212,7 +212,8 @@ Object.assign(Zusia, {
 		}
 		let input = root.querySelector(".zs-input");
 		if (input) {
-			input.placeholder = "Ask " + info.label + " about this paper…";
+			let modelName = model ? this.modelLabel(backend, model) : "";
+			input.placeholder = "Ask " + (modelName || info.label) + " about this paper…";
 		}
 		root.querySelector(".zs-menu")?.refresh?.();
 		this.renderAPIRuntime(root);
@@ -238,6 +239,7 @@ Object.assign(Zusia, {
 
 	openModelMenu(root, anchor) {
 		let doc = root.ownerDocument;
+		let expanded = new Set([this.getBackend()]);
 		let menu = this.openMenu(root, anchor, (menu) => {
 			let current = this.getBackend();
 			for (let [key, backend] of Object.entries(this.BACKENDS)) {
@@ -247,7 +249,23 @@ Object.assign(Zusia, {
 				if (this.isAPIBackend(key) && !this.getModel(key)) {
 					continue;
 				}
-				this.menuSection(doc, menu, backend.fullName);
+				let open = expanded.has(key);
+				this.menuSection(doc, menu, backend.fullName, {
+					collapsible: true,
+					expanded: open,
+					onToggle: () => {
+						if (expanded.has(key)) {
+							expanded.delete(key);
+						}
+						else {
+							expanded.add(key);
+						}
+						menu.refresh();
+					},
+				});
+				if (!open) {
+					continue;
+				}
 				if (installed === null) {
 					menu.appendChild(this.el(doc, "div", "zs-menu-note",
 						"Not installed. Install the " + backend.command + " CLI or set its path in Settings."));

@@ -364,6 +364,34 @@
 	border-top: 1px solid var(--zs-line);
 	padding-top: 8px;
 }
+.zs-menu-section-toggle {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	width: 100%;
+	border: none;
+	background: transparent;
+	font-family: inherit;
+	text-align: start;
+	cursor: pointer;
+}
+.zs-menu-section-toggle:hover,
+.zs-menu-section-toggle:focus-visible {
+	color: var(--zs-text);
+	background: var(--zs-hover);
+	border-radius: 4px;
+	outline: none;
+}
+.zs-menu-section-toggle .zs-menu-chevron {
+	width: 12px;
+	height: 12px;
+	flex: none;
+	transition: transform 0.15s ease;
+}
+.zs-menu-section-toggle[aria-expanded="true"] .zs-menu-chevron {
+	transform: rotate(180deg);
+}
 .zs-menu-item {
 	display: flex;
 	align-items: center;

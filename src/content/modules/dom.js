@@ -224,9 +224,11 @@ Object.assign(Zusia, {
 			}
 		};
 		menu.refresh = () => {
+			let top = menu.scrollTop;
 			menu.textContent = "";
 			build(menu);
 			position();
+			menu.scrollTop = top;
 		};
 		menu.refresh();
 
@@ -270,8 +272,18 @@ Object.assign(Zusia, {
 		return menu;
 	},
 
-	menuSection(doc, menu, label) {
-		menu.appendChild(this.el(doc, "div", "zs-menu-section", label));
+	menuSection(doc, menu, label, { collapsible = false, expanded = true, onToggle = null } = {}) {
+		let section = collapsible
+			? this.el(doc, "button", "zs-menu-section zs-menu-section-toggle", label)
+			: this.el(doc, "div", "zs-menu-section", label);
+		if (collapsible) {
+			section.type = "button";
+			section.setAttribute("aria-expanded", String(!!expanded));
+			section.appendChild(this.svgIcon(doc, "chevron", "zs-menu-chevron"));
+			section.addEventListener("click", () => onToggle && onToggle());
+		}
+		menu.appendChild(section);
+		return section;
 	},
 
 	menuItem(doc, menu, { label, desc, checked, disabled, onSelect }) {

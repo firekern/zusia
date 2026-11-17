@@ -24,6 +24,11 @@ test("composer shows the assistant, model and effort from prefs", () => {
 	const { root } = sidebar({ [PREFIX + "claude.model"]: "opus", [PREFIX + "claude.effort"]: "high" });
 	assert.equal(root.querySelector(".zs-model-btn .zs-label").textContent, "Claude · Opus");
 	assert.equal(root.querySelector(".zs-effort-btn .zs-label").textContent, "High");
+	assert.equal(root.querySelector(".zs-input").placeholder, "Ask Opus about this paper…");
+});
+
+test("composer names the assistant when no model is chosen", () => {
+	const { root } = sidebar();
 	assert.equal(root.querySelector(".zs-input").placeholder, "Ask Claude about this paper…");
 });
 
@@ -40,7 +45,10 @@ test("model menu lists every assistant and switches backend and model together",
 	root.querySelector(".zs-model-btn").click();
 	assert.deepEqual([...root.querySelectorAll(".zs-menu-section")].map(n => n.textContent),
 		Object.values(plugin.BACKENDS).filter(b => b.transport !== "http").map(b => b.fullName));
+	let section = label => [...root.querySelectorAll(".zs-menu-section")].find(n => n.textContent.includes(label));
+	section("OpenAI Codex").click();
 	assert.ok(root.querySelector(".zs-menu").textContent.includes("Not installed"), "missing CLI is explained");
+	section("Google Antigravity").click();
 	const gemini = [...root.querySelectorAll(".zs-menu-item")].find(i => i.textContent.includes("Gemini 3.1 Pro"));
 	gemini.click();
 	assert.equal(prefs[PREFIX + "backend"], "agy");
@@ -48,6 +56,23 @@ test("model menu lists every assistant and switches backend and model together",
 	assert.equal(root.querySelector(".zs-menu"), null, "menu closes after choosing");
 	assert.equal(root.querySelector(".zs-model-btn .zs-label").textContent, "Gemini 3.1 Pro (High)");
 	assert.equal(root.querySelector(".zs-effort-btn .zs-label").textContent, "Auto");
+});
+
+test("model menu starts with only the current provider expanded", () => {
+	const { root, plugin } = sidebar();
+	plugin._agyModels = [{ id: "gemini-3.1-pro-high", label: "Gemini 3.1 Pro (High)" }];
+	root.querySelector(".zs-model-btn").click();
+	let section = label => [...root.querySelectorAll(".zs-menu-section")].find(n => n.textContent.includes(label));
+	assert.equal(section("Claude Code").getAttribute("aria-expanded"), "true", "the provider in use starts open");
+	assert.equal(section("Google Antigravity").getAttribute("aria-expanded"), "false", "the others start closed");
+	assert.ok([...root.querySelectorAll(".zs-menu-item")].some(i => i.textContent.includes("Haiku")), "its models are shown");
+	assert.ok(![...root.querySelectorAll(".zs-menu-item")].some(i => i.textContent.includes("Gemini")), "a closed provider hides its models");
+	section("Google Antigravity").click();
+	assert.equal(section("Google Antigravity").getAttribute("aria-expanded"), "true", "clicking the provider opens it");
+	assert.ok([...root.querySelectorAll(".zs-menu-item")].some(i => i.textContent.includes("Gemini")), "its models are shown");
+	section("Google Antigravity").click();
+	assert.equal(section("Google Antigravity").getAttribute("aria-expanded"), "false", "clicking it again closes it");
+	assert.ok(![...root.querySelectorAll(".zs-menu-item")].some(i => i.textContent.includes("Gemini")), "its models are hidden again");
 });
 
 test("effort menu offers the levels the current backend supports", () => {

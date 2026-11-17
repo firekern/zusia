@@ -165,6 +165,9 @@ async function testSidebar(win, CS) {
 	root.querySelector(".zs-model-btn").click();
 	let menu = await waitFor(() => root.querySelector(".zs-menu"), 5000, "model menu");
 	await waitFor(() => root.querySelector(".zs-menu").textContent.includes("Google Antigravity") && !root.querySelector(".zs-menu").textContent.includes("Loading"), 30000, "Antigravity models in menu");
+	let antigravity = [...root.querySelectorAll(".zs-menu-section")].find(n => n.textContent.includes("Google Antigravity"));
+	antigravity.click();
+	await waitFor(() => [...root.querySelectorAll(".zs-menu-item")].some(i => i.textContent.includes("Gemini")), 5000, "Antigravity models after expanding");
 	let menuRect = root.querySelector(".zs-menu").getBoundingClientRect();
 	let paneRect0 = win.document.getElementById("zotero-item-pane").getBoundingClientRect();
 	check("model menu fits in the pane", menuRect.left >= paneRect0.left - 1 && menuRect.right <= visibleRight() + 1 && menuRect.height > 100,
@@ -178,7 +181,23 @@ async function testSidebar(win, CS) {
 		return { row: [Math.round(row.top), Math.round(row.bottom)], text: [Math.round(text.top), Math.round(text.bottom)], held: text.top >= row.top - 0.5 && text.bottom <= row.bottom + 0.5 };
 	});
 	check("menu rows: a row with a description holds both its lines", described.length > 0 && described.every(d => d.held), described.filter(d => !d.held));
-	await snapshot(win, "zotero-model-menu", { x: paneRect0.x, y: paneRect0.bottom - 700, width: paneRect0.width, height: 700 });
+	let menuShot = (name) => {
+		let rect = root.querySelector(".zs-menu").getBoundingClientRect();
+		let width = Math.max(1, Math.round(Math.min(rect.width, win.innerWidth)));
+		let height = Math.max(1, Math.round(Math.min(rect.height, win.innerHeight)));
+		let x = Math.round(Math.max(0, Math.min(rect.x, win.innerWidth - width)));
+		let y = Math.round(Math.max(0, Math.min(rect.y, win.innerHeight - height)));
+		check(name + " has a region to capture", width > 100 && height > 60,
+			{ rect: [rect.x, rect.y, rect.width, rect.height], shot: [x, y, width, height] });
+		return { x, y, width, height };
+	};
+	await snapshot(win, "zotero-model-menu", menuShot("expanded model menu"));
+	let sectionFor = label => [...root.querySelectorAll(".zs-menu-section")].find(n => n.textContent.includes(label));
+	sectionFor("Claude Code").click();
+	sectionFor("Google Antigravity").click();
+	await Zotero.Promise.delay(250);
+	await snapshot(win, "zotero-model-menu-collapsed", menuShot("collapsed model menu"));
+	sectionFor("Claude Code").click();
 	let pick = (label) => {
 		let items = [...root.querySelectorAll(".zs-menu-item")];
 		let item = items.find(i => i.querySelector(".zs-menu-label")?.textContent === label);
