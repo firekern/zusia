@@ -11,12 +11,11 @@ Object.assign(Zusia, {
 		return this.getPref("memory.gists") === true;
 	},
 
-	// The CLI that runs memory jobs: the assistant in use, when it can run with nothing to
-	// read. Codex cannot: its read-only sandbox still reads the whole home folder.
 	jobBackend() {
 		let backend = this.getBackend();
 		if (backend === "openai" && !this.getAPIConfig(backend).background) return null;
-		return backend === "claude" || backend === "agy" || this.isAPIBackend(backend) ? backend : null;
+		let info = this.BACKENDS[backend];
+		return backend === "claude" || backend === "agy" || (info && info.acp) || this.isAPIBackend(backend) ? backend : null;
 	},
 
 	memoryJobsAvailable() {
@@ -160,6 +159,9 @@ Object.assign(Zusia, {
 			}
 			finally { if (job) job.proc = null; }
 		}
+		if (this.BACKENDS[backend] && this.BACKENDS[backend].acp) {
+			return this.runAcpBackground(backend, prompt, job);
+		}
 		let command;
 		try {
 			command = await this.findBinary(backend);
@@ -225,6 +227,69 @@ Object.assign(Zusia, {
 			}
 			// A just-stopped CLI can still hold the folder on Windows; the call's outcome
 			// (a rate limit above all) matters more than a leftover empty folder.
+			try {
+				await OS.File.removeDir(cwd);
+			}
+			catch (e) {
+				this.logError("removing a job folder", e);
+			}
+		}
+	},
+
+	async runAcpBackground(backend, prompt, job = null) {
+		let cwd = await this.makeJobDir();
+		let proc = null;
+		let finished = false;
+		let timedOut = false;
+		Zotero.Promise.delay(this.JOB_TIMEOUT_MS).then(() => {
+			if (!finished && proc) {
+				timedOut = true;
+				proc.kill();
+			}
+		});
+		try {
+			let result = await this.runAcp(backend, {
+				ctx: { dir: cwd },
+				files: {},
+				history: [],
+				session: null,
+				question: prompt,
+				raw: true,
+				model: "",
+				effort: "low",
+				onProgress: () => {},
+				onSpawn: (p) => {
+					proc = p;
+					if (job) {
+						job.proc = p;
+						if (job.cancelled) {
+							p.kill();
+						}
+					}
+				},
+			});
+			let error = result.error || "";
+			if (timedOut) {
+				error = "no answer within " + Math.round(this.JOB_TIMEOUT_MS / 60000) + " minutes";
+			}
+			if (error) {
+				return { text: "", error, rateLimited: this.isRateLimited(error) };
+			}
+			let text = (result.text || "").trim();
+			if (!text) {
+				return { text: "", error: backend + " returned no text", rateLimited: false };
+			}
+			return { text, error: "", rateLimited: false };
+		}
+		catch (e) {
+			this.logError("running an ACP memory job", e);
+			return { text: "", error: String((e && e.message) || e), rateLimited: this.isRateLimited(e && e.message) };
+		}
+		finally {
+			finished = true;
+			if (job) {
+				job.proc = null;
+			}
 			try {
 				await OS.File.removeDir(cwd);
 			}
