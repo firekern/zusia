@@ -29,6 +29,12 @@ Object.assign(Zusia, {
 		}
 	},
 
+	// Every assistant, kind by kind in KINDS order (the CLIs, the ACP agents, the APIs): an
+	// agent registers after the APIs, and would otherwise be listed after them.
+	orderedBackends() {
+		return Object.keys(this.KINDS).flatMap(kind => Object.entries(this.BACKENDS).filter(([, info]) => info.kind === kind));
+	},
+
 	getBackend() {
 		let backend = this.getPref("backend");
 		return this.BACKENDS[backend] ? backend : "claude";

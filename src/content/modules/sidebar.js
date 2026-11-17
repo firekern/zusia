@@ -251,7 +251,7 @@ Object.assign(Zusia, {
 		let listed = key => !this.isAPIBackend(key) || this.getModel(key);
 		let menu = this.openMenu(root, anchor, (menu) => {
 			let current = this.getBackend();
-			for (let [key, backend] of Object.entries(this.BACKENDS).filter(([key]) => listed(key))) {
+			for (let [key, backend] of this.orderedBackends().filter(([key]) => listed(key))) {
 				let installed = root._installed ? root._installed[key] : undefined;
 				let open = expanded.has(key);
 				this.menuSection(doc, menu, backend.fullName, {

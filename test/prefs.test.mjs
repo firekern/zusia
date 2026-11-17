@@ -27,6 +27,21 @@ test("settings pane renders its cards", () => {
 	assert.equal(container.querySelectorAll(".zs-agent").length, 7);
 });
 
+test("Answer with lists the CLIs, then the ACP agents, then the APIs, also after an Add", () => {
+	const { container, window } = pane();
+	const assistants = card(container, "Assistants");
+	const answerWith = () => [...assistants.querySelector(".zs-select").options].map(o => o.value);
+	assert.deepEqual(answerWith(), ["claude", "codex", "agy", "acp:commandcode", "ollama", "unsloth", "openai"]);
+	const form = assistants.querySelector(".zs-acp-add");
+	const [name, command] = form.querySelectorAll("input");
+	change(window, name, "OpenCode");
+	change(window, command, "opencode");
+	form.querySelector(".zs-acp-add-button").click();
+	assert.deepEqual(answerWith(), ["claude", "codex", "agy", "acp:commandcode", "acp:opencode", "ollama", "unsloth", "openai"]);
+	assert.deepEqual([...assistants.querySelectorAll(".zs-agent")].map(a => a.dataset.backend), answerWith(),
+		"in the order of the cards below it");
+});
+
 test("assistant, default model and effort are saved per backend", () => {
 	const { container, prefs, window } = pane();
 	const assistants = card(container, "Assistants");

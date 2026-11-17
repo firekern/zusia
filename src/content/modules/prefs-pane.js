@@ -146,7 +146,7 @@ Object.assign(Zusia, {
 				a.querySelector(".zs-badge").hidden = a.dataset.backend !== current;
 			});
 		};
-		let backendOptions = () => Object.entries(this.BACKENDS).map(([key, b]) => [key, b.fullName]);
+		let backendOptions = () => this.orderedBackends().map(([key, b]) => [key, b.fullName]);
 		let backendSelect = this.select(doc, backendOptions(), this.getBackend(), (value) => {
 			this.setPref("backend", value);
 			syncBadges();

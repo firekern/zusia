@@ -33,7 +33,7 @@ test("the model menu names an API assistant only once it is set up", () => {
 	assert.ok(!menu.text.includes("Set the API URL"));
 	e.window.close();
 	e = env(ollama);
-	assert.deepEqual(menuSections(e).sections.slice().sort(), [...clis, "Ollama API"].sort());
+	assert.deepEqual(menuSections(e).sections, [...clis, "Ollama API"], "the agent sits with the CLIs, before the API");
 	e.window.close();
 });
 
