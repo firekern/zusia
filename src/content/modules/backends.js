@@ -5,26 +5,27 @@ Object.assign(Zusia, {
 	// Running the agent CLIs: one process per question, its events read per backend
 	// ---------------------------------------------------------------------
 
-	// The prompt travels on stdin, never in argv: Windows caps a command line at 32k
-	// characters, and a prompt starting with "-" would be read as a flag.
-	async runProcess(command, args, workdir, onEvent, onSpawn, stdinText) {
+	async spawnAgent(command, args, workdir, stdinChars = 0) {
 		let environment = this.buildChildEnvironment();
-		// findBinary resolves npm's codex.cmd to the codex.js it runs with node.
-		if (Zotero.isWin && /\.js$/i.test(command)) {
+		if (Zotero.isWin && /\.(m?js)$/i.test(command)) {
 			args = [command, ...args];
 			command = await Subprocess.pathSearch("node.exe", environment).catch((e) => {
 				throw new Error("Could not find node.exe, which the npm install of " + args[0] + " needs.", { cause: e });
 			});
 		}
 		this.log("Spawning: " + command + " " + args.map(a => "'" + a.slice(0, 60) + "'").join(" ") +
-			(stdinText ? " with " + stdinText.length + " characters on stdin" : ""));
-		let proc = await Subprocess.call({
+			(stdinChars ? " with " + stdinChars + " characters on stdin" : ""));
+		return Subprocess.call({
 			command,
 			arguments: args,
 			environment,
 			workdir,
 			stderr: "pipe",
 		});
+	},
+
+	async runProcess(command, args, workdir, onEvent, onSpawn, stdinText) {
+		let proc = await this.spawnAgent(command, args, workdir, stdinText ? stdinText.length : 0);
 		// Not awaited before the readers start: a child that writes while we are still
 		// writing a long prompt would otherwise fill its stdout pipe and both would block.
 		// Closing stdin, also when there is nothing to send, keeps the CLI from waiting.
