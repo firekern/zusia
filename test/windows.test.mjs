@@ -114,6 +114,24 @@ test("windows: the shipped ACP agent's npm .cmd resolves to the .mjs it runs wit
 	assert.deepEqual(run.args, [COMMANDCODE_MJS, "acp"]);
 });
 
+// The form slugs "Command Code" to command-code, not the shipped commandcode, so the
+// shim's target must follow the program and not the agent's id.
+test("windows: Command Code removed and added back, or added under another name, still resolves its npm .cmd", async () => {
+	const { plugin } = loadWindowsPlugin({ executables: [NPM + "\\command-code.cmd", COMMANDCODE_MJS, NODE_EXE], environment: upperPath() });
+	assert.ok(plugin.removeAcpAgent("acp:commandcode"));
+	const readded = plugin.addAcpAgent({ name: "Command Code", command: "command-code", args: "acp" });
+	const renamed = plugin.addAcpAgent({ name: "My coder", command: "command-code", args: "acp" });
+	assert.deepEqual([readded.key, renamed.key], ["acp:command-code", "acp:my-coder"]);
+	assert.equal(await plugin.findBinary(readded.key), COMMANDCODE_MJS);
+	assert.equal(await plugin.findBinary(renamed.key), COMMANDCODE_MJS);
+});
+
+test("windows: an npm .cmd unknown to Zusia is refused, whatever the agent is called", async () => {
+	const { plugin } = loadWindowsPlugin({ executables: [NPM + "\\gemini.cmd", NPM + "\\node_modules\\@google\\gemini-cli\\dist\\index.js"], environment: upperPath() });
+	const { key } = plugin.addAcpAgent({ name: "Gemini", command: "gemini", args: "--experimental-acp" });
+	await assert.rejects(plugin.findBinary(key), /will not run batch files.*\\npm\\gemini\.cmd.*Gemini/s);
+});
+
 // Windows names the variable "Path" (cmd's `set` shows Path=...), and
 // Subprocess.getEnvironment() keeps that spelling, while Mozilla's pathSearch reads
 // environment.PATH only. Unless buildChildEnvironment folds the two, node.exe in

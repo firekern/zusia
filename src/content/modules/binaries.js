@@ -84,13 +84,16 @@ Object.assign(Zusia, {
 		if (!/\.(cmd|bat)[. ]*$/i.test(path)) {
 			return path;
 		}
-		// What npm's cmd-shim runs: claude.exe since Claude Code 2.1.113, node codex.js for Codex.
+		// What npm's cmd-shim runs: claude.exe since Claude Code 2.1.113, node codex.js for
+		// Codex, node index.mjs for Command Code. Looked up by the shim's own name, because
+		// the program decides what it runs, while an ACP agent's id comes from the name the
+		// reader gave it.
 		let target = {
-			claude: ["node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe"],
-			codex: ["node_modules", "@openai", "codex", "bin", "codex.js"],
-			"acp:commandcode": ["node_modules", "command-code", "dist", "index.mjs"],
-		}[backend];
-		if (/\.cmd[. ]*$/i.test(path) && target) {
+			"claude.cmd": ["node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe"],
+			"codex.cmd": ["node_modules", "@openai", "codex", "bin", "codex.js"],
+			"command-code.cmd": ["node_modules", "command-code", "dist", "index.mjs"],
+		}[OS.Path.basename(path).replace(/[. ]+$/, "").toLowerCase()];
+		if (target) {
 			let resolved = OS.Path.join(OS.Path.dirname(path), ...target);
 			if (await OS.File.exists(resolved)) {
 				return resolved;
