@@ -423,26 +423,6 @@ test("a configured ACP agent runs a background call with the raw memory prompt",
 	assert.equal(fake.messages[2].params.prompt[0].text, "MEMORY TASK", "the raw prompt, not Zusia's system prompt");
 });
 
-test("a registry entry becomes the command this platform can run", () => {
-	const p = loadPlugin().plugin;
-	assert.deepEqual(plain(p.acpRegistryPreset({
-		id: "gemini", name: "Gemini CLI", description: "Google's agent",
-		distribution: { npx: { package: "@google/gemini-cli@1", args: ["--acp"] } },
-	})), { id: "gemini", name: "Gemini CLI", description: "Google's agent",
-		command: "npx", args: ["@google/gemini-cli@1", "--acp"], source: "npx" });
-	assert.deepEqual(plain(p.acpRegistryPreset({
-		id: "uv", name: "UV", distribution: { uvx: { package: "uv-agent==1" } },
-	})), { id: "uv", name: "UV", description: "", command: "uvx", args: ["uv-agent==1"], source: "uvx" });
-	assert.deepEqual(plain(p.acpRegistryPreset({
-		id: "bin", name: "Bin",
-		distribution: { binary: { "linux-x86_64": { archive: "https://x/a.zip", cmd: "./bin", args: ["acp"] } } },
-	}, "linux-x86_64")), { id: "bin", name: "Bin", description: "", command: "", args: ["acp"],
-		source: "binary", archive: "https://x/a.zip", cmd: "./bin" });
-	assert.equal(p.acpRegistryPreset({ id: "none", name: "None", distribution: {} }), null);
-	assert.equal(p.acpRegistryPreset({ id: "win", name: "Win",
-		distribution: { binary: { "windows-x86_64": { archive: "x" } } } }, "linux-x86_64"), null);
-});
-
 test("a configured ACP agent can be asked to sign in", async () => {
 	const p = loadPlugin().plugin;
 	const { key } = p.addAcpAgent(agent());

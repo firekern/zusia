@@ -4,46 +4,6 @@ Object.assign(Zusia, {
 
 	MAX_ACP_AGENTS: 20,
 	ACP_AGENT_ID: /^[a-z0-9][a-z0-9-]{0,39}$/,
-	ACP_REGISTRY_URL: "https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json",
-	acpPlatform() {
-		let os = Zotero.isWin ? "windows" : Zotero.isMac ? "darwin" : "linux";
-		let abi = (Services.appinfo && Services.appinfo.XPCOMABI) || "";
-		return os + "-" + (/aarch64|arm64/i.test(abi) ? "aarch64" : "x86_64");
-	},
-	acpRegistryPreset(agent, platform = this.acpPlatform()) {
-		if (!agent || typeof agent !== "object" || !agent.distribution) {
-			return null;
-		}
-		let dist = agent.distribution;
-		let base = { id: agent.id, name: agent.name, description: agent.description || "" };
-		for (let runner of ["npx", "uvx"]) {
-			let item = dist[runner];
-			if (item && item.package) {
-				return {
-					...base,
-					command: runner,
-					args: [item.package].concat(Array.isArray(item.args) ? item.args : []),
-					source: runner,
-				};
-			}
-		}
-		let binary = dist.binary && dist.binary[platform];
-		if (binary && binary.archive) {
-			return {
-				...base,
-				command: "",
-				args: Array.isArray(binary.args) ? binary.args.slice() : [],
-				source: "binary",
-				archive: binary.archive,
-				cmd: binary.cmd || "",
-			};
-		}
-		return null;
-	},
-	acpRegistryPresets(payload) {
-		let agents = payload && Array.isArray(payload.agents) ? payload.agents : [];
-		return agents.map(agent => this.acpRegistryPreset(agent)).filter(Boolean);
-	},
 	_acpAgentsLoaded: false,
 
 	acpAgents() {

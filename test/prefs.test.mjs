@@ -329,25 +329,6 @@ test("clarifications file: records are appended to clarifications.json in the pa
 	assert.deepEqual([...await plugin.loadClarifications("/d")], [], "a damaged file does not break the panel");
 });
 
-test("the ACP registry fills the add form", async () => {
-	const env = pane();
-	const assistants = card(env.container, "Assistants");
-	env.window.Zotero.HTTP.request = async () => ({ response: { agents: [
-		{ id: "gemini", name: "Gemini CLI", description: "Google",
-			distribution: { npx: { package: "@google/gemini-cli@1", args: ["--acp"] } } },
-	] } });
-	assistants.querySelector(".zs-acp-browse").click();
-	await new Promise(resolve => setTimeout(resolve, 0));
-	const picker = assistants.querySelector(".zs-acp-registry-choice .zs-select");
-	assert.ok(picker, "the registry picker appears");
-	assert.deepEqual([...picker.options].map(o => o.value), ["gemini"]);
-	assistants.querySelector(".zs-acp-use").click();
-	const inputs = assistants.querySelectorAll(".zs-acp-add input");
-	assert.equal(inputs[0].value, "Gemini CLI");
-	assert.equal(inputs[1].value, "npx");
-	assert.equal(assistants.querySelector(".zs-acp-add textarea").value, "@google/gemini-cli@1\n--acp");
-});
-
 test("an ACP agent can be asked to sign in from Settings", async () => {
 	const { container, window, plugin } = pane();
 	const assistants = card(container, "Assistants");

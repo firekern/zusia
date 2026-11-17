@@ -248,7 +248,7 @@ Object.assign(Zusia, {
 		let section = this.el(doc, "div", "zs-acp-section");
 		section.appendChild(this.el(doc, "div", "zs-card-subhead", "Optional: ACP agents"));
 		section.appendChild(this.el(doc, "div", "zs-card-desc zs-acp-desc",
-			"Any agent that speaks the Agent Client Protocol can answer here. Add the command and arguments from its registry entry. The agent must be installed and signed in with its own CLI."));
+			"Any agent that speaks the Agent Client Protocol can answer here. Add the command and arguments its own documentation gives. The agent must be installed and signed in with its own CLI."));
 		let list = this.el(doc, "div", "zs-acp-list");
 		section.appendChild(list);
 
@@ -293,60 +293,12 @@ Object.assign(Zusia, {
 			this.refreshAllSidebars();
 		});
 
-		let registry = this.el(doc, "div", "zs-acp-registry");
-		let browse = this.el(doc, "button", "zs-button zs-acp-browse", "Browse the ACP registry");
-		browse.type = "button";
-		let registryNote = this.el(doc, "div", "zs-row-hint zs-acp-registry-note",
-			"Fetch the official registry and fill the form with an agent's command and arguments.");
-		let registryChoice = this.el(doc, "div", "zs-acp-registry-choice");
-		registry.append(browse, registryNote, registryChoice);
-		browse.addEventListener("click", async () => {
-			browse.disabled = true;
-			browse.textContent = "Loading…";
-			registryNote.textContent = "Reading the ACP registry…";
-			try {
-				let response = await Zotero.HTTP.request("GET", this.ACP_REGISTRY_URL, { responseType: "json", timeout: 20000 });
-				let payload = response.response || JSON.parse(response.responseText || "{}");
-				let presets = this.acpRegistryPresets(payload);
-				registryChoice.textContent = "";
-				if (!presets.length) {
-					registryNote.textContent = "No ACP agents for this platform were listed.";
-					return;
-				}
-				let picker = this.select(doc, presets.map(p => [p.id, p.name + "  (" + p.source + ")"]), presets[0].id, () => {});
-				let use = this.el(doc, "button", "zs-button zs-acp-use", "Use this agent");
-				use.type = "button";
-				use.addEventListener("click", () => {
-					let preset = presets.find(p => p.id === picker.value);
-					if (!preset) {
-						return;
-					}
-					name.value = preset.name;
-					command.value = preset.command;
-					args.value = preset.args.join("\n");
-					registryNote.textContent = preset.archive
-						? "Download " + preset.archive + " and set the command to the extracted " + (preset.cmd || "program") + "."
-						: "Filled from the registry. Review the command and click Add agent.";
-				});
-				registryChoice.append(picker, use);
-				registryNote.textContent = "Pick an agent, then review its command and arguments.";
-			}
-			catch (e) {
-				registryNote.textContent = "Could not read the ACP registry: " + ((e && e.message) || e);
-			}
-			finally {
-				browse.disabled = false;
-				browse.textContent = "Browse the ACP registry";
-			}
-		});
-
 		let form = this.el(doc, "div", "zs-acp-add");
 		form.append(
 			this.el(doc, "div", "zs-acp-add-title", "Add an ACP agent"),
-			registry,
 			this.row(doc, "Name", name),
 			this.row(doc, "Command", command, "The ACP server command, a name on PATH or a full path."),
-			this.row(doc, "Arguments", args, "One argument per line, exactly as the registry lists them."),
+			this.row(doc, "Arguments", args, "One argument per line, as the agent's own documentation lists them."),
 		);
 		let buttons = this.el(doc, "div", "zs-button-row");
 		buttons.appendChild(add);
