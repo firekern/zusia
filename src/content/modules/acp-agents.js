@@ -147,17 +147,17 @@ Object.assign(Zusia, {
 			for (let config of configs) {
 				this.registerAcpAgent(config);
 			}
-			this.log("Custom ACP agents loaded: " + configs.length);
+			this.log("ACP agents loaded: " + configs.length);
 		}
 		catch (e) {
-			this.log("Could not load the custom ACP agents: " + e);
+			this.log("Could not load the ACP agents: " + e);
 		}
 	},
 
 	addAcpAgent({ name, command, args } = {}) {
 		let configs = this.acpAgents();
 		if (configs.length >= this.MAX_ACP_AGENTS) {
-			return { error: "Zusia runs at most " + this.MAX_ACP_AGENTS + " custom ACP agents. Remove one before adding another." };
+			return { error: "Zusia runs at most " + this.MAX_ACP_AGENTS + " ACP agents. Remove one before adding another." };
 		}
 		let wanted = typeof name === "string" ? name.trim() : "";
 		if (wanted && configs.some(config => config.name.toLowerCase() === wanted.toLowerCase())) {

@@ -372,7 +372,7 @@ Object.assign(Zusia, {
 		// A switch is a button, which the row's <label> does not name.
 		background.setAttribute("aria-label", "Background memory");
 		body.appendChild(this.row(doc, "Background memory", background,
-			"Runs the study-memory calls through this agent, in the background. Off until you turn it on."));
+			"Runs the study-memory calls through this agent, in the background, with its own tools and permission settings. Off until you turn it on."));
 
 		let signIn = this.el(doc, "button", "zs-button zs-acp-signin", "Sign in");
 		signIn.type = "button";
