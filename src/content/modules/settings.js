@@ -69,6 +69,9 @@ Object.assign(Zusia, {
 		if (backend === "agy" && Array.isArray(this._agyModels)) {
 			models.push(...this._agyModels);
 		}
+		if (this.BACKENDS[backend].acp && Array.isArray(this._acpModels[backend])) {
+			models.push(...this._acpModels[backend]);
+		}
 		let current = this.getModel(backend);
 		if (current && !models.some(m => m.id === current)) {
 			models.push({ id: current, label: current, desc: "" });
@@ -79,6 +82,10 @@ Object.assign(Zusia, {
 	modelLabel(backend, id) {
 		let model = this.getModels(backend).find(m => m.id === id);
 		return model ? model.label : id;
+	},
+
+	modelSelectOptions(backend) {
+		return this.getModels(backend).map(m => [m.id, m.label + (m.id && m.id !== m.label.toLowerCase() ? "  (" + m.id + ")" : "")]);
 	},
 
 	// agy keeps its login in the Secret Service keyring. Zotero's Flatpak has no

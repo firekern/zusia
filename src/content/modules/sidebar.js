@@ -268,7 +268,9 @@ Object.assign(Zusia, {
 				}
 				if (installed === null) {
 					menu.appendChild(this.el(doc, "div", "zs-menu-note",
-						"Not installed. Install the " + backend.command + " CLI or set its path in Settings."));
+						backend.custom
+							? "Not found. Check its command and arguments in Settings."
+							: "Not installed. Install the " + backend.command + " CLI or set its path in Settings."));
 					continue;
 				}
 				for (let model of this.getModels(key)) {
@@ -292,12 +294,22 @@ Object.assign(Zusia, {
 				if (key === "agy" && this._agyModelsError) {
 					menu.appendChild(this.el(doc, "div", "zs-menu-note", "Sign-in not reachable from Zotero, so only the default model is listed. See Settings."));
 				}
+				if (backend.acp && !Array.isArray(this._acpModels[key])) {
+					let error = (this._acpModelErrors || {})[key];
+					menu.appendChild(this.el(doc, "div", "zs-menu-note",
+						error ? "Models could not be loaded. " + error : "Loading models…"));
+				}
 			}
 		});
 		if (menu && !Array.isArray(this._agyModels)) {
 			this.loadAgyModels().then(() => menu.isConnected && menu.refresh());
 		}
 		if (menu) {
+			for (let key of Object.keys(this.BACKENDS)) {
+				if (this.BACKENDS[key].acp && !Array.isArray(this._acpModels[key])) {
+					this.loadAcpModels(key).then(() => menu.isConnected && menu.refresh()).catch(() => {});
+				}
+			}
 			for (let key of Object.keys(this.BACKENDS).filter(key => this.isAPIBackend(key) && this.getModel(key))) {
 				this.loadAPIModels(key).then(() => menu.isConnected && menu.refresh()).catch(() => {});
 			}
