@@ -735,6 +735,8 @@ test("a card whose agent could not list its models says why, and Try again lists
 	assert.equal(started, 1, "opening it asks the agent");
 	await settle(() => hint.querySelector(".zs-acp-retry"));
 	assert.equal(hint.querySelector(".zs-acp-model-error").textContent, "Models could not be loaded. OpenCode exited with code 1: npx: network unreachable");
+	assert.equal(hint.querySelector(".zs-acp-model-error").title, "OpenCode exited with code 1: npx: network unreachable",
+		"cut at three lines, the whole error is the tooltip");
 	assert.deepEqual([...model.options].map(o => o.value), [""]);
 
 	p.spawnAgent = async () => fakeAgent({ configOptions: MODEL }).proc;

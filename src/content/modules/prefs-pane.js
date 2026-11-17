@@ -336,6 +336,8 @@ Object.assign(Zusia, {
 				return;
 			}
 			reason.textContent = "Models could not be loaded. " + error;
+			// Cut at three lines by the stylesheet, so the whole error is the tooltip.
+			reason.title = error;
 			hint.replaceChildren(reason, again);
 		};
 		let listModels = (retry) => {

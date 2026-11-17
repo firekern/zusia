@@ -291,7 +291,8 @@ Object.assign(Zusia, {
 				}
 				let note = this.modelMenuNote(root, key, installed);
 				if (note) {
-					menu.appendChild(this.el(doc, "div", "zs-menu-note", note));
+					// Cut at three lines by the stylesheet, so the whole note is the tooltip.
+					menu.appendChild(this.el(doc, "div", "zs-menu-note", note)).title = note;
 				}
 			}
 		});

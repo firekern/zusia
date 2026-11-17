@@ -388,3 +388,14 @@ test("a stylesheet reads the chat's red only inside the error card that declares
 		}
 	}
 });
+
+test("an agent's error is cut at three lines in the menu and on its card, wrapping anywhere", () => {
+	// A stack trace or a long path has no spaces to break at, and would push the menu wide.
+	const rule = (file, selector) => source("src/content/styles/" + file).match(new RegExp("\\n" + selector.replace(".", "\\.") + " \\{([^}]*)\\}"))[1];
+	for (const [file, selector] of [["composer.css", ".zs-menu-note"], ["prefs.css", ".zs-acp-model-error"]]) {
+		const body = rule(file, selector);
+		for (const declaration of ["display: -webkit-box", "-webkit-box-orient: vertical", "-webkit-line-clamp: 3", "overflow: hidden", "overflow-wrap: anywhere"]) {
+			assert.ok(body.includes(declaration + ";"), selector + " has " + declaration);
+		}
+	}
+});

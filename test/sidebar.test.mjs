@@ -103,6 +103,8 @@ test("an open section carries one note: the program is missing, or why its list 
 		"Not installed. " + plugin.commandFixHint("codex"),
 		"Models could not be loaded. Antigravity is not signed in. Run `agy` once in a terminal to sign in.",
 	]);
+	assert.deepEqual([...root.querySelectorAll(".zs-menu-note")].map(n => n.title), [...root.querySelectorAll(".zs-menu-note")].map(n => n.textContent),
+		"a note cut at three lines keeps all of it as its tooltip");
 	assert.match(plugin.commandFixHint("codex"), /full path as Command path/);
 });
 
