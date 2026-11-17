@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { loadPlugin } from "./load-plugin.mjs";
+import { loadPlugin, openChat } from "./load-plugin.mjs";
 import { loadWindowsPlugin } from "./windows-env.mjs";
+import { fakeAgent, flush } from "./acp-fake.mjs";
 
 const PREF = "extensions.zusia.acpAgents";
 const plain = value => JSON.parse(JSON.stringify(value));
@@ -10,89 +11,6 @@ const agent = (over = {}) => ({ name: "OpenCode", command: "opencode", args: ["a
 const storedAgent = (over = {}) => ({ id: "opencode", ...agent(), ...over });
 // An install starts with the agent src/prefs.js ships, so a store test states its own list.
 const fresh = (over = {}) => loadPlugin({ prefs: { [PREF]: "[]", ...over } });
-
-const flush = () => new Promise(resolve => setImmediate(resolve));
-
-function stream() {
-	const chunks = [];
-	const waiting = [];
-	let ended = false;
-	return {
-		push(chunk) {
-			chunks.push(chunk);
-			const resolve = waiting.shift();
-			if (resolve) {
-				resolve();
-			}
-		},
-		end() {
-			ended = true;
-			for (const resolve of waiting.splice(0)) {
-				resolve();
-			}
-		},
-		async readString() {
-			while (!chunks.length && !ended) {
-				await new Promise(resolve => waiting.push(resolve));
-			}
-			return chunks.length ? chunks.shift() : "";
-		},
-	};
-}
-
-function fakeAgent({ answer = "It is the FFT.", sessionId = "s-1", auth = [], configOptions = [], capabilities = {} } = {}) {
-	const stdout = stream();
-	const stderr = stream();
-	const messages = [];
-	let finish;
-	const send = message => stdout.push(JSON.stringify(message) + "\n");
-	const proc = {
-		stdin: {
-			closed: false,
-			async write(text) {
-				assert.ok(!proc.stdin.closed, "write after stdin was closed");
-				const message = JSON.parse(text);
-				messages.push(message);
-				if (message.method === "initialize") {
-					send({ jsonrpc: "2.0", id: message.id, result: { protocolVersion: 1, agentCapabilities: { loadSession: false, ...capabilities }, authMethods: auth } });
-				}
-				else if (message.method === "authenticate") {
-					send({ jsonrpc: "2.0", id: message.id, result: { ok: true } });
-				}
-				else if (message.method === "session/new") {
-					send({ jsonrpc: "2.0", id: message.id, result: { sessionId, configOptions } });
-				}
-				else if (message.method === "session/prompt") {
-					send({ jsonrpc: "2.0", method: "session/update", params: {
-						sessionId, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: answer } },
-					} });
-					send({ jsonrpc: "2.0", id: message.id, result: { stopReason: "end_turn" } });
-				}
-			},
-			async close() {
-				proc.stdin.closed = true;
-				proc.finish(0);
-			},
-		},
-		stdout: { readString: () => stdout.readString() },
-		stderr: { readString: () => stderr.readString() },
-		killed: false,
-		wait: () => proc.exit,
-	};
-	proc.exit = new Promise((resolve) => {
-		finish = resolve;
-	});
-	proc.finish = (exitCode = 0) => {
-		stdout.end();
-		stderr.end();
-		finish({ exitCode });
-	};
-	proc.kill = () => {
-		proc.killed = true;
-		proc.finish(1);
-	};
-	return { proc, messages, stderr: text => stderr.push(text) };
-}
 
 const request = { ctx: { dir: "/d" }, question: "Why?", history: [], session: null, files: { metadata: "# T\n", annotations: "" } };
 
@@ -698,6 +616,47 @@ test("every kind loads its live models through one door that refreshes the chats
 	assert.deepEqual(plain(env.modelLoads), [{ backend: "acp:commandcode", options: { retry: true } }]);
 	assert.equal(refreshed, 5, "each load ends with the chats' controls");
 	assert.ok(p._logLines.some(line => line.includes("Could not list Ollama models: Error: connection refused")), "an API failure is logged, not thrown");
+});
+
+test("the model menu asks only an open agent section for its models, and says how the listing went", () => {
+	const env = fresh({ "extensions.zusia.onboarded": true });
+	const p = env.plugin;
+	const first = p.addAcpAgent(agent());
+	const second = p.addAcpAgent({ name: "Other", command: "other", args: [] });
+	env.modelLoads.length = 0;
+	p.setPref("backend", first.key);
+	const { root } = openChat(env);
+	root._installed = Object.fromEntries(Object.keys(p.BACKENDS).map(key => [key, "/bin/" + key]));
+	p._agyModels = [];
+	p.openModelMenu(root, root.querySelector(".zs-model-btn"));
+	assert.deepEqual(env.modelLoads.map(load => load.backend), [first.key], "a folded section starts nothing");
+	const menu = root.querySelector(".zs-menu");
+	assert.match(menu.textContent, /Loading models…/);
+	p.acpModelEntry(first.key).error = "OpenCode did not answer within 30 s.";
+	menu.refresh();
+	assert.match(menu.textContent, /Models could not be loaded\. OpenCode did not answer within 30 s\./);
+	[...menu.querySelectorAll(".zs-menu-section-toggle")].find(button => button.textContent.includes("Other")).click();
+	assert.deepEqual(env.modelLoads.map(load => load.backend), [first.key, second.key], "opening its section asks the other agent");
+	p.acpModelEntry(first.key).models = [{ id: "fast", label: "Fast", desc: "" }];
+	menu.refresh();
+	assert.match(menu.textContent, /Fast/);
+});
+
+test("an agent's card turns its background memory on and off", () => {
+	const env = fresh();
+	const p = env.plugin;
+	const { key } = p.addAcpAgent(agent());
+	p.setPref("backend", key);
+	const container = env.document.createElement("div");
+	p.renderPrefsPane(env.document, container);
+	const card = container.querySelector('.zs-acp-list .zs-agent[data-backend="' + key + '"]');
+	const toggle = [...card.querySelectorAll(".zs-row")].find(row => row.textContent.includes("Background memory")).querySelector(".zs-switch");
+	assert.equal(toggle.getAttribute("aria-checked"), "false");
+	toggle.click();
+	assert.equal(stored(env.prefs)[0].background, true);
+	assert.equal(p.jobBackend(), key);
+	toggle.click();
+	assert.equal(p.jobBackend(), null);
 });
 
 test("the shipped agent can be removed like any other and stays removed", () => {

@@ -2,38 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { loadPlugin } from "./load-plugin.mjs";
 import { loadWindowsPlugin } from "./windows-env.mjs";
+import { fakeAgent, flush, stream } from "./acp-fake.mjs";
 
 const { plugin } = loadPlugin();
 
-const flush = () => new Promise(resolve => setImmediate(resolve));
 const plain = value => JSON.parse(JSON.stringify(value));
-
-function stream() {
-	const chunks = [];
-	const waiting = [];
-	let ended = false;
-	return {
-		push(chunk) {
-			chunks.push(chunk);
-			const resolve = waiting.shift();
-			if (resolve) {
-				resolve();
-			}
-		},
-		end() {
-			ended = true;
-			for (const resolve of waiting.splice(0)) {
-				resolve();
-			}
-		},
-		async readString() {
-			while (!chunks.length && !ended) {
-				await new Promise(resolve => waiting.push(resolve));
-			}
-			return chunks.length ? chunks.shift() : "";
-		},
-	};
-}
 
 function fakeProcess() {
 	const stdout = stream();
@@ -555,4 +528,325 @@ test("acp: attached images travel as image blocks", async () => {
 	assert.equal(blocks[1].type, "image");
 	assert.equal(blocks[1].mimeType, "image/png");
 	assert.equal(blocks[1].data, Buffer.from(bytes).toString("base64"));
+});
+
+// ---------------------------------------------------------------- a question through an agent
+
+const KEY = "acp:commandcode";
+const question = { ctx: { dir: "/d" }, question: "Why?", history: [], session: null, images: [], files: { metadata: "# T\n", annotations: "" } };
+const PERMISSION_OPTIONS = [
+	{ optionId: "once", name: "Allow once", kind: "allow_once" },
+	{ optionId: "always", name: "Always", kind: "allow_always" },
+	{ optionId: "no", name: "Reject", kind: "reject_once" },
+];
+
+// The shipped agent, started as `fakes` in turn (one fake or a list), each in its own folder.
+function withAgent(fakes, env = loadPlugin()) {
+	const p = env.plugin;
+	const queue = [].concat(fakes);
+	const spawned = [];
+	p.findBinary = async () => "/bin/command-code";
+	p.getDataDir = () => "/data";
+	p.spawnAgent = async (command, args, workdir) => {
+		spawned.push(workdir);
+		return queue.shift().proc;
+	};
+	return { env, p, spawned };
+}
+
+test("acp: a new session gets the whole prompt, and an agent without loadSession keeps no session", async () => {
+	const fake = fakeAgent({ answer: "Because." });
+	const { p, spawned } = withAgent(fake);
+	const result = await p.runAcp(KEY, { ...question, onProgress: () => {} });
+	assert.deepEqual(plain(result), { text: "Because.", truncated: false });
+	assert.deepEqual(spawned, ["/d"]);
+	assert.deepEqual(fake.messages.filter(m => m.method).map(m => m.method), ["initialize", "session/new", "session/prompt"]);
+	assert.equal(fake.sent("session/prompt")[0].params.prompt[0].text, p.sessionPrompt(question));
+	assert.equal(fake.proc.stdin.closed, true, "the agent is closed after the answer");
+});
+
+test("acp: a stored session is resumed with the question alone, and what the agent replays is not shown", async () => {
+	const fake = fakeAgent({
+		capabilities: { loadSession: true },
+		answer: "Still the FFT.",
+		on: {
+			"session/load": (m, agent) => {
+				agent.say("An old answer, replayed");
+				agent.update({ sessionUpdate: "tool_call", toolCallId: "old", title: "Read paper.txt", kind: "read" });
+				agent.reply(m, { configOptions: [] });
+			},
+		},
+	});
+	const { p } = withAgent(fake);
+	const shown = [];
+	const session = { id: "s-old", seen: 0 };
+	const asked = { ...question, session, history: [{ role: "user", text: "First?" }, { role: "assistant", text: "First." }] };
+	const result = await p.runAcp(KEY, { ...asked, onProgress: event => shown.push(event) });
+	assert.deepEqual(plain(result), { text: "Still the FFT.", sessionId: "s-old", truncated: false });
+	assert.deepEqual(fake.messages.filter(m => m.method).map(m => m.method), ["initialize", "session/load", "session/prompt"]);
+	assert.deepEqual(plain(fake.sent("session/load")[0].params), { sessionId: "s-old", cwd: "/d", mcpServers: [] });
+	assert.equal(fake.sent("session/prompt")[0].params.prompt[0].text, p.questionPrompt(asked));
+	assert.ok(!shown.some(event => JSON.stringify(event).includes("replayed") || event.step), "the replay stays out of the chat");
+	assert.equal(shown.filter(event => event.text !== undefined).pop().text, "Still the FFT.");
+});
+
+test("acp: a session the agent cannot load fails as resumeFailed, and ask() asks again in a new one", async () => {
+	const first = fakeAgent({ capabilities: { loadSession: true }, sessionId: "s-1", answer: "First." });
+	const lost = fakeAgent({ capabilities: { loadSession: true }, on: { "session/load": (m, agent) => agent.fail(m, -32002, "Session s-1 not found") } });
+	const fresh = fakeAgent({ capabilities: { loadSession: true }, sessionId: "s-2", answer: "Second." });
+	const { p } = withAgent([first, lost, fresh]);
+	const store = { history: [], sessions: {} };
+	p.exportContext = async () => ({ metadata: "# T\n", annotations: "" });
+	p.loadHistory = async () => plain(store.history);
+	p.appendHistory = async (dir, messages) => { store.history.push(...messages); };
+	p.loadSessions = async () => ({ ...store.sessions });
+	p.saveSessions = async (dir, saved) => { store.sessions = saved; };
+	const pending = () => ({ backend: KEY, partial: "", cancelled: false, progress: () => {} });
+
+	assert.deepEqual(plain(await p.ask({ dir: "/d" }, "First?", pending())), {});
+	assert.equal(store.sessions[KEY].id, "s-1");
+	const resumed = await p.runAcp(KEY, { ...question, session: store.sessions[KEY] });
+	assert.deepEqual(plain(resumed), { text: "", error: "Session s-1 not found", resumeFailed: true });
+
+	const again = fakeAgent({ capabilities: { loadSession: true }, on: { "session/load": (m, agent) => agent.fail(m, -32002, "Session s-1 not found") } });
+	withAgent([again, fresh], { plugin: p });
+	assert.deepEqual(plain(await p.ask({ dir: "/d" }, "Second?", pending())), {});
+	assert.deepEqual(fresh.messages.filter(m => m.method).map(m => m.method), ["initialize", "session/new", "session/prompt"],
+		"the retry opens a new session");
+	assert.match(fresh.sent("session/prompt")[0].params.prompt[0].text, /First\?/, "and replays the chat into it");
+	assert.equal(store.history.pop().text, "Second.");
+	assert.equal(store.sessions[KEY].id, "s-2");
+});
+
+test("acp: an image goes only to an agent that says it takes images", async () => {
+	const files = new Map([["/d/one.png", new Uint8Array([137, 80, 78, 71])]]);
+	const blind = fakeAgent();
+	let { p } = withAgent(blind, loadPlugin({ files }));
+	assert.deepEqual(plain(await p.runAcp(KEY, { ...question, images: ["/d/one.png"] })),
+		{ text: "", error: "Command Code does not accept images. Remove the attachment or switch assistant." });
+	assert.deepEqual(blind.messages.filter(m => m.method).map(m => m.method), ["initialize"], "no session is opened");
+
+	const seeing = fakeAgent({ capabilities: { promptCapabilities: { image: true } } });
+	({ p } = withAgent(seeing, loadPlugin({ files })));
+	assert.equal((await p.runAcp(KEY, { ...question, images: ["/d/one.png"] })).text, "It is the FFT.");
+	assert.deepEqual(seeing.sent("session/prompt")[0].params.prompt.map(block => block.type), ["text", "image"]);
+});
+
+test("acp: the chosen model and effort are set before the prompt, and a model the agent lacks stops the question", async () => {
+	const configOptions = [
+		{ id: "model", name: "Model", category: "model", type: "select", currentValue: "fast", options: [{ value: "fast", name: "Fast" }, { value: "best", name: "Best" }] },
+		{ id: "reasoning", name: "Reasoning", category: "thought_level", type: "select", currentValue: "low", options: [{ value: "low" }, { value: "high" }] },
+	];
+	const willing = fakeAgent({ configOptions });
+	let { p } = withAgent(willing);
+	assert.equal((await p.runAcp(KEY, { ...question, model: "best", effort: "high" })).text, "It is the FFT.");
+	assert.deepEqual(willing.messages.filter(m => m.method)
+		.map(m => (m.method === "session/set_config_option" ? m.params.configId + "=" + m.params.value : m.method)),
+	["initialize", "session/new", "model=best", "reasoning=high", "session/prompt"]);
+	assert.deepEqual(plain(p.getModels(KEY)).map(m => m.id), ["", "fast", "best"], "the session's options feed the model menu");
+
+	const refusing = fakeAgent({ configOptions });
+	({ p } = withAgent(refusing));
+	assert.deepEqual(plain(await p.runAcp(KEY, { ...question, model: "huge" })), { text: "", error: "Command Code does not offer Model “huge”." });
+	assert.equal(refusing.sent("session/prompt").length, 0, "nothing is asked with the wrong model");
+});
+
+test("acp: during an answer the agent may read the folder, and nothing else", async () => {
+	const files = new Map([["/d/paper.txt", "page one\npage two"]]);
+	const replies = [];
+	const fake = fakeAgent({
+		on: {
+			"session/prompt": async (m, agent) => {
+				const ask = async (method, params) => replies.push((await agent.ask(method, params)));
+				await ask("session/request_permission", { sessionId: "s-1", toolCall: { toolCallId: "t1", kind: "read", locations: [{ path: "/d/paper.txt" }] }, options: PERMISSION_OPTIONS });
+				await ask("session/request_permission", { sessionId: "s-1", toolCall: { toolCallId: "t2", kind: "read", locations: [{ path: "/Users/me/.aws/credentials" }] }, options: PERMISSION_OPTIONS });
+				await ask("fs/read_text_file", { sessionId: "s-1", path: "/d/paper.txt", line: 2 });
+				await ask("fs/read_text_file", { sessionId: "s-1", path: "/Users/me/.aws/credentials" });
+				await ask("terminal/create", { sessionId: "s-1", command: "cat" });
+				agent.say("Read it.");
+				agent.reply(m, { stopReason: "end_turn" });
+			},
+		},
+	});
+	const { p } = withAgent(fake, loadPlugin({ files }));
+	assert.equal((await p.runAcp(KEY, question)).text, "Read it.");
+	assert.deepEqual(plain(replies.map(reply => reply.result || reply.error)), [
+		{ outcome: { outcome: "selected", optionId: "once" } },
+		{ outcome: { outcome: "selected", optionId: "no" } },
+		{ content: "page two" },
+		{ code: -32001, message: "Zusia only reads inside the paper folder: /Users/me/.aws/credentials" },
+		{ code: -32601, message: "Command Code asked for terminal/create, which Zusia does not provide." },
+	]);
+});
+
+test("acp: on Windows a live permission accepts the folder written with forward slashes", async () => {
+	const dir = "C:\\Users\\u\\Zotero\\zusia\\papers\\ABC";
+	let reply;
+	const fake = fakeAgent({
+		on: {
+			"session/prompt": async (m, agent) => {
+				reply = await agent.ask("session/request_permission",
+					{ sessionId: "s-1", toolCall: { toolCallId: "t", kind: "read", locations: [{ path: "C:/Users/u/Zotero/zusia/papers/ABC/text/03.md" }] }, options: PERMISSION_OPTIONS });
+				agent.say("Done.");
+				agent.reply(m, { stopReason: "end_turn" });
+			},
+		},
+	});
+	const { p } = withAgent(fake, loadWindowsPlugin());
+	assert.equal((await p.runAcp(KEY, { ...question, ctx: { dir } })).text, "Done.");
+	assert.equal(reply.result.outcome.optionId, "once");
+});
+
+test("acp: thinking, tool steps and text reach the chat in order, each step once", async () => {
+	const fake = fakeAgent({
+		on: {
+			"session/prompt": (m, agent) => {
+				agent.update({ sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "Hmm." } });
+				agent.say("Let me look.");
+				agent.update({ sessionUpdate: "tool_call", toolCallId: "t1", title: "Read paper.txt", kind: "read", rawInput: { path: "/d/paper.txt" } });
+				agent.update({ sessionUpdate: "tool_call_update", toolCallId: "t1", status: "in_progress" });
+				agent.update({ sessionUpdate: "tool_call_update", toolCallId: "t1", status: "completed" });
+				agent.update({ sessionUpdate: "tool_call_update", toolCallId: "t1", status: "completed" });
+				agent.update({ sessionUpdate: "tool_call", toolCallId: "t2", title: "grep FFT", kind: "search" });
+				agent.say("It is the FFT.");
+				agent.reply(m, { stopReason: "end_turn" });
+			},
+		},
+	});
+	const { p } = withAgent(fake);
+	const shown = [];
+	const result = await p.runAcp(KEY, { ...question, onProgress: event => shown.push(event) });
+	assert.equal(result.text, "It is the FFT.", "what came after the last tool is the answer");
+	const thinking = shown.filter(event => event.thinking !== undefined);
+	assert.deepEqual(thinking.map(event => event.thinking), [true, false]);
+	assert.equal(typeof thinking[1].thoughtMs, "number");
+	assert.deepEqual(plain(shown.filter(event => event.step).map(event => event.step)), [
+		{ kind: "read", target: "paper.txt", label: "Read paper.txt" },
+		{ kind: "search", target: "grep FFT", label: "grep FFT" },
+	], "a step completed twice shows once; one never completed shows at the end");
+	assert.ok(shown.some(event => event.text === ""), "the narration before a tool leaves the bubble");
+	assert.ok(shown.some(event => event.status === "reading the paper"));
+});
+
+test("acp: when the agent only narrates around its tools, the narration is the answer", async () => {
+	const fake = fakeAgent({
+		on: {
+			"session/prompt": (m, agent) => {
+				agent.say("The FFT, on page 3.");
+				agent.update({ sessionUpdate: "tool_call", toolCallId: "t1", title: "Read", kind: "read" });
+				agent.reply(m, { stopReason: "end_turn" });
+			},
+		},
+	});
+	const { p } = withAgent(fake);
+	assert.equal((await p.runAcp(KEY, question)).text, "The FFT, on page 3.");
+});
+
+test("acp: how the turn ended decides what the reader is told", async () => {
+	for (const [stopReason, text, expected] of [
+		["refusal", "", { text: "", error: "Command Code declined to answer." }],
+		["end_turn", "", { text: "", error: "Command Code returned no text." }],
+		["max_tokens", "A long answer", { text: "A long answer", truncated: true }],
+	]) {
+		const fake = fakeAgent({
+			on: {
+				"session/prompt": (m, agent) => {
+					if (text) {
+						agent.say(text);
+					}
+					agent.reply(m, { stopReason });
+				},
+			},
+		});
+		const { p } = withAgent(fake);
+		assert.deepEqual(plain(await p.runAcp(KEY, question)), expected, stopReason);
+	}
+});
+
+test("acp: an agent that dies mid-answer is reported with its exit code and the end of its stderr", async () => {
+	const fake = fakeAgent({
+		on: {
+			"session/prompt": (m, agent) => {
+				agent.say("Half an ans");
+				agent.stderr("thread main panicked\nError: out of memory\n");
+				agent.exit(137);
+			},
+		},
+	});
+	const { p } = withAgent(fake);
+	assert.deepEqual(plain(await p.runAcp(KEY, question)), {
+		text: "",
+		error: "Command Code exited with code 137: thread main panicked\nError: out of memory",
+		partialText: "Half an ans",
+		resumeFailed: false,
+	});
+});
+
+test("acp: Stop kills the agent mid-answer and keeps what it had written", async () => {
+	let started;
+	const writing = new Promise(resolve => { started = resolve; });
+	const fake = fakeAgent({
+		on: {
+			"session/prompt": (m, agent) => {
+				agent.say("Partial");
+				started();
+			},
+		},
+	});
+	const { p } = withAgent(fake);
+	let proc = null;
+	const running = p.runAcp(KEY, { ...question, onSpawn: spawned => { proc = spawned; } });
+	await writing;
+	await flush();
+	proc.kill();
+	const result = await running;
+	assert.equal(fake.proc.killed, true);
+	assert.equal(result.partialText, "Partial");
+	assert.equal(result.text, "");
+});
+
+test("acp: sign-in tells an agent with no ACP methods to use its CLI, and passes on a refusal", async () => {
+	let { p } = withAgent(fakeAgent());
+	assert.deepEqual(plain(await p.acpAuthenticate(KEY)),
+		{ error: "This agent has no ACP sign-in methods. Sign in with its own CLI in a terminal.", methods: [] });
+	const methods = [{ id: "oauth", name: "Google" }];
+	({ p } = withAgent(fakeAgent({ auth: methods, on: { authenticate: (m, agent) => agent.fail(m, -32000, "The browser login was cancelled") } })));
+	assert.deepEqual(plain(await p.acpAuthenticate(KEY)), { error: "The browser login was cancelled", methods });
+});
+
+test("acp: a memory job's agent is refused a read outside its empty folder", async () => {
+	let reply;
+	const fake = fakeAgent({
+		on: {
+			"session/prompt": async (m, agent) => {
+				reply = await agent.ask("session/request_permission",
+					{ sessionId: "s-1", toolCall: { toolCallId: "t", kind: "read", locations: [{ path: "/Users/me/.ssh/id_rsa" }] }, options: PERMISSION_OPTIONS });
+				agent.say("{}");
+				agent.reply(m, { stopReason: "end_turn" });
+			},
+		},
+	});
+	const { env, p } = withAgent(fake);
+	p.makeJobDir = async () => "/tmp/zusia-job-1";
+	env.window.OS.File.removeDir = async () => {};
+	assert.deepEqual(plain(await env.runBackgroundCall.call(p, KEY, "MEMORY TASK")), { text: "{}", error: "", rateLimited: false });
+	assert.equal(fake.sent("session/new")[0].params.cwd, "/tmp/zusia-job-1");
+	assert.equal(reply.result.outcome.optionId, "no");
+});
+
+test("acp: a line split across reads, CRLF endings and a last line without a newline all arrive", async () => {
+	const fake = fakeProcess();
+	const connection = plugin.createAcpConnection(fake.proc, { label: "Agent" });
+	const first = connection.request("initialize", { protocolVersion: 1 });
+	const second = connection.request("session/new", { cwd: "/d", mcpServers: [] });
+	const third = connection.request("session/prompt", { sessionId: "s", prompt: [] });
+	await flush();
+	fake.sendRaw('{"jsonrpc":"2.0","id":1,"res');
+	fake.sendRaw('ult":{"agentCapabilities":{}}}\r\n');
+	fake.sendRaw('{"jsonrpc":"2.0","id":2,"result":{"sessionId":"s"}}\r\n{"jsonrpc":"2.0","id":3,"result":{"stopReason":"end_turn"}}');
+	fake.stdout.end();
+	assert.deepEqual(plain(await first), { agentCapabilities: {} });
+	assert.deepEqual(plain(await second), { sessionId: "s" });
+	assert.deepEqual(plain(await third), { stopReason: "end_turn" });
+	await connection.close();
 });
