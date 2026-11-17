@@ -406,6 +406,27 @@ test("a configured ACP agent runs a background call with the raw memory prompt",
 	assert.equal(fake.messages[2].params.prompt[0].text, "MEMORY TASK", "the raw prompt, not Zusia's system prompt");
 });
 
+test("an ACP memory job runs at the model and effort chosen for the agent", async () => {
+	const env = fresh();
+	const p = env.plugin;
+	const fake = fakeAgent({ answer: "{}", configOptions: [
+		{ id: "model", category: "model", options: [{ value: "a" }, { value: "fast" }] },
+		{ id: "reasoning", category: "thought_level", options: [{ value: "low" }, { value: "high" }] },
+	] });
+	p.findBinary = async () => "/opt/opencode";
+	p.spawnAgent = async () => fake.proc;
+	p.makeJobDir = async () => "/tmp/job";
+	env.window.OS.File.removeDir = async () => {};
+	const { key } = p.addAcpAgent(agent());
+	env.prefs["extensions.zusia." + key + ".model"] = "fast";
+	env.prefs["extensions.zusia." + key + ".effort"] = "high";
+
+	assert.deepEqual(plain(await env.runBackgroundCall.call(p, key, "MEMORY TASK")), { text: "{}", error: "", rateLimited: false });
+	assert.deepEqual(fake.messages.filter(m => m.method)
+		.map(m => (m.method === "session/set_config_option" ? m.params.configId + "=" + m.params.value : m.method)),
+	["initialize", "session/new", "model=fast", "reasoning=high", "session/prompt"]);
+});
+
 test("an ACP memory job that hangs is killed at the deadline and keeps the rate limit its stderr names", async () => {
 	const env = loadPlugin();
 	const p = env.plugin;
