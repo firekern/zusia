@@ -127,12 +127,17 @@ Object.assign(Zusia, {
 		}
 	},
 
-	async loadAcpModels(backend) {
+	// A failure is kept until the reader asks again from the card, so opening the menu twice
+	// does not start an agent twice, and an npx agent is not downloaded again.
+	async loadAcpModels(backend, { retry = false } = {}) {
 		if (Array.isArray(this._acpModels[backend])) {
 			return this._acpModels[backend];
 		}
 		if (this._acpModelPromises[backend]) {
 			return this._acpModelPromises[backend];
+		}
+		if (!retry && this._acpModelErrors[backend]) {
+			return [];
 		}
 		delete this._acpModelErrors[backend];
 		this._acpModelPromises[backend] = (async () => {

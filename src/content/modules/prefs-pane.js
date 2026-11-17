@@ -364,7 +364,7 @@ Object.assign(Zusia, {
 		if (!Array.isArray(this._acpModels[key])) {
 			let hint = this.el(doc, "div", "zs-row-hint", "Loading the model list…");
 			body.appendChild(hint);
-			this.loadAcpModels(key).then(() => {
+			let load = () => this.loadAcpModels(key, { retry: true }).then(() => {
 				if (!this.BACKENDS[key] || !select.isConnected) {
 					return;
 				}
@@ -373,13 +373,20 @@ Object.assign(Zusia, {
 					return;
 				}
 				let error = this._acpModelErrors[key];
-				if (error) {
-					hint.textContent = "Models could not be loaded. " + error;
-				}
-				else {
+				if (!error) {
 					hint.remove();
+					return;
 				}
+				hint.textContent = "Models could not be loaded. " + error + " ";
+				let again = this.el(doc, "button", "zs-button zs-acp-retry", "Try again");
+				again.type = "button";
+				again.addEventListener("click", () => {
+					hint.textContent = "Loading the model list…";
+					load();
+				});
+				hint.appendChild(again);
 			});
+			load();
 		}
 		return select;
 	},

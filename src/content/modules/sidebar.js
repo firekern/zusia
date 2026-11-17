@@ -237,6 +237,13 @@ Object.assign(Zusia, {
 		}
 	},
 
+	loadModelsForSection(key, menu) {
+		if (this.BACKENDS[key]?.kind !== "acp" || Array.isArray(this._acpModels[key])) {
+			return;
+		}
+		this.loadAcpModels(key).then(() => menu.isConnected && menu.refresh()).catch(() => {});
+	},
+
 	openModelMenu(root, anchor) {
 		let doc = root.ownerDocument;
 		let expanded = new Set([this.getBackend()]);
@@ -259,6 +266,7 @@ Object.assign(Zusia, {
 						}
 						else {
 							expanded.add(key);
+							this.loadModelsForSection(key, menu);
 						}
 						menu.refresh();
 					},
@@ -305,10 +313,9 @@ Object.assign(Zusia, {
 			this.loadAgyModels().then(() => menu.isConnected && menu.refresh());
 		}
 		if (menu) {
-			for (let key of Object.keys(this.BACKENDS)) {
-				if (this.BACKENDS[key].kind === "acp" && !Array.isArray(this._acpModels[key])) {
-					this.loadAcpModels(key).then(() => menu.isConnected && menu.refresh()).catch(() => {});
-				}
+			// Only an open section lists models, so only the agents in one are asked.
+			for (let key of expanded) {
+				this.loadModelsForSection(key, menu);
 			}
 			for (let key of Object.keys(this.BACKENDS).filter(key => this.isAPIBackend(key) && this.getModel(key))) {
 				this.loadAPIModels(key).then(() => menu.isConnected && menu.refresh()).catch(() => {});
