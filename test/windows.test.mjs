@@ -174,7 +174,7 @@ test("windows: a path setting is searched like a command: without an extension i
 });
 
 // The command an ACP agent was added with, as the form stores it.
-const typedAgent = (command, executables) => loadWindowsPlugin({ executables, environment: upperPath(),
+const typedAgent = (command, executables, environment = upperPath()) => loadWindowsPlugin({ executables, environment,
 	prefs: { [PREFIX + "acpAgents"]: JSON.stringify([{ id: "agent", name: "Agent", command, args: ["acp"] }]) } }).plugin;
 
 test("windows: a typed command keeps the extension it was given", async () => {
@@ -188,6 +188,14 @@ test("windows: a ~ command is under USERPROFILE, with backslashes only", async (
 		assert.equal(found, HOME + "\\bin\\agent.exe", command);
 		assert.ok(!mixedSeparators(found), found);
 	}
+});
+
+// Only the last segment's dot is an extension: read anywhere in the path, the dot in
+// john.doe would pass ~/bin/agent off as having one, and its .exe would never be tried.
+test("windows: a ~ command without an extension gets its .exe under a profile folder with a dot in its name", async () => {
+	const home = "C:\\Users\\john.doe";
+	const found = await typedAgent("~/bin/agent", [home + "\\bin\\agent.exe"], { USERPROFILE: home, PATH: NODE_DIR, PATHEXT }).findBinary("acp:agent");
+	assert.equal(found, home + "\\bin\\agent.exe");
 });
 
 test("windows: a full path is used as given, on a drive with either slash or on a share", async () => {
