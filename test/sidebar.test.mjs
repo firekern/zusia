@@ -91,6 +91,21 @@ test("the model menu asks only an open section for its models, whatever the kind
 	assert.deepEqual(asked, ["agy", "ollama"], "folding asks nothing");
 });
 
+test("an open section carries one note: the program is missing, or why its list failed", () => {
+	const { root, plugin } = sidebar();
+	plugin._agyModels = [];
+	plugin._agyModelsError = "Antigravity is not signed in. Run `agy` once in a terminal to sign in.";
+	root.querySelector(".zs-model-btn").click();
+	const section = label => [...root.querySelectorAll(".zs-menu-section")].find(n => n.textContent.includes(label));
+	section("OpenAI Codex").click();
+	section("Google Antigravity").click();
+	assert.deepEqual([...root.querySelectorAll(".zs-menu-note")].map(n => n.textContent), [
+		"Not installed. " + plugin.commandFixHint("codex"),
+		"Models could not be loaded. Antigravity is not signed in. Run `agy` once in a terminal to sign in.",
+	]);
+	assert.match(plugin.commandFixHint("codex"), /full path as Command path/);
+});
+
 test("effort menu offers the levels the current backend supports", () => {
 	const { root, prefs } = sidebar({ [PREFIX + "backend"]: "agy" });
 	root.querySelector(".zs-effort-btn").click();

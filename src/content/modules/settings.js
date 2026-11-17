@@ -96,6 +96,19 @@ Object.assign(Zusia, {
 		}
 	},
 
+	// How an assistant's live list stands, for the note under its models. An API list that
+	// fails is only logged, so it reads as neither loading nor failed.
+	liveModelsStatus(backend) {
+		if (backend === "agy") {
+			return { loading: !Array.isArray(this._agyModels), error: this._agyModelsError || "" };
+		}
+		if (this.BACKENDS[backend].kind === "acp") {
+			let { models, error, promise } = this.acpModelEntry(backend);
+			return { loading: !!promise || (!models && !error), error };
+		}
+		return { loading: false, error: "" };
+	},
+
 	modelLabel(backend, id) {
 		let model = this.getModels(backend).find(m => m.id === id);
 		return model ? model.label : id;

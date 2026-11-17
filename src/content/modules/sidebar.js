@@ -265,14 +265,9 @@ Object.assign(Zusia, {
 				if (!open) {
 					continue;
 				}
-				if (installed === null) {
-					menu.appendChild(this.el(doc, "div", "zs-menu-note",
-						backend.pathPref
-							? "Not installed. Install the " + backend.command + " CLI or set its path in Settings."
-							: "Not found. Check its command and arguments in Settings."));
-					continue;
-				}
-				for (let model of this.getModels(key)) {
+				// A program that is not there offers no models, only the note saying so.
+				let models = installed === null ? [] : this.getModels(key);
+				for (let model of models) {
 					this.menuItem(doc, menu, {
 						label: model.label,
 						desc: this.isAPIBackend(key) || !model.id ? model.desc : "",
@@ -287,16 +282,9 @@ Object.assign(Zusia, {
 						},
 					});
 				}
-				if (key === "agy" && !Array.isArray(this._agyModels)) {
-					menu.appendChild(this.el(doc, "div", "zs-menu-note", "Loading models…"));
-				}
-				if (key === "agy" && this._agyModelsError) {
-					menu.appendChild(this.el(doc, "div", "zs-menu-note", "Sign-in not reachable from Zotero, so only the default model is listed. See Settings."));
-				}
-				if (backend.kind === "acp" && !this.acpModelEntry(key).models) {
-					let { error } = this.acpModelEntry(key);
-					menu.appendChild(this.el(doc, "div", "zs-menu-note",
-						error ? "Models could not be loaded. " + error : "Loading models…"));
+				let note = this.modelMenuNote(key, installed);
+				if (note) {
+					menu.appendChild(this.el(doc, "div", "zs-menu-note", note));
 				}
 			}
 		});
@@ -308,6 +296,16 @@ Object.assign(Zusia, {
 				this.loadLiveModels(key);
 			}
 		}
+	},
+
+	// The one note under an open section's models: that its program is missing, or how its
+	// list stands.
+	modelMenuNote(key, installed) {
+		if (installed === null) {
+			return "Not installed. " + this.commandFixHint(key);
+		}
+		let { loading, error } = this.liveModelsStatus(key);
+		return loading ? "Loading models…" : error ? "Models could not be loaded. " + error : "";
 	},
 
 	openEffortMenu(root, anchor) {
