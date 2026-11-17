@@ -68,7 +68,8 @@ export function loadPlugin({ prefs = {}, files = new Map() } = {}) {
 			createDirectoryIfMissingAsync: async () => {},
 		},
 		getMainWindow: () => window,
-		getMainWindows: () => [window],
+		// As in Zotero, a window closed by the test is no longer one of them.
+		getMainWindows: () => (window.document ? [window] : []),
 	};
 	window.eval(read("src/content/lib/katex.min.js").replace(/^!function\(e,t\)\{/, "!function(e,t){var exports,module,define;"));
 	window.Services = { scriptloader: { loadSubScript: (url, scope) => {

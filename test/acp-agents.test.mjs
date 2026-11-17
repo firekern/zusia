@@ -118,7 +118,7 @@ test("adding an agent registers its backend, writes the pref, sets the icon and 
 	assert.equal(p.acpAgentConfig("commandcode"), null, "only agents in the pref count");
 
 	assert.deepEqual(plain(p.getModels("acp:opencode")).map(m => m.id), [""]);
-	p._acpModels["acp:opencode"] = [{ id: "fast-model", label: "Fast", desc: "" }];
+	p.acpModelEntry("acp:opencode").models = [{ id: "fast-model", label: "Fast", desc: "" }];
 	assert.deepEqual(plain(p.getModels("acp:opencode")), [
 		{ id: "", label: "Default", desc: "The agent's default model" },
 		{ id: "fast-model", label: "Fast", desc: "" },
@@ -291,7 +291,7 @@ test("removing an agent deletes its backend, icon, model cache and prefs", () =>
 	const env = fresh();
 	const p = env.plugin;
 	const { key } = p.addAcpAgent(agent());
-	p._acpModels[key] = [{ id: "m", label: "M", desc: "" }];
+	p.acpModelEntry(key).models = [{ id: "m", label: "M", desc: "" }];
 	env.prefs["extensions.zusia." + key + ".model"] = "m";
 	env.prefs["extensions.zusia." + key + ".effort"] = "high";
 	env.prefs["extensions.zusia." + key + ".api"] = "{}";
@@ -359,7 +359,7 @@ test("a custom ACP agent runs its own command and arguments", async () => {
 		return fake.proc;
 	};
 	const { key } = p.addAcpAgent({ name: "OpenCode", command: "/opt/opencode/bin/opencode", args: ["acp", "--print-logs"] });
-	assert.deepEqual(plain(env.modelLoads), [{ backend: key }], "adding it asks for its models, which the harness answers");
+	assert.deepEqual(plain(env.modelLoads).map(load => load.backend), [key], "adding it asks for its models, which the harness answers");
 
 	const shown = [];
 	const result = await p.runAcp(key, { ...request, onProgress: ({ text }) => { if (text !== undefined) shown.push(text); } });
@@ -441,7 +441,7 @@ test("an agent that dies is reported alike to a question, a sign-in and a model 
 	assert.equal((await p.runAcp(key, request)).error, said);
 	assert.equal((await p.acpAuthenticate(key)).error, said);
 	await p.loadAcpModels(key);
-	assert.equal(p._acpModelErrors[key], said);
+	assert.equal(p.acpModelEntry(key).error, said);
 });
 
 test("a custom agent can name an absolute command", async () => {
@@ -505,6 +505,94 @@ test("an ACP agent's models are available as soon as it is added", async () => {
 		models = p.getModels(key);
 	}
 	assert.deepEqual(plain(models.map(m => m.id)), ["", "fast"]);
+});
+
+// An agent whose session/new answers with `configOptions`, counting how often it was started.
+function listingAgent(p, configOptions, { fails = 0 } = {}) {
+	const started = { count: 0 };
+	p.getDataDir = () => "/d";
+	p.findBinary = async () => "/opt/opencode";
+	p.spawnAgent = async () => {
+		started.count++;
+		return started.count <= fails ? deadAgent(1, "npx: network unreachable\n") : fakeAgent({ configOptions }).proc;
+	};
+	return started;
+}
+const MODEL = [{ id: "model", name: "Model", category: "model", type: "select", options: [{ value: "fast", name: "Fast" }] }];
+
+test("an agent's model list is asked for once, and kept", async () => {
+	const env = fresh();
+	const p = env.plugin;
+	const { key } = p.addAcpAgent(agent());
+	p.loadAcpModels = env.loadAcpModels;
+	const started = listingAgent(p, MODEL);
+	const first = p.loadAcpModels(key);
+	assert.equal(p.loadAcpModels(key), first, "a second ask while the first runs shares it");
+	assert.ok(p.acpModelEntry(key).promise, "the listing in flight is on the entry");
+	assert.deepEqual(plain(await first), [{ id: "fast", label: "Fast", desc: "" }]);
+	assert.deepEqual(plain(p.acpModelEntry(key)), { models: [{ id: "fast", label: "Fast", desc: "" }], error: "", promise: null });
+	assert.deepEqual(plain(await p.loadAcpModels(key, { retry: true })).map(m => m.id), ["fast"]);
+	assert.equal(started.count, 1, "a listed agent is not started again");
+	assert.deepEqual(plain(p.getModels(key)).map(m => m.id), ["", "fast"]);
+});
+
+test("an agent that offers no model choice is listed as such, not loading forever", async () => {
+	const env = fresh();
+	const p = env.plugin;
+	const { key } = p.addAcpAgent(agent());
+	p.loadAcpModels = env.loadAcpModels;
+	listingAgent(p, []);
+	assert.deepEqual(plain(await p.loadAcpModels(key)), []);
+	assert.deepEqual(plain(p.acpModelEntry(key).models), []);
+});
+
+test("a failed model list is kept until the card asks again", async () => {
+	const env = fresh();
+	const p = env.plugin;
+	const { key } = p.addAcpAgent(agent());
+	p.loadAcpModels = env.loadAcpModels;
+	const started = listingAgent(p, MODEL, { fails: 1 });
+	assert.deepEqual(plain(await p.loadAcpModels(key)), []);
+	assert.equal(p.acpModelEntry(key).error, "OpenCode exited with code 1: npx: network unreachable");
+	assert.equal(p.acpModelEntry(key).models, null);
+	await p.loadAcpModels(key);
+	assert.equal(started.count, 1, "the menu opened twice does not start the agent twice");
+	assert.deepEqual(plain(await p.loadAcpModels(key, { retry: true })).map(m => m.id), ["fast"], "Try again does");
+	assert.equal(started.count, 2);
+	assert.equal(p.acpModelEntry(key).error, "");
+});
+
+test("an agent removed while it lists its models leaves no list behind", async () => {
+	const env = fresh();
+	const p = env.plugin;
+	const { key } = p.addAcpAgent(agent());
+	p.loadAcpModels = env.loadAcpModels;
+	listingAgent(p, MODEL);
+	const loading = p.loadAcpModels(key);
+	p.removeAcpAgent(key);
+	await loading;
+	assert.equal(p._acpModels[key], undefined);
+	const again = p.addAcpAgent(agent());
+	assert.equal(again.key, key, "the same id comes back");
+	assert.equal(p.acpModelEntry(key).models, null, "and starts with no list");
+});
+
+test("every kind loads its live models through one door that refreshes the chats", async () => {
+	const env = loadPlugin();
+	const p = env.plugin;
+	const asked = [];
+	p.loadAgyModels = async () => { asked.push("agy"); return []; };
+	p.loadAPIModels = async (backend) => { asked.push(backend); throw new Error("connection refused"); };
+	let refreshed = 0;
+	p.updateControls = () => { refreshed++; };
+	env.document.body.appendChild(Object.assign(env.document.createElement("div"), { className: "zs-root" }));
+	for (const backend of ["claude", "codex", "agy", "ollama", "acp:commandcode"]) {
+		assert.equal(await p.loadLiveModels(backend, { retry: true }), undefined, backend);
+	}
+	assert.deepEqual(asked, ["agy", "ollama"], "only Antigravity among the CLIs lists models");
+	assert.deepEqual(plain(env.modelLoads), [{ backend: "acp:commandcode", options: { retry: true } }]);
+	assert.equal(refreshed, 5, "each load ends with the chats' controls");
+	assert.ok(p._logLines.some(line => line.includes("Could not list Ollama models: Error: connection refused")), "an API failure is logged, not thrown");
 });
 
 test("the shipped agent can be removed like any other and stays removed", () => {

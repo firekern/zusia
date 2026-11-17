@@ -313,10 +313,10 @@ Object.assign(Zusia, {
 		let select = this.select(doc, this.modelSelectOptions(key), this.getModel(key),
 			value => this.setPref(key + ".model", value));
 		body.appendChild(this.row(doc, "Model", select));
-		if (!Array.isArray(this._acpModels[key])) {
+		if (!this.acpModelEntry(key).models) {
 			let hint = this.el(doc, "div", "zs-row-hint", "Loading the model list…");
 			body.appendChild(hint);
-			let load = () => this.loadAcpModels(key, { retry: true }).then(() => {
+			let load = () => this.loadLiveModels(key, { retry: true }).then(() => {
 				if (!this.BACKENDS[key] || !select.isConnected) {
 					return;
 				}
@@ -324,7 +324,7 @@ Object.assign(Zusia, {
 				if (!hint.isConnected) {
 					return;
 				}
-				let error = this._acpModelErrors[key];
+				let { error } = this.acpModelEntry(key);
 				if (!error) {
 					hint.remove();
 					return;

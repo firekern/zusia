@@ -266,9 +266,9 @@ Zusia = {
 	WIZARD_STEPS: ["welcome", "assistant", "look", "buddy", "answers", "voice", "done"],
 	// What each kind of assistant can do. A transport is a row here, not a branch at every call site.
 	KINDS: {
-		cli: { run: "runCliBackend", background: "runCliBackground", models: "cliLiveModels" },
-		acp: { run: "runAcp", background: "runAcpBackground", models: "acpLiveModels" },
-		api: { run: "runAPIBackend", background: "runApiBackground", models: "apiLiveModels" },
+		cli: { run: "runCliBackend", background: "runCliBackground", models: "cliLiveModels", loadModels: "loadCliModels" },
+		acp: { run: "runAcp", background: "runAcpBackground", models: "acpLiveModels", loadModels: "loadAcpModels" },
+		api: { run: "runAPIBackend", background: "runApiBackground", models: "apiLiveModels", loadModels: "loadAPIModels" },
 	},
 	BACKEND_ICONS: { claude: "sparkle", codex: "terminal", agy: "rocket", ollama: "ollama", unsloth: "unsloth", openai: "ref" },
 	// Study buddies: original drawings shown in the empty chat, with a matching header icon.
@@ -390,9 +390,8 @@ Zusia = {
 	_backendPrefObservers: new Map(),
 	_katex: undefined,
 	_agyModels: null,
+	// Per ACP agent, from acpModelEntry(): { models, error, promise }.
 	_acpModels: {},
-	_acpModelPromises: {},
-	_acpModelErrors: {},
 	// True while building Zotero note HTML: maths becomes note-editor markup, not MathML.
 	_noteMode: false,
 	_logLines: [],

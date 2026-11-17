@@ -156,45 +156,43 @@ Object.assign(Zusia, {
 		}
 	},
 
+	// An agent's models: null until it has listed them, then the list; why the last listing
+	// failed; and the listing in flight.
+	acpModelEntry(backend) {
+		return this._acpModels[backend] ??= { models: null, error: "", promise: null };
+	},
+
 	// A failure is kept until the reader asks again from the card, so opening the menu twice
-	// does not start an agent twice, and an npx agent is not downloaded again.
-	async loadAcpModels(backend, { retry = false } = {}) {
-		if (Array.isArray(this._acpModels[backend])) {
-			return this._acpModels[backend];
+	// does not start an agent twice, and an npx agent is not downloaded again. Resolves to
+	// the list, empty when it failed, and never rejects.
+	loadAcpModels(backend, { retry = false } = {}) {
+		let entry = this.acpModelEntry(backend);
+		if (entry.promise) {
+			return entry.promise;
 		}
-		if (this._acpModelPromises[backend]) {
-			return this._acpModelPromises[backend];
+		if (entry.models || (entry.error && !retry)) {
+			return Promise.resolve(entry.models || []);
 		}
-		if (!retry && this._acpModelErrors[backend]) {
-			return [];
-		}
-		delete this._acpModelErrors[backend];
-		this._acpModelPromises[backend] = (async () => {
+		let label = this.BACKENDS[backend].label;
+		entry.error = "";
+		entry.promise = (async () => {
 			try {
 				let opened = await this.withAcpConnection(backend, this.getDataDir(), {}, connection =>
 					connection.request("session/new", { cwd: this.getDataDir(), mcpServers: [] }));
-				if (!this.BACKENDS[backend]) {
-					return [];
-				}
 				this.rememberAcpConfig(backend, opened.configOptions);
-				if (!Array.isArray(this._acpModels[backend])) {
-					this._acpModels[backend] = [];
-				}
-				this.refreshAllSidebars();
-				return this._acpModels[backend];
+				// Listed, even when the agent offers no choice of model.
+				entry.models = entry.models || [];
 			}
 			catch (e) {
-				if (this.BACKENDS[backend]) {
-					this._acpModelErrors[backend] = String((e && e.message) || e);
-				}
-				this.log("Could not list " + (this.BACKENDS[backend] ? this.BACKENDS[backend].label : backend) + " models: " + e);
-				return [];
+				entry.error = e.message;
+				this.log("Could not list " + label + " models: " + e);
 			}
 			finally {
-				delete this._acpModelPromises[backend];
+				entry.promise = null;
 			}
+			return entry.models || [];
 		})();
-		return this._acpModelPromises[backend];
+		return entry.promise;
 	},
 
 	async acpAuthenticate(backend) {
@@ -453,13 +451,16 @@ Object.assign(Zusia, {
 	},
 
 	rememberAcpConfig(backend, configOptions) {
+		// An agent removed while it answered leaves no list behind for a later one of its id.
 		if (!this.BACKENDS[backend]) {
 			return;
 		}
+		let entry = this.acpModelEntry(backend);
 		let models = this.acpModelChoices(configOptions);
+		// A session/load may come back without options; that keeps the list it had.
 		if (models.length) {
-			this._acpModels[backend] = models;
+			entry.models = models;
 		}
-		delete this._acpModelErrors[backend];
+		entry.error = "";
 	},
 });

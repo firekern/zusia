@@ -237,11 +237,12 @@ Object.assign(Zusia, {
 		}
 	},
 
-	loadModelsForSection(key, menu) {
-		if (this.BACKENDS[key]?.kind !== "acp" || Array.isArray(this._acpModels[key])) {
+	// loadLiveModels refreshes every chat's controls, and with them this menu.
+	loadModelsForSection(key) {
+		if (this.BACKENDS[key].kind !== "acp" || this.acpModelEntry(key).models) {
 			return;
 		}
-		this.loadAcpModels(key).then(() => menu.isConnected && menu.refresh()).catch(() => {});
+		this.loadLiveModels(key);
 	},
 
 	openModelMenu(root, anchor) {
@@ -266,7 +267,7 @@ Object.assign(Zusia, {
 						}
 						else {
 							expanded.add(key);
-							this.loadModelsForSection(key, menu);
+							this.loadModelsForSection(key);
 						}
 						menu.refresh();
 					},
@@ -302,8 +303,8 @@ Object.assign(Zusia, {
 				if (key === "agy" && this._agyModelsError) {
 					menu.appendChild(this.el(doc, "div", "zs-menu-note", "Sign-in not reachable from Zotero, so only the default model is listed. See Settings."));
 				}
-				if (backend.kind === "acp" && !Array.isArray(this._acpModels[key])) {
-					let error = this._acpModelErrors[key];
+				if (backend.kind === "acp" && !this.acpModelEntry(key).models) {
+					let { error } = this.acpModelEntry(key);
 					menu.appendChild(this.el(doc, "div", "zs-menu-note",
 						error ? "Models could not be loaded. " + error : "Loading models…"));
 				}
@@ -315,7 +316,7 @@ Object.assign(Zusia, {
 		if (menu) {
 			// Only an open section lists models, so only the agents in one are asked.
 			for (let key of expanded) {
-				this.loadModelsForSection(key, menu);
+				this.loadModelsForSection(key);
 			}
 			for (let key of Object.keys(this.BACKENDS).filter(key => this.isAPIBackend(key) && this.getModel(key))) {
 				this.loadAPIModels(key).then(() => menu.isConnected && menu.refresh()).catch(() => {});

@@ -175,7 +175,7 @@ Object.assign(Zusia, {
 		configs.push(config);
 		this.saveAcpAgentConfigs(configs);
 		let key = this.registerAcpAgent(config);
-		this.loadAcpModels(key);
+		this.loadLiveModels(key);
 		return { key, config };
 	},
 
@@ -189,8 +189,6 @@ Object.assign(Zusia, {
 		delete this.BACKENDS[backend];
 		delete this.BACKEND_ICONS[backend];
 		delete this._acpModels[backend];
-		delete this._acpModelPromises[backend];
-		delete this._acpModelErrors[backend];
 		this.unwatchBackendPrefs(backend);
 		for (let name of ["model", "effort", "api"]) {
 			Zotero.Prefs.clear(this.PREF_PREFIX + backend + "." + name, true);
