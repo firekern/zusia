@@ -94,7 +94,7 @@ Object.assign(Zusia, {
 
 	async acpPromptBlocks(text, images) {
 		let blocks = [{ type: "text", text }];
-		for (let path of images || []) {
+		for (let path of images) {
 			let { data, mimeType } = await this.imageBase64(path);
 			blocks.push({ type: "image", data, mimeType });
 		}
