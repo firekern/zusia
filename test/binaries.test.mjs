@@ -68,3 +68,17 @@ test("findBinary: a name on none of the paths is reported, and no .exe is tried 
 	await assert.rejects(loadPosixPlugin({ executables: ["/usr/bin/claude.exe"] }).plugin.findBinary("claude"), /Could not find the 'claude' command\. Make sure Claude is installed/);
 	await assert.rejects(typedAgent("opencode").findBinary("acp:agent"), /Could not find the 'opencode' command\. Make sure Agent is installed/);
 });
+
+test("commandFixHint: a CLI is pointed at by its Command path setting, an ACP agent by adding it again", () => {
+	const { plugin } = loadPosixPlugin();
+	assert.match(plugin.commandFixHint("claude"), /full path as Command path in Zotero Settings → Zusia → Assistants\.$/);
+	assert.match(plugin.commandFixHint("acp:commandcode"), /^Check its command in Zotero Settings → Zusia → Assistants\. .*remove the agent and add it again/);
+});
+
+test("findBinary: the not-found message ends with how to point Zusia at the program", async () => {
+	const { plugin } = loadPosixPlugin();
+	for (const backend of ["codex", "acp:commandcode"]) {
+		const error = await plugin.findBinary(backend).then(() => null, e => e);
+		assert.ok(error.message.endsWith(" is installed. " + plugin.commandFixHint(backend)), error.message);
+	}
+});

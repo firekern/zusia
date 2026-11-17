@@ -128,7 +128,9 @@ test("windows: Command Code removed and added back, or added under another name,
 test("windows: an npm .cmd unknown to Zusia is refused, whatever the agent is called", async () => {
 	const { plugin } = loadWindowsPlugin({ executables: [NPM + "\\gemini.cmd", NPM + "\\node_modules\\@google\\gemini-cli\\dist\\index.js"], environment: upperPath() });
 	const { key } = plugin.addAcpAgent({ name: "Gemini", command: "gemini", args: "--experimental-acp" });
-	await assert.rejects(plugin.findBinary(key), /will not run batch files.*\\npm\\gemini\.cmd.*Gemini/s);
+	const error = await plugin.findBinary(key).then(() => null, e => e);
+	assert.match(error.message, /will not run batch files.*\\npm\\gemini\.cmd.*Install or update Gemini so it provides a native program\./s);
+	assert.ok(error.message.endsWith(plugin.commandFixHint(key)), error.message);
 });
 
 // Windows names the variable "Path" (cmd's `set` shows Path=...), and

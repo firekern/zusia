@@ -27,12 +27,17 @@ Object.assign(Zusia, {
 		];
 	},
 
+	// An ACP agent's card shows its command but cannot edit it, so the way to another
+	// program is to add the agent again.
+	commandFixHint(backend) {
+		return this.BACKENDS[backend].pathPref
+			? "To run a copy that is not on your PATH, enter its full path as Command path in Zotero Settings → Zusia → Assistants."
+			: "Check its command in Zotero Settings → Zusia → Assistants. To change it, remove the agent and add it again with the program's full path.";
+	},
+
 	missingBinaryMessage(backend, command) {
-		let { label, pathPref } = this.BACKENDS[backend];
-		return "Could not find the '" + command + "' command. Make sure " + label + " is installed" +
-			(pathPref
-				? " and on your PATH, or set " + this.PREF_PREFIX + pathPref + " (Zotero Settings → Advanced → Config Editor) to its full path."
-				: " and its command is right. Check it in Zotero Settings → Zusia → Assistants.");
+		return "Could not find the '" + command + "' command. Make sure " + this.BACKENDS[backend].label + " is installed. " +
+			this.commandFixHint(backend);
 	},
 
 	async findBinary(backend) {
@@ -85,14 +90,11 @@ Object.assign(Zusia, {
 				return resolved;
 			}
 		}
-		let { label, pathPref } = this.BACKENDS[backend];
 		throw new Error(
 			"Zusia will not run batch files (.cmd/.bat) such as " + path + ": Windows hands their " +
 			"arguments to cmd.exe, which can cut the prompt short or run commands hidden in it. " +
-			"Install or update " + label + " so it provides a native program, " +
-			(pathPref
-				? "or set " + this.PREF_PREFIX + pathPref + " (Zotero Settings → Advanced → Config Editor) to its full path."
-				: "or point its command in Settings → Zusia → Assistants at that program.")
+			"Install or update " + this.BACKENDS[backend].label + " so it provides a native program. " +
+			this.commandFixHint(backend)
 		);
 	},
 
