@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { loadPlugin } from "./load-plugin.mjs";
+import { loadWindowsPlugin } from "./windows-env.mjs";
 
 const PREF = "extensions.zusia.acpAgents";
 const plain = value => JSON.parse(JSON.stringify(value));
@@ -338,10 +339,32 @@ test("the command line quotes only the parts that contain whitespace", () => {
 	assert.equal(p.acpCommandLine({ command: "/usr/bin/opencode", args: [] }), "/usr/bin/opencode");
 	assert.equal(p.acpCommandLine({ command: "opencode", args: ["acp", "--flag=x", "--dir", "/tmp/my papers"] }),
 		'opencode acp --flag=x --dir "/tmp/my papers"');
-	assert.equal(p.acpCommandLine({ command: "C:\\Program Files\\Agent\\agent.exe", args: [] }),
-		'"C:\\\\Program Files\\\\Agent\\\\agent.exe"');
-	assert.equal(p.acpCommandLine(null), "");
-	assert.equal(p.acpCommandLine(agent()), p.acpCommandLine(agent()));
+	assert.equal(p.acpCommandLine({ command: "C:\\Program Files\\Agent\\agent.exe", args: ["acp"] }),
+		'"C:\\Program Files\\Agent\\agent.exe" acp', "a Windows path keeps its single backslashes");
+});
+
+test("a pasted command loses the quotes around it, and only those", () => {
+	const p = fresh().plugin;
+	for (const [typed, kept] of [
+		['"C:\\Program Files\\Agent\\agent.exe"', "C:\\Program Files\\Agent\\agent.exe"],
+		['  "C:\\Program Files\\Agent\\agent.exe"  ', "C:\\Program Files\\Agent\\agent.exe"],
+		["'/opt/my agent/bin/agent'", "/opt/my agent/bin/agent"],
+		['"half', '"half'],
+		['"mixed\'', '"mixed\''],
+		["opencode", "opencode"],
+	]) {
+		const { config } = p.normalizeAcpAgent({ name: "A", command: typed }, "a");
+		assert.equal(config.command, kept, typed);
+	}
+	assert.match(p.normalizeAcpAgent({ name: "A", command: '""' }, "a").error, /command of 1 to 500/, "nothing left inside the quotes");
+});
+
+test("on Windows a path copied from Explorer, quotes and all, finds the agent", async () => {
+	const exe = "C:\\Program Files\\Agent\\agent.exe";
+	const { plugin: p } = loadWindowsPlugin({ executables: [exe] });
+	const { key } = p.addAcpAgent({ name: "Agent", command: '"' + exe + '"', args: "acp" });
+	assert.equal(await p.findBinary(key), exe);
+	assert.equal(p.acpCommandLine(p.acpAgentConfig(key)), '"' + exe + '" acp');
 });
 
 test("a custom ACP agent runs its own command and arguments", async () => {

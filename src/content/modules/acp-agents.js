@@ -69,7 +69,8 @@ Object.assign(Zusia, {
 		if (/[\u0000-\u001f\u007f-\u009f]/.test(name)) {
 			return { error: "The agent's name cannot contain line breaks or control characters." };
 		}
-		let command = typeof agent.command === "string" ? agent.command.trim() : "";
+		// Explorer's "Copy as path" wraps the path in quotes, which no file name starts with.
+		let command = typeof agent.command === "string" ? agent.command.trim().replace(/^(["'])(.*)\1$/, "$2").trim() : "";
 		if (!command || command.length > 500) {
 			return { error: "Give the agent a command of 1 to 500 characters." };
 		}
@@ -199,15 +200,9 @@ Object.assign(Zusia, {
 		return true;
 	},
 
+	// Quoted only where a space would split it, and never escaped, so a Windows path reads
+	// as the reader typed it and can be pasted back.
 	acpCommandLine(config) {
-		if (!config) {
-			return "";
-		}
-		let show = (part) => {
-			let text = String(part === undefined || part === null ? "" : part);
-			return /\s/.test(text) ? JSON.stringify(text) : text;
-		};
-		let args = Array.isArray(config.args) ? config.args : [];
-		return [config.command].concat(args).map(show).join(" ");
+		return [config.command, ...config.args].map(part => (/\s/.test(part) ? '"' + part + '"' : part)).join(" ");
 	},
 });
