@@ -347,7 +347,6 @@ test("the command line quotes only the parts that contain whitespace", () => {
 test("a custom ACP agent runs its own command and arguments", async () => {
 	const env = loadPlugin();
 	const p = env.plugin;
-	const { key } = p.addAcpAgent({ name: "OpenCode", command: "/opt/opencode/bin/opencode", args: ["acp", "--print-logs"] });
 	const fake = fakeAgent({ answer: "The FFT turns 8 samples into 8 frequencies." });
 	const lookups = [];
 	const spawns = [];
@@ -359,6 +358,8 @@ test("a custom ACP agent runs its own command and arguments", async () => {
 		spawns.push({ command, args: [...args], workdir });
 		return fake.proc;
 	};
+	const { key } = p.addAcpAgent({ name: "OpenCode", command: "/opt/opencode/bin/opencode", args: ["acp", "--print-logs"] });
+	assert.deepEqual(plain(env.modelLoads), [{ backend: key }], "adding it asks for its models, which the harness answers");
 
 	const shown = [];
 	const result = await p.runAcp(key, { ...request, onProgress: ({ text }) => { if (text !== undefined) shown.push(text); } });
@@ -407,11 +408,11 @@ test("a custom agent can name an absolute command", async () => {
 test("a configured ACP agent runs a background call with the raw memory prompt", async () => {
 	const env = loadPlugin();
 	const p = env.plugin;
-	const { key } = p.addAcpAgent(agent());
 	const fake = fakeAgent({ answer: '{"ok":true}' });
 	p.findBinary = async () => "/opt/opencode";
 	p.spawnAgent = async () => fake.proc;
 	p.makeJobDir = async () => "/tmp/job";
+	const { key } = p.addAcpAgent(agent());
 
 	const result = await env.runBackgroundCall.call(p, key, "MEMORY TASK");
 	await flush();
@@ -425,11 +426,11 @@ test("a configured ACP agent runs a background call with the raw memory prompt",
 
 test("a configured ACP agent can be asked to sign in", async () => {
 	const p = loadPlugin().plugin;
-	const { key } = p.addAcpAgent(agent());
 	const fake = fakeAgent({ auth: [{ id: "oauth", name: "Log in with Google" }, { id: "key", name: "API key" }] });
 	p.findBinary = async () => "/opt/opencode";
 	p.spawnAgent = async () => fake.proc;
 	p.getDataDir = () => "/d";
+	const { key } = p.addAcpAgent(agent());
 
 	const result = await p.acpAuthenticate(key);
 	await flush();
@@ -441,7 +442,9 @@ test("a configured ACP agent can be asked to sign in", async () => {
 });
 
 test("an ACP agent's models are available as soon as it is added", async () => {
-	const p = loadPlugin().plugin;
+	const env = loadPlugin();
+	const p = env.plugin;
+	p.loadAcpModels = env.loadAcpModels;
 	const fake = fakeAgent({ configOptions: [
 		{ id: "model", name: "Model", category: "model", options: [{ value: "fast", name: "Fast" }] },
 	] });

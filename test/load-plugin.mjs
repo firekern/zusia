@@ -97,7 +97,18 @@ export function loadPlugin({ prefs = {}, files = new Map() } = {}) {
 		backgroundCalls.push({ backend, prompt });
 		return { text: "", error: "no model in tests", rateLimited: false };
 	};
-	return { window, document: window.document, plugin, map: window.ZusiaMap, prefs, files, Subprocess, backgroundCalls, runBackgroundCall };
+	// An agent's model list loads on its own once the agent is added, its Settings card
+	// renders or its menu section opens, which would start the agent's program. The same
+	// holds: each call is recorded and lists nothing. Tests of the loader put
+	// `loadAcpModels` back.
+	const modelLoads = [];
+	const loadAcpModels = plugin.loadAcpModels;
+	plugin.loadAcpModels = async (backend, options) => {
+		modelLoads.push({ backend, options });
+		return [];
+	};
+	return { window, document: window.document, plugin, map: window.ZusiaMap, prefs, files, Subprocess, backgroundCalls, runBackgroundCall,
+		modelLoads, loadAcpModels };
 }
 
 // A chat rendered in the page, with the view the plugin keeps for it: what Zotero's

@@ -175,7 +175,7 @@ Object.assign(Zusia, {
 		configs.push(config);
 		this.saveAcpAgentConfigs(configs);
 		let key = this.registerAcpAgent(config);
-		this.loadAcpModels(key).catch(() => {});
+		this.loadAcpModels(key);
 		return { key, config };
 	},
 
