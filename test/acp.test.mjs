@@ -265,13 +265,13 @@ test("acp: permissions allow reading, refuse changes, and cancel when no option 
 		{ optionId: "no", name: "No", kind: "reject_once" },
 		{ optionId: "never", name: "Never", kind: "reject_always" },
 	];
-	for (const kind of ["read", "search", "fetch", "think", "other"]) {
+	for (const kind of ["read", "search", "think"]) {
 		assert.deepEqual(plain(plugin.acpPermissionReply({ kind }, allowing)),
 			{ outcome: { outcome: "selected", optionId: "always" } }, "allow_always is preferred for " + kind);
 	}
 	assert.deepEqual(plain(plugin.acpPermissionReply({ kind: "read" }, [allowing[0], allowing[2]])),
 		{ outcome: { outcome: "selected", optionId: "once" } }, "allow_once when there is no allow_always");
-	for (const kind of ["edit", "delete", "move", "execute"]) {
+	for (const kind of ["edit", "delete", "move", "execute", "fetch", "other"]) {
 		assert.deepEqual(plain(plugin.acpPermissionReply({ kind }, refusing)),
 			{ outcome: { outcome: "selected", optionId: "never" } }, "refused for " + kind);
 	}

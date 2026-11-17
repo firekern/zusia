@@ -154,7 +154,7 @@ Object.assign(Zusia, {
 		let settings = section("In the background", "zs-memory-settings");
 		let runner = this.jobBackend() ? "" : this.getBackend() === "openai"
 			? " Enable background calls for this endpoint in Settings → Zusia → Assistants. These extra calls can cost money."
-			: " Needs Claude, Antigravity, a configured ACP agent or an API assistant with background calls enabled: Codex is never used for it.";
+			: " Needs Claude, Antigravity, an ACP agent you allowed on its card, or an API assistant with background calls enabled: Codex is never used for it.";
 		// A switch is a button, which the row's <label> does not name.
 		let toggle = (label, checked, pref, hint) => {
 			let control = this.switchControl(doc, checked, v => this.setPref(pref, v));

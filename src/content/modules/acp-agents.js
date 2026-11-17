@@ -141,7 +141,27 @@ Object.assign(Zusia, {
 			.filter(Boolean)
 			.slice(0, 20)
 			.map(arg => arg.slice(0, 500));
-		return { config: { id, name, command, args: cleaned } };
+		let config = { id, name, command, args: cleaned };
+		if (agent.background === true) {
+			config.background = true;
+		}
+		return { config };
+	},
+
+	setAcpAgentBackground(backend, on) {
+		let configs = this.acpAgents();
+		let config = configs.find(agent => this.acpAgentKey(agent.id) === backend);
+		if (!config) {
+			return false;
+		}
+		if (on) {
+			config.background = true;
+		}
+		else {
+			delete config.background;
+		}
+		this.saveAcpAgentConfigs(configs);
+		return true;
 	},
 
 	registerAcpAgent(config) {

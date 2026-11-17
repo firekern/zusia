@@ -416,6 +416,9 @@ Object.assign(Zusia, {
 			backend.efforts.map(e => [e, this.EFFORTS[e].label + " — " + this.EFFORTS[e].desc]),
 			this.getEffort(key),
 			value => this.setPref(key + ".effort", value))));
+		body.appendChild(this.row(doc, "Background memory",
+			this.switchControl(doc, !!config.background, value => this.setAcpAgentBackground(key, value)),
+			"Runs the study-memory calls through this agent, in the background. Off until you turn it on."));
 		let remove = this.el(doc, "button", "zs-button zs-acp-remove", "Remove");
 		remove.type = "button";
 		remove.addEventListener("click", () => {

@@ -212,8 +212,9 @@ Object.assign(Zusia, {
 	},
 
 	acpPermissionReply(toolCall, options) {
+		// The agent reads the paper folder and nothing else: no network, no change, no command.
 		let kind = String((toolCall && toolCall.kind) || "").toLowerCase();
-		let wanted = ["read", "search", "fetch", "think", "other"].includes(kind) ? "allow" : "reject";
+		let wanted = ["read", "search", "think"].includes(kind) ? "allow" : "reject";
 		let best = null;
 		let bestRank = -1;
 		for (let option of options || []) {

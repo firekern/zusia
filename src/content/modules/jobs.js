@@ -11,12 +11,15 @@ Object.assign(Zusia, {
 		return this.getPref("memory.gists") === true;
 	},
 
+	// The assistant that runs memory jobs: the one in use, when it can run with nothing to
+	// read. Codex cannot: its read-only sandbox still reads the whole home folder. An ACP
+	// agent is a program of its own, so its card asks first.
 	jobBackend() {
 		let backend = this.getBackend();
 		let info = this.BACKENDS[backend];
 		if (!info) return null;
 		if (info.kind === "api") return backend === "openai" && !this.getAPIConfig(backend).background ? null : backend;
-		if (info.kind === "acp") return backend;
+		if (info.kind === "acp") return this.acpAgentConfig(backend)?.background ? backend : null;
 		return backend === "codex" ? null : backend;
 	},
 

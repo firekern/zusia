@@ -128,6 +128,20 @@ test("adding an agent registers its backend, writes the pref, sets the icon and 
 	assert.deepEqual(stored(env.prefs).map(c => c.id), ["opencode", "other"]);
 });
 
+test("an ACP agent runs memory jobs only once its card allows it", () => {
+	const env = fresh();
+	const p = env.plugin;
+	const { key } = p.addAcpAgent(agent());
+	p.setPref("backend", key);
+	assert.equal(p.jobBackend(), null, "off by default");
+	assert.equal(p.setAcpAgentBackground(key, true), true);
+	assert.equal(p.jobBackend(), key, "allowed once the reader turns it on");
+	assert.equal(stored(env.prefs)[0].background, true);
+	p.setAcpAgentBackground(key, false);
+	assert.equal(p.jobBackend(), null);
+	assert.equal(stored(env.prefs)[0].background, undefined, "off is the absence of the flag");
+});
+
 test("a slug comes from the name, and two names that slug alike get numbered ids", () => {
 	const p = loadPlugin().plugin;
 	assert.equal(p.acpSlug("OpenCode"), "opencode");
