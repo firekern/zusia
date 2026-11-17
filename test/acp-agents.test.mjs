@@ -785,6 +785,31 @@ test("Settings shows a failed list as it is, and only Try again starts the agent
 	assert.deepEqual(started, ["/bin/" + key, "/bin/acp:opencode", "/bin/" + key], "Try again starts it once");
 });
 
+test("a sign-in asks for the models again, so neither the card nor the menu keeps the old failure", async () => {
+	const env = fresh({ "extensions.zusia.onboarded": true });
+	const p = env.plugin;
+	const { key } = p.addAcpAgent(agent());
+	p.setPref("backend", key);
+	p.loadAcpModels = env.loadAcpModels;
+	p._agyModels = [];
+	const started = listingAgent(p, MODEL, { fails: 1 });
+	await p.loadLiveModels(key);
+	const { root } = openChat(env);
+	p.openModelMenu(root, root.querySelector(".zs-model-btn"));
+	const menu = root.querySelector(".zs-menu");
+	assert.match(menu.textContent, /Models could not be loaded\. OpenCode exited with code 1/);
+
+	const { card, model } = agentCard(env, key);
+	const hint = card.querySelector(".zs-agent-body > .zs-row-hint");
+	p.acpAuthenticate = async () => ({ methods: [{ id: "oauth", name: "Google" }] });
+	card.querySelector(".zs-acp-signin").click();
+	await settle(() => hint.hidden);
+	assert.equal(started.count, 2, "the listing ran once more");
+	assert.deepEqual([...model.options].map(o => o.value), ["", "fast"]);
+	assert.doesNotMatch(menu.textContent, /could not be loaded/);
+	assert.match(menu.textContent, /Fast/);
+});
+
 test("removing the agent in use from its card hands the chat back to Claude", () => {
 	const env = fresh();
 	const p = env.plugin;

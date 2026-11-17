@@ -365,17 +365,20 @@ Object.assign(Zusia, {
 		let signIn = this.el(doc, "button", "zs-button zs-acp-signin", "Sign in");
 		signIn.type = "button";
 		let note = this.el(doc, "div", "zs-row-hint");
+		note.setAttribute("role", "status");
+		note.setAttribute("aria-live", "polite");
 		signIn.addEventListener("click", async () => {
 			signIn.disabled = true;
 			note.textContent = "Asking " + label + " to sign in…";
-			let result = await this.acpAuthenticate(key);
+			let { error } = await this.acpAuthenticate(key);
 			signIn.disabled = false;
-			note.textContent = result.error
-				? result.error
-				: "Sign-in step sent to " + label + "." +
-					(result.methods.length > 1
-						? " It also offers: " + result.methods.slice(1).map(m => m.name || m.id).join(", ") + "."
-						: "");
+			// Only the first sign-in method is ever used, so the others are not named.
+			note.textContent = error || "Sign-in step sent to " + label + ".";
+			// A list that failed for want of a sign-in is kept until asked again, in this card and
+			// in the menu, so ask once now, unless the agent was removed while it signed in.
+			if (!error && this.BACKENDS[key]) {
+				listModels(true);
+			}
 		});
 		let remove = this.el(doc, "button", "zs-button zs-acp-remove", "Remove");
 		remove.type = "button";

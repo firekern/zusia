@@ -345,12 +345,14 @@ test("an ACP agent can be asked to sign in from Settings", async () => {
 	let asked = null;
 	plugin.acpAuthenticate = async (backend) => {
 		asked = backend;
-		return { methods: [{ name: "Google" }, { name: "API key" }], method: { name: "Google" }, result: {} };
+		return { methods: [{ id: "oauth", name: "Google" }, { id: "key", name: "API key" }] };
 	};
 	agent.querySelector(".zs-acp-signin").click();
 	await new Promise(resolve => setTimeout(resolve, 0));
 	assert.equal(asked, "acp:opencode");
-	assert.match(agent.querySelector(".zs-acp-signin-wrap .zs-row-hint").textContent, /API key/);
+	const note = agent.querySelector(".zs-acp-signin-wrap .zs-row-hint");
+	assert.equal(note.textContent, "Sign-in step sent to OpenCode.", "no word of methods the card cannot pick");
+	assert.equal(note.getAttribute("role"), "status", "a screen reader hears how it went");
 });
 
 test("Settings' stylesheet styles only classes the modules set", () => {
