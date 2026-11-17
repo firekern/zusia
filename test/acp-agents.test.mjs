@@ -379,10 +379,9 @@ test("a custom agent that is not signed in gets its own name in the help", async
 	const env = loadPlugin();
 	const p = env.plugin;
 	const { key } = p.addAcpAgent(agent());
-	assert.equal(p.acpSignInHelp(key, "Not authenticated"),
+	assert.equal(p.acpSignInHelp("OpenCode", "Error: authentication required"),
 		"OpenCode is not signed in. Sign in with its own CLI in a terminal, then ask again.");
-	assert.match(p.acpSignInHelp("acp:commandcode", "Not authenticated"), /Command Code is not signed in/);
-	assert.equal(p.acpSignInHelp(key, "Everything is fine"), null);
+	assert.equal(p.acpSignInHelp("OpenCode", "Everything is fine"), null);
 
 	p.findBinary = async () => "/opt/opencode";
 	let complaint = "Not authenticated. Run `opencode auth login`.\n";
@@ -396,6 +395,32 @@ test("a custom agent that is not signed in gets its own name in the help", async
 	p.spawnAgent = async () => refusing;
 	const result = await p.runAcp(key, request);
 	assert.equal(result.error, "OpenCode is not signed in. Sign in with its own CLI in a terminal, then ask again.");
+});
+
+// An agent that writes `complaint` to stderr and exits with `exitCode` before it says anything.
+function deadAgent(exitCode, complaint) {
+	return {
+		stdin: { write: async () => {}, close: async () => {} },
+		stdout: { readString: async () => "" },
+		stderr: { readString: async () => { const out = complaint; complaint = ""; return out; } },
+		wait: async () => ({ exitCode }),
+		kill() {},
+	};
+}
+
+test("an agent that dies is reported alike to a question, a sign-in and a model list", async () => {
+	const env = fresh();
+	const p = env.plugin;
+	p.loadAcpModels = env.loadAcpModels;
+	p.getDataDir = () => "/d";
+	p.findBinary = async () => "/opt/opencode";
+	p.spawnAgent = async () => deadAgent(3, "starting\npanic: out of memory\n");
+	const { key } = p.addAcpAgent(agent());
+	const said = "OpenCode exited with code 3: starting\npanic: out of memory";
+	assert.equal((await p.runAcp(key, request)).error, said);
+	assert.equal((await p.acpAuthenticate(key)).error, said);
+	await p.loadAcpModels(key);
+	assert.equal(p._acpModelErrors[key], said);
 });
 
 test("a custom agent can name an absolute command", async () => {

@@ -134,13 +134,18 @@ Object.assign(Zusia, {
 		});
 	},
 
-	// One agent process for one exchange: find it, start it, say hello, and close it whatever happens.
-	async withAcpConnection(backend, cwd, exchange) {
+	// Each exchange starts the agent afresh and closes it whatever happens, so no agent
+	// outlives the question, the sign-in or the model list that needed it.
+	async withAcpConnection(backend, cwd, { onSpawn, onNotification, onRequest }, exchange) {
+		let label = this.BACKENDS[backend].label;
 		let connection = null;
 		try {
 			let command = await this.findBinary(backend);
 			let proc = await this.spawnAgent(command, this.acpArgs(backend), cwd);
-			connection = this.createAcpConnection(proc);
+			if (onSpawn) {
+				onSpawn(proc);
+			}
+			connection = this.createAcpConnection(proc, { label, onNotification, onRequest });
 			let hello = await this.acpInitialize(connection);
 			return await exchange(connection, hello);
 		}
@@ -166,7 +171,7 @@ Object.assign(Zusia, {
 		delete this._acpModelErrors[backend];
 		this._acpModelPromises[backend] = (async () => {
 			try {
-				let opened = await this.withAcpConnection(backend, this.getDataDir(), connection =>
+				let opened = await this.withAcpConnection(backend, this.getDataDir(), {}, connection =>
 					connection.request("session/new", { cwd: this.getDataDir(), mcpServers: [] }));
 				if (!this.BACKENDS[backend]) {
 					return [];
@@ -194,7 +199,7 @@ Object.assign(Zusia, {
 
 	async acpAuthenticate(backend) {
 		try {
-			return await this.withAcpConnection(backend, this.getDataDir(), async (connection, hello) => {
+			return await this.withAcpConnection(backend, this.getDataDir(), {}, async (connection, hello) => {
 				let methods = hello.authMethods || [];
 				if (!methods.length) {
 					return { error: "This agent has no ACP sign-in methods. Sign in with its own CLI in a terminal.", methods: [] };
@@ -213,110 +218,103 @@ Object.assign(Zusia, {
 			return { error: String((e && e.message) || e), methods: [] };
 		}
 	},
-	async runAcp(backend, request) {
-		let { ctx, onProgress, onSpawn } = request;
-		let label = this.BACKENDS[backend].label;
-		let command = await this.findBinary(backend);
-		let proc = await this.spawnAgent(command, this.acpArgs(backend), ctx.dir);
-		if (onSpawn) {
-			onSpawn(proc);
-		}
 
-		let state = { text: "", narration: "", thinking: false, thoughtAt: 0, tools: new Map(), emitted: new Set() };
-		// Only the prompt produces updates worth reading; a session/load or a config change does not.
-		let onUpdate = null;
-		let connection = this.createAcpConnection(proc, {
-			onNotification: (method, params) => {
-				if (method === "session/update" && onUpdate && params && params.update) {
-					onUpdate(params.update);
-				}
-			},
-			onRequest: (method, params) => this.acpRequest(method, params, ctx.dir, label),
+	// A chat question. A resumed session already holds the paper and the instructions, so it
+	// gets the question alone; a new one gets the whole prompt with the chat so far.
+	runAcp(backend, request) {
+		return this.acpTurn(backend, {
+			...request,
+			cwd: request.ctx.dir,
+			prompt: resumed => (resumed ? this.questionPrompt(request) : this.sessionPrompt({ ...request, session: null })),
 		});
+	},
 
+	// One prompt, `prompt(resumed)`, through a fresh agent process: `session` resumed when the
+	// agent can load it, else a new one, the model and effort applied, and the answer streamed
+	// to onProgress. Resolves to {text, error, sessionId, partialText, truncated, resumeFailed}.
+	async acpTurn(backend, { cwd, prompt, session = null, images = [], model, effort, onProgress = () => {}, onSpawn }) {
+		let label = this.BACKENDS[backend].label;
+		let state = { text: "", narration: "", thinking: false, thoughtAt: 0, tools: new Map(), emitted: new Set() };
+		// Only the prompt produces updates worth reading; the turns a session/load replays and
+		// a config change do not.
+		let onUpdate = null;
 		let sessionId = null;
 		let resumed = false;
 		try {
-			let hello = await this.acpInitialize(connection);
-			if (request.images && request.images.length &&
-				!(hello.agentCapabilities && hello.agentCapabilities.promptCapabilities && hello.agentCapabilities.promptCapabilities.image)) {
-				return { text: "", error: label + " does not accept images. Remove the attachment or switch assistant." };
-			}
-
-			let configOptions = null;
-			if (request.session && hello.agentCapabilities && hello.agentCapabilities.loadSession) {
-				try {
-					let loaded = await connection.request("session/load", {
-						sessionId: request.session.id, cwd: ctx.dir, mcpServers: [],
-					});
-					sessionId = request.session.id;
-					configOptions = loaded.configOptions || null;
-					resumed = true;
-					this.log("acp: session " + sessionId + " resumed");
-				}
-				catch (e) {
-					let help = this.acpSignInHelp(backend, e.message);
-					if (help) {
-						return { text: "", error: help, sessionId: request.session.id };
+			return await this.withAcpConnection(backend, cwd, {
+				onSpawn,
+				onNotification: (method, params) => {
+					if (method === "session/update" && onUpdate && params && params.update) {
+						onUpdate(params.update);
 					}
-					this.log("acp: session " + request.session.id + " could not be loaded (" + e.message + ")");
-					return { text: "", error: e.message, sessionId: request.session.id, resumeFailed: true };
+				},
+				onRequest: (method, params) => this.acpRequest(method, params, cwd, label),
+			}, async (connection, hello) => {
+				let capabilities = hello.agentCapabilities || {};
+				if (images.length && !(capabilities.promptCapabilities && capabilities.promptCapabilities.image)) {
+					return { text: "", error: label + " does not accept images. Remove the attachment or switch assistant." };
 				}
-			}
-			if (!sessionId) {
-				let opened;
-				try {
-					opened = await connection.request("session/new", { cwd: ctx.dir, mcpServers: [] });
+
+				let configOptions = null;
+				if (session && capabilities.loadSession) {
+					try {
+						let loaded = await connection.request("session/load", { sessionId: session.id, cwd, mcpServers: [] });
+						sessionId = session.id;
+						configOptions = loaded.configOptions || null;
+						resumed = true;
+						this.log("acp: session " + sessionId + " resumed");
+					}
+					catch (e) {
+						let help = this.acpSignInHelp(label, e.message);
+						if (help) {
+							return { text: "", error: help, sessionId: session.id };
+						}
+						this.log("acp: session " + session.id + " could not be loaded (" + e.message + ")");
+						return { text: "", error: e.message, sessionId: session.id, resumeFailed: true };
+					}
 				}
-				catch (e) {
-					return { text: "", error: this.acpSignInHelp(backend, e.message) || e.message };
+				if (!sessionId) {
+					let opened;
+					try {
+						opened = await connection.request("session/new", { cwd, mcpServers: [] });
+					}
+					catch (e) {
+						return { text: "", error: this.acpSignInHelp(label, e.message) || e.message };
+					}
+					sessionId = opened.sessionId;
+					configOptions = opened.configOptions || null;
 				}
-				sessionId = opened.sessionId;
-				configOptions = opened.configOptions || null;
-			}
 
-			this.rememberAcpConfig(backend, configOptions);
-			let refused = await this.applyAcpOptions(connection, sessionId, configOptions, request.model, request.effort, label);
-			if (refused) {
-				return { text: "", error: refused, sessionId };
-			}
+				this.rememberAcpConfig(backend, configOptions);
+				let refused = await this.applyAcpOptions(connection, sessionId, configOptions, model, effort, label);
+				if (refused) {
+					return { text: "", error: refused, sessionId };
+				}
 
-			let prompt = request.raw
-				? request.question
-				: resumed
-					? this.questionPrompt(request)
-					: this.sessionPrompt(Object.assign({}, request, { session: null }));
-			let blocks = await this.acpPromptBlocks(prompt, request.images);
-			onUpdate = update => this.acpProgress(update, state, onProgress);
-			let answer = await connection.request("session/prompt", { sessionId, prompt: blocks });
-			onUpdate = null;
-			this.flushAcpTools(state, onProgress);
+				let blocks = await this.acpPromptBlocks(prompt(resumed), images);
+				onUpdate = update => this.acpProgress(update, state, onProgress);
+				let answer = await connection.request("session/prompt", { sessionId, prompt: blocks });
+				onUpdate = null;
+				this.flushAcpTools(state, onProgress);
 
-			let text = (state.text || state.narration).trim();
-			if (!text) {
-				return { text: "", error: answer.stopReason === "refusal" ? label + " declined to answer." : label + " returned no text.", sessionId };
-			}
-			return { text, sessionId, truncated: answer.stopReason === "max_tokens" };
+				let text = (state.text || state.narration).trim();
+				if (!text) {
+					return { text: "", error: answer.stopReason === "refusal" ? label + " declined to answer." : label + " returned no text.", sessionId };
+				}
+				return { text, sessionId, truncated: answer.stopReason === "max_tokens" };
+			});
 		}
 		catch (e) {
 			onUpdate = null;
-			let { stderr, exitCode } = await connection.close();
 			let partialText = (state.text || state.narration).trim();
-			let help = this.acpSignInHelp(backend, e.message);
+			let help = this.acpSignInHelp(label, e.message);
 			if (help) {
 				return { text: "", error: help, sessionId };
 			}
 			if (!e.acpClosed) {
 				this.logError(label + " ACP", e);
 			}
-			let why = exitCode === null ? "closed its output" : "exited with code " + exitCode;
-			let error = e.acpClosed
-				? label + " " + why + (stderr.trim() ? ": " + stderr.trim().slice(-1000) : ".")
-				: (e.message || label + " ACP failed.");
-			return { text: "", error, sessionId, partialText, resumeFailed: resumed && !partialText };
-		}
-		finally {
-			await connection.close();
+			return { text: "", error: e.message, sessionId, partialText, resumeFailed: resumed && !partialText };
 		}
 	},
 
@@ -440,11 +438,12 @@ Object.assign(Zusia, {
 		return refused ? refused : set("effort", effort, false);
 	},
 
-	acpSignInHelp(backend, output) {
-		if (!/not authenticated|not signed in|authentication required/i.test(output || "")) {
+	// Takes the label, not the backend: the agent may have been removed while it answered.
+	acpSignInHelp(label, output) {
+		if (!/not authenticated|not signed in|authentication required/i.test(output)) {
 			return null;
 		}
-		return this.BACKENDS[backend].label + " is not signed in. Sign in with its own CLI in a terminal, then ask again.";
+		return label + " is not signed in. Sign in with its own CLI in a terminal, then ask again.";
 	},
 
 	rememberAcpConfig(backend, configOptions) {

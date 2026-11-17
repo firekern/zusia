@@ -254,33 +254,11 @@ Object.assign(Zusia, {
 
 	async runAcpBackground(backend, prompt, job = null) {
 		return this.runJob(job, async ({ cwd, onSpawn }) => {
-			try {
-				let result = await this.runAcp(backend, {
-					ctx: { dir: cwd },
-					files: {},
-					history: [],
-					session: null,
-					question: prompt,
-					raw: true,
-					model: this.getModel(backend),
-					effort: this.getEffort(backend, { deferCapabilities: true }),
-					onProgress: () => {},
-					onSpawn,
-				});
-				let error = result.error || "";
-				if (error) {
-					return { text: "", error, rateLimited: this.isRateLimited(error) };
-				}
-				let text = (result.text || "").trim();
-				if (!text) {
-					return { text: "", error: backend + " returned no text", rateLimited: false };
-				}
-				return { text, error: "", rateLimited: false };
-			}
-			catch (e) {
-				this.logError("running an ACP memory job", e);
-				return { text: "", error: String((e && e.message) || e), rateLimited: this.isRateLimited(e && e.message) };
-			}
+			let { text, error } = await this.acpTurn(backend, {
+				cwd, onSpawn, prompt: () => prompt,
+				model: this.getModel(backend), effort: this.getEffort(backend),
+			});
+			return error ? { text: "", error, rateLimited: this.isRateLimited(error) } : { text, error: "", rateLimited: false };
 		});
 	},
 });

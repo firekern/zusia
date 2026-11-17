@@ -186,22 +186,36 @@ test("acp: a non-JSON line is logged and skipped", async () => {
 	await connection.close();
 });
 
-test("acp: when the pipe ends, a pending request rejects with acpClosed and why", async () => {
+test("acp: when the pipe ends, a pending request rejects with the exit code and the end of stderr", async () => {
 	const fake = fakeProcess();
-	const connection = plugin.createAcpConnection(fake.proc);
+	const connection = plugin.createAcpConnection(fake.proc, { label: "Command Code" });
 	const pending = connection.request("session/prompt", { sessionId: "s", prompt: [] });
 	await flush();
 	fake.stderr.push("booting\nNot authenticated. Run `cmd login` in a terminal first.\n");
 	fake.finish(1);
 	await assert.rejects(pending, (e) => {
 		assert.equal(e.acpClosed, true);
-		assert.match(e.message, /exited with code 1/);
-		assert.match(e.message, /Not authenticated/);
+		assert.equal(e.message, "Command Code exited with code 1: booting\nNot authenticated. Run `cmd login` in a terminal first.");
+		assert.equal(e.exitCode, 1);
+		assert.equal(e.stderr, "booting\nNot authenticated. Run `cmd login` in a terminal first.");
 		return true;
 	});
-	const { stderr, exitCode } = await connection.close();
-	assert.equal(exitCode, 1);
-	assert.match(stderr, /Not authenticated/);
+	assert.equal(await connection.close(), undefined, "close reports nothing: the errors carry the end");
+});
+
+test("acp: an agent that closes its output without exiting says so", async () => {
+	const fake = fakeProcess();
+	const connection = plugin.createAcpConnection(fake.proc, { label: "OpenCode" });
+	const pending = connection.request("initialize", { protocolVersion: 1 });
+	await flush();
+	fake.stdout.end();
+	await assert.rejects(pending, (e) => {
+		assert.equal(e.message, "OpenCode closed its output.");
+		assert.equal(e.exitCode, null);
+		assert.equal(e.stderr, "");
+		return true;
+	});
+	await connection.close();
 });
 
 test("acp: writes go out one at a time, in order", async () => {
@@ -238,22 +252,27 @@ test("acp: writes go out one at a time, in order", async () => {
 
 test("acp: close kills a process that is still running and is idempotent", async () => {
 	const fake = fakeProcess();
-	const connection = plugin.createAcpConnection(fake.proc);
+	const connection = plugin.createAcpConnection(fake.proc, { label: "Agent" });
+	const pending = connection.request("session/prompt", { sessionId: "s", prompt: [] });
+	await flush();
 	fake.stderr.push("y".repeat(5000) + "\nwarning: slow\n");
 	await flush();
-	const first = await connection.close();
+	const closing = connection.close();
+	assert.equal(connection.close(), closing, "a second close waits for the first");
+	await closing;
 	assert.equal(fake.proc.stdin.closed, true);
 	assert.equal(fake.proc.killed, true);
-	assert.equal(first.exitCode, null, "a process we had to kill has no exit code to report");
-	assert.equal(first.stderr.length, 4000, "only the tail of stderr is kept");
-	assert.match(first.stderr, /warning: slow/);
-	const second = await connection.close();
-	assert.deepEqual(second, first, "closing twice reports the same end");
+	await assert.rejects(pending, (e) => {
+		assert.equal(e.stderr.length, 1000, "only the end of stderr is kept");
+		assert.ok(e.stderr.endsWith("y\nwarning: slow"));
+		assert.ok(e.message.endsWith(e.stderr));
+		return true;
+	});
 	await assert.rejects(connection.request("session/prompt", { sessionId: "s" }), (e) => {
 		assert.equal(e.acpClosed, true);
 		return true;
 	});
-	assert.deepEqual(fake.writes, [], "a closed pipe writes nothing more");
+	assert.equal(fake.writes.length, 1, "a closed pipe writes nothing more");
 });
 
 test("acp: a stdin that will not close still ends in a kill, settled requests and a log line", async () => {
