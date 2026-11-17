@@ -225,10 +225,6 @@ Object.assign(Zusia, {
 		return request.session ? this.questionPrompt(request) : this.sessionPrompt(request);
 	},
 
-
-
-
-
 	antigravityArgs(request) {
 		let args = ["--output-format", "stream-json", "--sandbox"];
 		if (request.model) {
@@ -527,11 +523,4 @@ Object.assign(Zusia, {
 			(final ? "Antigravity finished with status " + final.status + "." : "agy exited with code " + exitCode);
 		return { text: "", error, sessionId, resumeFailed: exitCode !== 0 || !final || final.status === "ERROR" };
 	},
-
-
-
-
-
-
-
 });
