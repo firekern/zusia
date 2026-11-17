@@ -1,8 +1,22 @@
-// The opt-in ACP agents (ACP=1): the real Command Code and OpenCode, signed in, from inside
-// the throwaway Zotero. bootstrap.js loads this file into its own scope, so check(),
-// waitFor(), snapshot() and the results are shared.
+// The ACP agents in a real Zotero. The default run configures none; ACP=1 adds the real
+// Command Code and OpenCode, which need their logins and a paid model. bootstrap.js loads
+// this file into its own scope, so check(), waitFor(), snapshot() and the results are shared.
 
 var GREEN_PNG = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAfUlEQVR4nNXOQREAMAjAsK7+hSFrInhwjYI8hjSJkziJkziJkziJkziJkziJkziJkziJkziJkziJkziJkziJkziJkziJkziJkziJkziJkziJkziJkziJkziJkziJkziJkziJkziJkziJkziJkziJkziJkziJkziJkzivA1sf848BSJ0/9OcAAAAASUVORK5CYII=";
+
+async function testAcp(win, CS, realBackgroundCall) {
+	let live = Zotero.Prefs.get("extensions.zusia-tester.acp", true);
+	if (!live) {
+		// run.sh empties the list: Settings would otherwise start the shipped Command Code,
+		// under your login, to list its models.
+		check("ACP: the default run has no agent configured, and none was started to list its models",
+			CS.acpAgents().length === 0 && Object.keys(CS._acpModels).length === 0,
+			{ agents: CS.acpAgents().map(a => a.name), listed: Object.keys(CS._acpModels) });
+		return;
+	}
+	await testPreconfiguredAcpAgent(win, CS);
+	await testConfiguredAcpAgent(win, CS, realBackgroundCall);
+}
 
 async function testPreconfiguredAcpAgent(win, CS) {
 	let item = new Zotero.Item("journalArticle");

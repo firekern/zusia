@@ -907,10 +907,7 @@ async function run() {
 		if (Zotero.Prefs.get("extensions.zusia-tester.live", true)) {
 			await testLive(win, CS);
 		}
-		if (Zotero.Prefs.get("extensions.zusia-tester.acp", true)) {
-			await testPreconfiguredAcpAgent(win, CS);
-			await testConfiguredAcpAgent(win, CS, realBackgroundCall);
-		}
+		await testAcp(win, CS, realBackgroundCall);
 		let logText = await IOUtils.readUTF8(CS.getLogPath()).catch(() => "");
 		let errors = logText.split("\n").filter(l => l.includes("ERROR"));
 		check("plugin logged no errors", errors.length === 0, errors.slice(0, 5));
