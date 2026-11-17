@@ -143,48 +143,25 @@ Object.assign(Zusia, {
 		let syncBadges = () => {
 			let current = this.getBackend();
 			card.querySelectorAll(".zs-agent").forEach(a => {
-				let badge = a.querySelector(".zs-badge");
-				if (badge) {
-					badge.hidden = a.dataset.backend !== current;
-				}
+				a.querySelector(".zs-badge").hidden = a.dataset.backend !== current;
 			});
 		};
-		let backendSelect = this.select(doc,
-			Object.entries(this.BACKENDS).map(([key, b]) => [key, b.fullName]),
-			this.getBackend(),
-			(value) => {
-				this.setPref("backend", value);
-				syncBadges();
-			});
-		let fillBackends = () => backendSelect.refill(
-			Object.entries(this.BACKENDS).map(([key, b]) => [key, b.fullName]),
-			this.getBackend()
-		);
+		let backendOptions = () => Object.entries(this.BACKENDS).map(([key, b]) => [key, b.fullName]);
+		let backendSelect = this.select(doc, backendOptions(), this.getBackend(), (value) => {
+			this.setPref("backend", value);
+			syncBadges();
+		});
 		card.body.appendChild(this.row(doc, "Answer with", backendSelect));
 
 		for (let [key, backend] of Object.entries(this.BACKENDS).filter(([, info]) => info.kind === "cli")) {
-			let details = this.el(doc, "details", "zs-agent");
-			details.dataset.backend = key;
-			let summary = this.el(doc, "summary");
-			let name = this.el(doc, "span", "zs-agent-name");
-			let status = this.el(doc, "span", "zs-agent-status", "Checking…");
-			name.append(this.el(doc, "strong", null, backend.fullName), status);
-			let badge = this.el(doc, "span", "zs-badge", "In use");
-			badge.hidden = key !== this.getBackend();
-			summary.append(this.el(doc, "span", "zs-agent-dot"), name, badge, this.svgIcon(doc, "chevron", "zs-agent-chevron"));
-			details.appendChild(summary);
-
-			let body = this.el(doc, "div", "zs-agent-body");
+			let { details, status, body } = this.agentCard(doc, key, "Checking…");
 			let modelSelect = this.select(doc, this.modelSelectOptions(key), this.getModel(key),
 				value => this.setPref(key + ".model", value));
 			body.appendChild(this.row(doc, "Model", modelSelect));
 			if (key === "agy") {
 				this.loadAgyModels().then(() => modelSelect.refill(this.getModels(key).map(m => [m.id, m.label]), this.getModel(key)));
 			}
-			body.appendChild(this.row(doc, "Reasoning effort", this.select(doc,
-				backend.efforts.map(e => [e, this.EFFORTS[e].label + " — " + this.EFFORTS[e].desc]),
-				this.getEffort(key),
-				value => this.setPref(key + ".effort", value))));
+			body.appendChild(this.effortRow(doc, key));
 			if (key === "codex") {
 				let models = doc.createElement("input");
 				models.type = "text";
@@ -212,7 +189,6 @@ Object.assign(Zusia, {
 					this.switchControl(doc, !!this.getPref("useClaudeUserSettings"), v => this.setPref("useClaudeUserSettings", v)),
 					"Loads ~/.claude settings, CLAUDE.md and MCP servers. Off by default: instructions written for the terminal do not fit a sidebar."));
 			}
-			details.appendChild(body);
 			card.body.appendChild(details);
 
 			let refreshStatus = () => this.probeBinary(key).then(async (found) => {
@@ -230,7 +206,12 @@ Object.assign(Zusia, {
 			refreshStatus();
 		}
 
-		card.body.appendChild(this.buildAcpAgentsSection(doc, { fillBackends, syncBadges }));
+		// An agent added or removed changes the assistants on offer, and maybe the one in use.
+		card.body.appendChild(this.buildAcpAgentsSection(doc, () => {
+			backendSelect.refill(backendOptions(), this.getBackend());
+			syncBadges();
+			this.refreshAllSidebars();
+		}));
 
 		let apiKeys = Object.keys(this.BACKENDS).filter(key => this.BACKENDS[key].kind === "api");
 		if (apiKeys.length) {
@@ -242,7 +223,31 @@ Object.assign(Zusia, {
 		return card;
 	},
 
-	buildAcpAgentsSection(doc, { fillBackends, syncBadges }) {
+	// The disclosure a CLI or an ACP agent sits in: its name, status, In use badge, and a body
+	// the caller fills.
+	agentCard(doc, key, statusText) {
+		let details = this.el(doc, "details", "zs-agent");
+		details.dataset.backend = key;
+		let summary = this.el(doc, "summary");
+		let name = this.el(doc, "span", "zs-agent-name");
+		let status = this.el(doc, "span", "zs-agent-status", statusText);
+		name.append(this.el(doc, "strong", null, this.BACKENDS[key].fullName), status);
+		let badge = this.el(doc, "span", "zs-badge", "In use");
+		badge.hidden = key !== this.getBackend();
+		summary.append(this.el(doc, "span", "zs-agent-dot"), name, badge, this.svgIcon(doc, "chevron", "zs-agent-chevron"));
+		let body = this.el(doc, "div", "zs-agent-body");
+		details.append(summary, body);
+		return { details, status, body };
+	},
+
+	effortRow(doc, key) {
+		return this.row(doc, "Reasoning effort", this.select(doc,
+			this.BACKENDS[key].efforts.map(e => [e, this.EFFORTS[e].label + " — " + this.EFFORTS[e].desc]),
+			this.getEffort(key),
+			value => this.setPref(key + ".effort", value)));
+	},
+
+	buildAcpAgentsSection(doc, onChange) {
 		let section = this.el(doc, "div", "zs-acp-section");
 		section.appendChild(this.el(doc, "div", "zs-card-subhead", "Optional: ACP agents"));
 		section.appendChild(this.el(doc, "div", "zs-card-desc zs-acp-desc",
@@ -252,11 +257,14 @@ Object.assign(Zusia, {
 
 		let renderAgents = () => {
 			list.textContent = "";
-			let keys = Object.keys(this.BACKENDS).filter(key => this.BACKENDS[key].kind === "acp");
-			for (let key of keys) {
-				list.appendChild(this.buildAcpAgentCard(doc, key, { renderAgents, fillBackends, syncBadges }));
+			// An agent written into the pref while Zotero runs is registered only at the next start.
+			for (let config of this.acpAgents().filter(config => this.BACKENDS[this.acpAgentKey(config.id)])) {
+				list.appendChild(this.buildAcpAgentCard(doc, config, changed));
 			}
-			syncBadges();
+		};
+		let changed = () => {
+			renderAgents();
+			onChange();
 		};
 
 		let name = doc.createElement("input");
@@ -286,9 +294,7 @@ Object.assign(Zusia, {
 			command.value = "";
 			args.value = "";
 			error.hidden = true;
-			fillBackends();
-			renderAgents();
-			this.refreshAllSidebars();
+			changed();
 		});
 
 		let form = this.el(doc, "div", "zs-acp-add");
@@ -307,21 +313,24 @@ Object.assign(Zusia, {
 		return section;
 	},
 
-	acpModelSelect(doc, key, body) {
-		let select = this.select(doc, this.modelSelectOptions(key), this.getModel(key),
+	buildAcpAgentCard(doc, config, changed) {
+		let key = this.acpAgentKey(config.id);
+		let { label } = this.BACKENDS[key];
+		let { details, status, body } = this.agentCard(doc, key, "Checking…");
+		body.appendChild(this.row(doc, "Command", this.el(doc, "code", "zs-acp-command", this.acpCommandLine(config))));
+
+		let model = this.select(doc, this.modelSelectOptions(key), this.getModel(key),
 			value => this.setPref(key + ".model", value));
-		body.appendChild(this.row(doc, "Model", select));
+		body.appendChild(this.row(doc, "Model", model));
 		if (!this.acpModelEntry(key).models) {
 			let hint = this.el(doc, "div", "zs-row-hint", "Loading the model list…");
 			body.appendChild(hint);
 			let load = () => this.loadLiveModels(key, { retry: true }).then(() => {
-				if (!this.BACKENDS[key] || !select.isConnected) {
+				// The agent may have been removed, or Settings closed, while it listed its models.
+				if (!this.BACKENDS[key] || !model.isConnected) {
 					return;
 				}
-				select.refill(this.modelSelectOptions(key), this.getModel(key));
-				if (!hint.isConnected) {
-					return;
-				}
+				model.refill(this.modelSelectOptions(key), this.getModel(key));
 				let { error } = this.acpModelEntry(key);
 				if (!error) {
 					hint.remove();
@@ -338,43 +347,37 @@ Object.assign(Zusia, {
 			});
 			load();
 		}
-		return select;
-	},
-
-	buildAcpAgentCard(doc, key, { renderAgents, fillBackends, syncBadges }) {
-		let backend = this.BACKENDS[key];
-		let config = this.acpAgentConfig(key) || { command: backend.command, args: backend.acpArgs || [] };
-		let details = this.el(doc, "details", "zs-agent");
-		details.dataset.backend = key;
-		let summary = this.el(doc, "summary");
-		let name = this.el(doc, "span", "zs-agent-name");
-		let status = this.el(doc, "span", "zs-agent-status", "Checking…");
-		name.append(this.el(doc, "strong", null, backend.fullName), status);
-		let badge = this.el(doc, "span", "zs-badge", "In use");
-		badge.hidden = key !== this.getBackend();
-		summary.append(this.el(doc, "span", "zs-agent-dot"), name, badge, this.svgIcon(doc, "chevron", "zs-agent-chevron"));
-		details.appendChild(summary);
-
-		let body = this.el(doc, "div", "zs-agent-body");
-		body.appendChild(this.row(doc, "Command", this.el(doc, "code", "zs-acp-command", this.acpCommandLine(config))));
-		this.acpModelSelect(doc, key, body);
-		body.appendChild(this.row(doc, "Reasoning effort", this.select(doc,
-			backend.efforts.map(e => [e, this.EFFORTS[e].label + " — " + this.EFFORTS[e].desc]),
-			this.getEffort(key),
-			value => this.setPref(key + ".effort", value))));
+		body.appendChild(this.effortRow(doc, key));
 		body.appendChild(this.row(doc, "Background memory",
 			this.switchControl(doc, !!config.background, value => this.setAcpAgentBackground(key, value)),
 			"Runs the study-memory calls through this agent, in the background. Off until you turn it on."));
+
+		let signIn = this.el(doc, "button", "zs-button zs-acp-signin", "Sign in");
+		signIn.type = "button";
+		let note = this.el(doc, "div", "zs-row-hint");
+		signIn.addEventListener("click", async () => {
+			signIn.disabled = true;
+			note.textContent = "Asking " + label + " to sign in…";
+			let result = await this.acpAuthenticate(key);
+			signIn.disabled = false;
+			note.textContent = result.error
+				? result.error
+				: "Sign-in step sent to " + label + "." +
+					(result.methods.length > 1
+						? " It also offers: " + result.methods.slice(1).map(m => m.name || m.id).join(", ") + "."
+						: "");
+		});
 		let remove = this.el(doc, "button", "zs-button zs-acp-remove", "Remove");
 		remove.type = "button";
 		remove.addEventListener("click", () => {
 			this.removeAcpAgent(key);
-			fillBackends();
-			renderAgents();
-			this.refreshAllSidebars();
+			changed();
 		});
-		body.appendChild(this.buildAcpSignIn(doc, key, [remove]));
-		details.appendChild(body);
+		let actions = this.el(doc, "div", "zs-button-row");
+		actions.append(signIn, remove);
+		let wrap = this.el(doc, "div", "zs-acp-signin-wrap");
+		wrap.append(actions, note);
+		body.appendChild(wrap);
 
 		this.probeBinary(key).then(found => {
 			details.dataset.found = String(!!found);
@@ -382,29 +385,6 @@ Object.assign(Zusia, {
 			status.title = found || "Check the command and that the agent is installed.";
 		});
 		return details;
-	},
-
-	buildAcpSignIn(doc, key, extras = []) {
-		let wrap = this.el(doc, "div", "zs-acp-signin-wrap");
-		let row = this.el(doc, "div", "zs-button-row");
-		let button = this.el(doc, "button", "zs-button zs-acp-signin", "Sign in");
-		button.type = "button";
-		let note = this.el(doc, "div", "zs-row-hint");
-		button.addEventListener("click", async () => {
-			button.disabled = true;
-			note.textContent = "Asking " + this.BACKENDS[key].label + " to sign in…";
-			let result = await this.acpAuthenticate(key);
-			button.disabled = false;
-			note.textContent = result.error
-				? result.error
-				: "Sign-in step sent to " + this.BACKENDS[key].label + "." +
-					(result.methods.length > 1
-						? " It also offers: " + result.methods.slice(1).map(m => m.name || m.id).join(", ") + "."
-						: "");
-		});
-		row.append(button, ...extras);
-		wrap.append(row, note);
-		return wrap;
 	},
 
 	buildChatCard(doc) {
