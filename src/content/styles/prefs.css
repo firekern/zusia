@@ -176,9 +176,6 @@
 .zs-acp-desc {
 	padding: 0 14px 8px;
 }
-.zs-acp-empty {
-	padding: 8px 14px 10px;
-}
 .zs-acp-list .zs-agent:first-child {
 	border-top: 1px solid var(--zs-stroke);
 }
@@ -189,22 +186,6 @@
 .zs-acp-add-title {
 	margin-bottom: 6px;
 	font-weight: 600;
-}
-.zs-acp-registry {
-	margin-bottom: 10px;
-}
-.zs-acp-registry-note {
-	margin-top: 6px;
-}
-.zs-acp-registry-choice {
-	display: flex;
-	gap: 6px;
-	align-items: center;
-	margin-top: 8px;
-}
-.zs-acp-registry-choice .zs-select {
-	flex: 1;
-	min-width: 0;
 }
 .zs-acp-signin-wrap {
 	padding: 10px 14px;

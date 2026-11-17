@@ -1,8 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync, readdirSync } from "node:fs";
 import { loadPlugin } from "./load-plugin.mjs";
 
 const PREFIX = "extensions.zusia.";
+const source = path => readFileSync(new URL("../" + path, import.meta.url), "utf8");
 
 function pane(prefs = {}) {
 	const env = loadPlugin({ prefs });
@@ -349,4 +351,12 @@ test("an ACP agent can be asked to sign in from Settings", async () => {
 	await new Promise(resolve => setTimeout(resolve, 0));
 	assert.equal(asked, "acp:opencode");
 	assert.match(agent.querySelector(".zs-acp-signin-wrap .zs-row-hint").textContent, /API key/);
+});
+
+test("Settings' stylesheet styles only classes the modules set", () => {
+	// A rule for a control that moved to another branch, or was never built, is dead weight.
+	const modules = readdirSync(new URL("../src/content/modules/", import.meta.url))
+		.map(name => source("src/content/modules/" + name)).join("\n");
+	const styled = new Set([...source("src/content/styles/prefs.css").matchAll(/\.(zs-[\w-]+)/g)].map(m => m[1]));
+	assert.deepEqual([...styled].filter(name => !new RegExp("[\"' ]" + name + "[\"' ]").test(modules)), []);
 });
