@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { loadPlugin, openChat } from "./load-plugin.mjs";
-import { loadWindowsPlugin } from "./windows-env.mjs";
+import { loadWindowsPlugin, NODE_DIR } from "./windows-env.mjs";
 import { fakeAgent, flush } from "./acp-fake.mjs";
 
 const PREF = "extensions.zusia.acpAgents";
@@ -808,6 +808,36 @@ test("a sign-in asks for the models again, so neither the card nor the menu keep
 	assert.deepEqual([...model.options].map(o => o.value), ["", "fast"]);
 	assert.doesNotMatch(menu.textContent, /could not be loaded/);
 	assert.match(menu.textContent, /Fast/);
+});
+
+test("an agent found but refused says it cannot start, and why, apart from one that is missing", async () => {
+	const { plugin: p, document } = loadWindowsPlugin({
+		executables: [NODE_DIR + "\\npx.cmd"],
+		prefs: {
+			"extensions.zusia.onboarded": true,
+			[PREF]: JSON.stringify([
+				{ id: "gemini", name: "Gemini", command: "npx", args: ["@google/gemini-cli", "--acp"] },
+				{ id: "other", name: "Other", command: "other", args: [] },
+			]),
+		},
+	});
+	const container = document.body.appendChild(document.createElement("div"));
+	p.renderPrefsPane(document, container);
+	const status = key => container.querySelector('.zs-agent[data-backend="' + key + '"] .zs-agent-status');
+	await settle(() => status("acp:other").textContent !== "Checking…" && status("acp:gemini").textContent !== "Checking…");
+	assert.equal(status("acp:gemini").textContent, "Cannot start");
+	assert.match(status("acp:gemini").title, /^Zusia will not run batch files \(\.cmd\/\.bat\) such as C:\\Program Files\\nodejs\\npx\.cmd/);
+	assert.equal(status("acp:other").textContent, "Not found");
+	assert.match(status("acp:other").title, /^Could not find the 'other' command\. Make sure Other is installed\./);
+
+	p.setPref("backend", "acp:gemini");
+	const { root } = openChat({ plugin: p, document });
+	await p.checkInstalledBackends(root);
+	p.openModelMenu(root, root.querySelector(".zs-model-btn"));
+	const toggle = label => [...root.querySelectorAll(".zs-menu-section-toggle")].find(button => button.textContent === label);
+	toggle("Other").click();
+	assert.deepEqual([...root.querySelectorAll(".zs-menu-note")].map(note => note.textContent),
+		[status("acp:gemini").title, "Not installed. " + p.commandFixHint("acp:other")]);
 });
 
 test("removing the agent in use from its card hands the chat back to Claude", () => {

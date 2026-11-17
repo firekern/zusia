@@ -392,10 +392,15 @@ Object.assign(Zusia, {
 		wrap.append(actions, note);
 		body.appendChild(wrap);
 
-		this.probeBinary(key).then(found => {
-			details.dataset.found = String(!!found);
-			status.textContent = found || "Not found";
-			status.title = found || "Check the command and that the agent is installed.";
+		this.findBinary(key).then((found) => {
+			details.dataset.found = "true";
+			status.textContent = found;
+			status.title = found;
+		}, (e) => {
+			details.dataset.found = "false";
+			// An npx agent on Windows is found as npx.cmd and refused: installed, yet it cannot start.
+			status.textContent = e.notFound ? "Not found" : "Cannot start";
+			status.title = e.message;
 		});
 		return details;
 	},

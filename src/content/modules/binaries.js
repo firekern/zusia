@@ -63,7 +63,8 @@ Object.assign(Zusia, {
 				return this.avoidBatchFile(backend, found);
 			}
 		}
-		throw new Error(this.missingBinaryMessage(backend, wanted));
+		// Marked, so Settings and the menu can tell a missing program from one found but refused.
+		throw Object.assign(new Error(this.missingBinaryMessage(backend, wanted)), { notFound: true });
 	},
 
 	// Mozilla runs a .cmd/.bat through cmd.exe, which re-parses the prompt: a newline ends

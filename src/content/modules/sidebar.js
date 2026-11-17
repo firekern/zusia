@@ -221,18 +221,24 @@ Object.assign(Zusia, {
 
 	async checkInstalledBackends(root) {
 		root._installed = root._installed || {};
+		root._refused = {};
 		for (let key of Object.keys(this.BACKENDS)) {
-			root._installed[key] = await this.probeBinary(key);
+			root._installed[key] = await this.probeBinary(key, root._refused);
 		}
 		root.querySelector(".zs-menu")?.refresh?.();
 	},
 
-	async probeBinary(key) {
+	// The program's path, or an API's URL, or null when there is none to use. A program that
+	// is there but refused (an npm .cmd on Windows) is not missing: why goes into `refused`.
+	async probeBinary(key, refused = {}) {
 		try {
 			if (this.isAPIBackend(key)) return this.getModel(key) ? this.normalizeAPIURL(this.getAPIConfig(key).baseURL) : null;
 			return await this.findBinary(key);
 		}
 		catch (e) {
+			if (!e.notFound) {
+				refused[key] = e.message;
+			}
 			return null;
 		}
 	},
@@ -282,7 +288,7 @@ Object.assign(Zusia, {
 						},
 					});
 				}
-				let note = this.modelMenuNote(key, installed);
+				let note = this.modelMenuNote(root, key, installed);
 				if (note) {
 					menu.appendChild(this.el(doc, "div", "zs-menu-note", note));
 				}
@@ -298,11 +304,11 @@ Object.assign(Zusia, {
 		}
 	},
 
-	// The one note under an open section's models: that its program is missing, or how its
+	// The one note under an open section's models: why its program cannot run, or how its
 	// list stands.
-	modelMenuNote(key, installed) {
+	modelMenuNote(root, key, installed) {
 		if (installed === null) {
-			return "Not installed. " + this.commandFixHint(key);
+			return root._refused[key] || "Not installed. " + this.commandFixHint(key);
 		}
 		let { loading, error } = this.liveModelsStatus(key);
 		return loading ? "Loading models…" : error ? "Models could not be loaded. " + error : "";
