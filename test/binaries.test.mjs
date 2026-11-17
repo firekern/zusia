@@ -82,3 +82,31 @@ test("findBinary: the not-found message ends with how to point Zusia at the prog
 		assert.ok(error.message.endsWith(" is installed. " + plugin.commandFixHint(backend)), error.message);
 	}
 });
+
+// Records each spawn's command and environment, and answers nothing.
+function recordSpawns(env) {
+	const spawns = [];
+	env.Subprocess.call = async (options) => {
+		spawns.push({ command: options.command, args: [...options.arguments], PATH: options.environment.PATH });
+		return {};
+	};
+	return spawns;
+}
+
+test("spawnAgent: the folder the agent was found in goes first on its PATH, so its #!/usr/bin/env node finds node", async () => {
+	const nvmBin = HOME + "/.nvm/versions/node/v22.11.0/bin";
+	for (const [command, executables, folder] of [
+		["~/.nvm/versions/node/v22.11.0/bin/command-code", [nvmBin + "/command-code"], nvmBin],
+		["command-code", ["/opt/homebrew/bin/command-code"], "/opt/homebrew/bin"],
+	]) {
+		const env = loadPosixPlugin({ executables,
+			prefs: { [PREFIX + "acpAgents"]: JSON.stringify([{ id: "agent", name: "Agent", command, args: ["acp"] }]) } });
+		const spawns = recordSpawns(env);
+		const found = await env.plugin.findBinary("acp:agent");
+		await env.plugin.spawnAgent(found, ["acp"], "/tmp/p");
+		assert.equal(spawns[0].command, found, "run as found, not through node");
+		assert.deepEqual(spawns[0].args, ["acp"]);
+		assert.ok(spawns[0].PATH.startsWith(folder + ":"), spawns[0].PATH);
+		assert.ok(spawns[0].PATH.endsWith(":" + LAUNCHD_PATH), "the inherited PATH stays: " + spawns[0].PATH);
+	}
+});

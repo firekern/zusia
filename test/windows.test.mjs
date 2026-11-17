@@ -111,6 +111,7 @@ test("windows: the shipped ACP agent's npm .cmd resolves to the .mjs it runs wit
 	const [run] = env.spawns;
 	assert.equal(run.command, NODE_EXE);
 	assert.deepEqual(run.args, [COMMANDCODE_MJS, "acp"]);
+	assert.equal(run.environment.PATH, env.plugin.buildChildEnvironment().PATH, "node.exe is named, so the PATH is left as it is");
 });
 
 // The form slugs "Command Code" to command-code, not the shipped commandcode, so the
