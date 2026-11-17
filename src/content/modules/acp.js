@@ -193,11 +193,13 @@ Object.assign(Zusia, {
 			onSpawn(proc);
 		}
 
-		let state = { text: "", narration: "", thinking: false, thoughtAt: 0, tools: new Map(), emitted: new Set(), asking: false };
+		let state = { text: "", narration: "", thinking: false, thoughtAt: 0, tools: new Map(), emitted: new Set() };
+		// Only the prompt produces updates worth reading; a session/load or a config change does not.
+		let onUpdate = null;
 		let connection = this.createAcpConnection(proc, {
 			onNotification: (method, params) => {
-				if (method === "session/update" && state.asking && params && params.update) {
-					this.acpProgress(params.update, state, onProgress);
+				if (method === "session/update" && onUpdate && params && params.update) {
+					onUpdate(params.update);
 				}
 			},
 			onRequest: (method, params) => this.acpRequest(method, params, ctx.dir, label),
@@ -256,9 +258,9 @@ Object.assign(Zusia, {
 					? this.questionPrompt(request)
 					: this.sessionPrompt(Object.assign({}, request, { session: null }));
 			let blocks = await this.acpPromptBlocks(prompt, request.images);
-			state.asking = true;
+			onUpdate = update => this.acpProgress(update, state, onProgress);
 			let answer = await connection.request("session/prompt", { sessionId, prompt: blocks });
-			state.asking = false;
+			onUpdate = null;
 			this.flushAcpTools(state, onProgress);
 
 			let text = (state.text || state.narration).trim();
@@ -271,7 +273,7 @@ Object.assign(Zusia, {
 			return { text, sessionId, truncated: answer.stopReason === "max_tokens" };
 		}
 		catch (e) {
-			state.asking = false;
+			onUpdate = null;
 			let { stderr, exitCode } = await connection.close();
 			let partialText = (state.text || state.narration).trim();
 			let help = this.acpSignInHelp(backend, e.message);

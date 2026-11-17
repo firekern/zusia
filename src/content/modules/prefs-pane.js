@@ -163,28 +163,7 @@ Object.assign(Zusia, {
 		);
 		card.body.appendChild(this.row(doc, "Answer with", backendSelect));
 
-		let acpAdded = false;
-		let addAcpSection = () => {
-			if (acpAdded) {
-				return;
-			}
-			acpAdded = true;
-			card.body.appendChild(this.buildAcpAgentsSection(doc, { fillBackends, syncBadges }));
-		};
-
-		for (let [key, backend] of Object.entries(this.BACKENDS)) {
-			if (this.isAPIBackend(key)) {
-				addAcpSection();
-				if (!card._apiSubheadAdded) {
-					card._apiSubheadAdded = true;
-					card.body.appendChild(this.el(doc, "div", "zs-card-subhead", "Optional: local models and other APIs"));
-				}
-				card.body.appendChild(this.buildAPIAssistant(doc, key));
-				continue;
-			}
-			if (backend.kind === "acp") {
-				continue;
-			}
+		for (let [key, backend] of Object.entries(this.BACKENDS).filter(([, info]) => info.kind === "cli")) {
 			let details = this.el(doc, "details", "zs-agent");
 			details.dataset.backend = key;
 			let summary = this.el(doc, "summary");
@@ -251,8 +230,18 @@ Object.assign(Zusia, {
 			});
 			refreshStatus();
 		}
-		addAcpSection();
+
+		card.body.appendChild(this.buildAcpAgentsSection(doc, { fillBackends, syncBadges }));
+
+		let apiKeys = Object.keys(this.BACKENDS).filter(key => this.BACKENDS[key].kind === "api");
+		if (apiKeys.length) {
+			card.body.appendChild(this.el(doc, "div", "zs-card-subhead", "Optional: local models and other APIs"));
+			for (let key of apiKeys) {
+				card.body.appendChild(this.buildAPIAssistant(doc, key));
+			}
+		}
 		return card;
+
 	},
 
 	buildAcpAgentsSection(doc, { fillBackends, syncBadges }) {
