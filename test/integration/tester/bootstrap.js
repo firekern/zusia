@@ -164,10 +164,11 @@ async function testSidebar(win, CS) {
 	// Composer menus open inside the visible pane and change the model.
 	root.querySelector(".zs-model-btn").click();
 	let menu = await waitFor(() => root.querySelector(".zs-menu"), 5000, "model menu");
-	await waitFor(() => root.querySelector(".zs-menu").textContent.includes("Google Antigravity") && !root.querySelector(".zs-menu").textContent.includes("Loading"), 30000, "Antigravity models in menu");
+	await waitFor(() => root.querySelector(".zs-menu").textContent.includes("Google Antigravity"), 5000, "Antigravity section in menu");
 	let antigravity = [...root.querySelectorAll(".zs-menu-section")].find(n => n.textContent.includes("Google Antigravity"));
 	antigravity.click();
-	await waitFor(() => [...root.querySelectorAll(".zs-menu-item")].some(i => i.textContent.includes("Gemini")), 5000, "Antigravity models after expanding");
+	// A folded section lists nothing, so the first `agy models` run starts only here.
+	await waitFor(() => [...root.querySelectorAll(".zs-menu-item")].some(i => i.textContent.includes("Gemini")), 30000, "Antigravity models after expanding");
 	let menuRect = root.querySelector(".zs-menu").getBoundingClientRect();
 	let paneRect0 = win.document.getElementById("zotero-item-pane").getBoundingClientRect();
 	check("model menu fits in the pane", menuRect.left >= paneRect0.left - 1 && menuRect.right <= visibleRight() + 1 && menuRect.height > 100,
