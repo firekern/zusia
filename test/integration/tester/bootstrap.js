@@ -844,7 +844,43 @@ async function testPrefs(CS) {
 	bottom.scrollIntoView({ block: "start" });
 	await Zotero.Promise.delay(400);
 	await snapshot(prefsWin, "zotero-settings-pane-2");
+	await testRegistryPicker(CS, prefsWin, prefs);
 	prefsWin.close();
+}
+
+// The registry browser against a copy of the registry on disk: Zotero's own request, its
+// json response type and the picker as Zotero draws them, with no network in CI. Add agent
+// is not clicked, since it would run npx.
+async function testRegistryPicker(CS, prefsWin, prefs) {
+	check("registry: this platform is one the registry names", /^(darwin|linux|windows)-(x86_64|aarch64)$/.test(CS.acpPlatform()), CS.acpPlatform());
+	let file = PathUtils.join(outDir, "acp-registry.json");
+	await IOUtils.writeUTF8(file, JSON.stringify({ version: "1.0.0", agents: [{ id: "registry-stub", name: "Registry stub", license: "MIT",
+		distribution: { npx: { package: "registry-stub@1.0.0", args: ["--acp"] } } }] }));
+	let url = CS.ACP_REGISTRY_URL;
+	CS.ACP_REGISTRY_URL = PathUtils.toFileURI(file);
+	let form = prefs.querySelector(".zs-acp-add");
+	let note = form.querySelector(".zs-acp-registry-note");
+	form.querySelector(".zs-acp-browse").click();
+	let picker = await waitFor(() => form.querySelector(".zs-acp-registry-choice .zs-select"), 10000, "registry picker")
+		.catch(() => null)
+		.finally(() => { CS.ACP_REGISTRY_URL = url; });
+	check("registry: Browse lists the registry's agents behind a placeholder, none chosen",
+		!!picker && picker.options.length === 2 && picker.selectedIndex === 0 && form.querySelector(".zs-acp-use").disabled, note.textContent);
+	if (!picker) {
+		return;
+	}
+	picker.value = "0";
+	picker.dispatchEvent(new prefsWin.Event("change"));
+	form.querySelector(".zs-acp-use").click();
+	let [name, command] = form.querySelectorAll("input");
+	let detail = form.querySelector(".zs-acp-registry-detail").textContent;
+	check("registry: Use this agent fills the form and says what Add agent will download and run",
+		name.value === "Registry stub" && command.value === "npx" && form.querySelector("textarea").value === "registry-stub@1.0.0\n--acp" &&
+		/registry-stub@1\.0\.0 comes from npm\. Add agent downloads it and starts it now/.test(detail),
+		{ name: name.value, command: command.value, detail });
+	form.scrollIntoView({ block: "start" });
+	await Zotero.Promise.delay(300);
+	await snapshot(prefsWin, "zotero-settings-registry");
 }
 
 async function run() {

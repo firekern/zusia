@@ -257,7 +257,7 @@ Object.assign(Zusia, {
 		let section = this.el(doc, "div", "zs-acp-section");
 		section.appendChild(this.el(doc, "div", "zs-card-subhead", "Optional: ACP agents"));
 		section.appendChild(this.el(doc, "div", "zs-card-desc zs-acp-desc",
-			"Any agent that speaks the Agent Client Protocol can answer here. Add the command and arguments its own documentation gives. The agent must be installed and signed in with its own CLI."));
+			"Any agent that speaks the Agent Client Protocol can answer here. Add the command and arguments its own documentation gives, or fill them from the ACP registry. The agent must be installed, unless npx or uvx fetches it, and signed in with its own CLI."));
 		let list = this.el(doc, "div", "zs-acp-list");
 		section.appendChild(list);
 
@@ -287,6 +287,8 @@ Object.assign(Zusia, {
 		let error = this.el(doc, "div", "zs-acp-error");
 		error.hidden = true;
 
+		let registry = this.buildAcpRegistryPicker(doc, { name, command, args });
+
 		let add = this.el(doc, "button", "zs-button zs-acp-add-button", "Add agent");
 		add.type = "button";
 		add.addEventListener("click", () => {
@@ -300,12 +302,14 @@ Object.assign(Zusia, {
 			command.value = "";
 			args.value = "";
 			error.hidden = true;
+			registry.clearDetail();
 			changed();
 		});
 
 		let form = this.el(doc, "div", "zs-acp-add");
 		form.append(
 			this.el(doc, "div", "zs-acp-add-title", "Add an ACP agent"),
+			registry,
 			this.row(doc, "Name", name),
 			this.row(doc, "Command", command, "The ACP server command, a name on PATH or a full path."),
 			this.row(doc, "Arguments", args, "One argument per line, as the agent's own documentation lists them."),
@@ -317,6 +321,92 @@ Object.assign(Zusia, {
 
 		renderAgents();
 		return section;
+	},
+
+	// Fills the add form from the official registry. Nothing is installed or started here:
+	// the reader reviews the form and adds the agent, and the detail says what that runs.
+	buildAcpRegistryPicker(doc, fields) {
+		let registry = this.el(doc, "div", "zs-acp-registry");
+		let browse = this.el(doc, "button", "zs-button zs-acp-browse", "Browse the ACP registry");
+		browse.type = "button";
+		let note = this.el(doc, "div", "zs-row-hint zs-acp-registry-note",
+			"Fetch the official registry and fill the form with an agent's command and arguments.");
+		note.setAttribute("role", "status");
+		note.setAttribute("aria-live", "polite");
+		let choice = this.el(doc, "div", "zs-acp-registry-choice");
+		let detail = this.el(doc, "div", "zs-acp-registry-detail");
+		detail.hidden = true;
+		registry.append(browse, note, choice, detail);
+		registry.clearDetail = () => {
+			detail.textContent = "";
+			detail.hidden = true;
+		};
+
+		let line = (...parts) => {
+			let el = this.el(doc, "div");
+			el.append(...parts.map(part => (typeof part === "string" ? part : this.el(doc, "code", null, part.code))));
+			detail.appendChild(el);
+		};
+		let fill = (preset) => {
+			registry.clearDetail();
+			fields.name.value = preset.name;
+			fields.args.value = preset.args.join("\n");
+			if (preset.source === "binary") {
+				// The reader installs it, so the Command field keeps what they typed.
+				line("Download ", { code: preset.archive });
+				if (preset.sha256) {
+					line("SHA-256 ", { code: preset.sha256 });
+				}
+				line("Then set Command to the full path of ", { code: preset.cmd }, " once you have extracted it.");
+			}
+			else {
+				fields.command.value = preset.command;
+				line({ code: preset.package }, " comes from " + preset.source +
+					". Add agent downloads it and starts it now, with your account's permissions.");
+			}
+			let about = [preset.repository && "Repository: " + preset.repository, preset.license && "License: " + preset.license]
+				.filter(Boolean);
+			if (about.length) {
+				line(about.join(" · "));
+			}
+			detail.hidden = false;
+		};
+
+		browse.addEventListener("click", async () => {
+			choice.textContent = "";
+			registry.clearDetail();
+			browse.disabled = true;
+			browse.textContent = "Loading…";
+			note.textContent = "Reading the ACP registry…";
+			try {
+				let { presets, listed } = await this.fetchAcpRegistryPresets();
+				if (!presets.length) {
+					note.textContent = "None of the registry's " + listed + " agents can be added on this platform.";
+					return;
+				}
+				// No entry is preselected: picking one is the reader's choice, not the registry's order.
+				let use = this.el(doc, "button", "zs-button zs-acp-use", "Use this agent");
+				use.type = "button";
+				use.disabled = true;
+				let picker = this.select(doc, [["", "Choose an agent…"], ...presets.map((preset, i) =>
+					[String(i), preset.name + "  (" + preset.source + ")"])], "", value => { use.disabled = !value; });
+				picker.options[0].disabled = true;
+				use.addEventListener("click", () => fill(presets[picker.selectedIndex - 1]));
+				choice.append(picker, use);
+				note.textContent = presets.length === listed
+					? "Pick an agent, then review its command and arguments."
+					: "Pick an agent, then review its command and arguments. " + (listed - presets.length) + " of the registry's " +
+						listed + " agents are left out: they have no build for this platform, or need environment variables Zusia does not set.";
+			}
+			catch (e) {
+				note.textContent = "Could not read the ACP registry: " + e.message;
+			}
+			finally {
+				browse.disabled = false;
+				browse.textContent = "Browse the ACP registry";
+			}
+		});
+		return registry;
 	},
 
 	buildAcpAgentCard(doc, config, changed) {
@@ -410,7 +500,8 @@ Object.assign(Zusia, {
 			status.title = found;
 		}, (e) => {
 			details.dataset.found = "false";
-			// An npx agent on Windows is found as npx.cmd and refused: installed, yet it cannot start.
+			// On Windows an npm agent whose .cmd shim Zusia does not know is found and refused:
+			// installed, yet it cannot start.
 			status.textContent = e.notFound ? "Not found" : "Cannot start";
 			status.title = e.message;
 		});

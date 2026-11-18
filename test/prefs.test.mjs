@@ -346,6 +346,105 @@ test("clarifications file: records are appended to clarifications.json in the pa
 	assert.deepEqual([...await plugin.loadClarifications("/d")], [], "a damaged file does not break the panel");
 });
 
+const registryEntries = [
+	{ id: "gemini", name: "Gemini CLI", repository: "https://github.com/google-gemini/gemini-cli", license: "Apache-2.0",
+		distribution: { npx: { package: "@google/gemini-cli@0.68.0", args: ["--acp"] } } },
+	{ id: "opencode", name: "OpenCode", license: "MIT",
+		distribution: { binary: { "linux-x86_64": { archive: "https://example.org/opencode.tar.gz", cmd: "./opencode", args: ["acp"], sha256: "ab12" } } } },
+	{ id: "auggie", name: "Auggie", distribution: { npx: { package: "@augmentcode/auggie@0.37.0", env: { AUGMENT_DISABLE_AUTO_UPDATE: "1" } } } },
+];
+const tick = () => new Promise(resolve => setTimeout(resolve, 0));
+// Settings on Linux with the registry answering `answer`; the form and the registry controls.
+async function browseRegistry(answer) {
+	const env = pane();
+	env.window.Zotero.isWin = false;
+	env.window.Zotero.isMac = false;
+	env.window.Zotero.HTTP.request = answer;
+	const assistants = card(env.container, "Assistants");
+	const form = assistants.querySelector(".zs-acp-add");
+	const browse = form.querySelector(".zs-acp-browse");
+	browse.click();
+	assert.equal(browse.disabled, true, "one fetch at a time");
+	await tick();
+	const [name, command] = form.querySelectorAll("input");
+	return { ...env, form, browse, name, command, args: form.querySelector("textarea"),
+		note: form.querySelector(".zs-acp-registry-note"), detail: form.querySelector(".zs-acp-registry-detail"),
+		picker: form.querySelector(".zs-acp-registry-choice .zs-select"), use: form.querySelector(".zs-acp-use") };
+}
+
+test("the ACP registry picker preselects nothing, and its button waits for a choice", async () => {
+	const r = await browseRegistry(async () => ({ response: { agents: registryEntries } }));
+	assert.deepEqual([...r.picker.options].map(o => o.textContent), ["Choose an agent…", "Gemini CLI  (npm)", "OpenCode  (binary)"]);
+	assert.equal(r.picker.selectedIndex, 0);
+	assert.equal(r.picker.options[0].disabled, true);
+	assert.equal(r.use.disabled, true);
+	assert.match(r.note.textContent, /1 of the registry's 3 agents are left out/);
+	assert.equal(r.browse.disabled, false);
+	change(r.window, r.picker, "0");
+	assert.equal(r.use.disabled, false);
+});
+
+test("an npx entry fills the form and says what Add agent will download and run", async () => {
+	const r = await browseRegistry(async () => ({ response: { agents: registryEntries } }));
+	change(r.window, r.picker, "0");
+	r.use.click();
+	assert.equal(r.name.value, "Gemini CLI");
+	assert.equal(r.command.value, "npx");
+	assert.equal(r.args.value, "@google/gemini-cli@0.68.0\n--acp");
+	assert.equal(r.detail.hidden, false);
+	assert.deepEqual([...r.detail.children].map(line => line.textContent), [
+		"@google/gemini-cli@0.68.0 comes from npm. Add agent downloads it and starts it now, with your account's permissions.",
+		"Repository: https://github.com/google-gemini/gemini-cli · License: Apache-2.0",
+	]);
+	r.form.querySelector(".zs-acp-add-button").click();
+	assert.deepEqual(JSON.parse(r.prefs[PREFIX + "acpAgents"]).pop(),
+		{ id: "gemini-cli", name: "Gemini CLI", command: "npx", args: ["@google/gemini-cli@0.68.0", "--acp"] });
+	assert.equal(r.detail.hidden, true, "the disclosure goes with the agent it described");
+});
+
+test("a binary entry leaves the command to the reader and names the archive and its checksum", async () => {
+	const r = await browseRegistry(async () => ({ response: { agents: registryEntries } }));
+	change(r.window, r.command, "/opt/opencode/opencode");
+	change(r.window, r.picker, "1");
+	r.use.click();
+	assert.equal(r.name.value, "OpenCode");
+	assert.equal(r.command.value, "/opt/opencode/opencode", "what the reader typed stays");
+	assert.equal(r.args.value, "acp");
+	assert.deepEqual([...r.detail.children].map(line => line.textContent), [
+		"Download https://example.org/opencode.tar.gz",
+		"SHA-256 ab12",
+		"Then set Command to the full path of ./opencode once you have extracted it.",
+		"License: MIT",
+	]);
+});
+
+test("a registry that cannot be read says why, and Browse can be clicked again", async () => {
+	for (const [answer, why] of [
+		[async () => { throw new Error("HTTP request has timed out"); }, /Could not read the ACP registry: HTTP request has timed out/],
+		[async () => ({ response: null }), /did not answer with a list of agents/],
+		[async () => ({ response: { version: "1" } }), /did not answer with a list of agents/],
+	]) {
+		const r = await browseRegistry(answer);
+		assert.match(r.note.textContent, why);
+		assert.equal(r.browse.disabled, false);
+		assert.equal(r.browse.textContent, "Browse the ACP registry");
+		assert.equal(r.picker, null);
+	}
+});
+
+test("browsing again clears the last choice and its disclosure", async () => {
+	let answer = { response: { agents: registryEntries } };
+	const r = await browseRegistry(async () => answer);
+	change(r.window, r.picker, "0");
+	r.use.click();
+	answer = { response: null };
+	r.browse.click();
+	await tick();
+	assert.equal(r.form.querySelector(".zs-acp-registry-choice .zs-select"), null);
+	assert.equal(r.detail.hidden, true);
+	assert.equal(r.detail.textContent, "");
+});
+
 test("an ACP agent can be asked to sign in from Settings", async () => {
 	const { container, window, plugin } = pane();
 	const assistants = card(container, "Assistants");
