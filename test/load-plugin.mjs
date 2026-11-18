@@ -56,6 +56,8 @@ export function loadPlugin({ prefs = {}, files = new Map() } = {}) {
 			registerObserver: () => "observer",
 			unregisterObserver() {},
 		},
+		// No test reaches the network: one that needs a response, as the registry browser does, replaces this.
+		HTTP: { request: async () => { throw new Error("no HTTP in tests"); } },
 		Utilities: { Internal: { copyTextToClipboard() {} } },
 		File: {
 			putContentsAsync: async (p, data) => { files.set(p, data); },
@@ -72,7 +74,7 @@ export function loadPlugin({ prefs = {}, files = new Map() } = {}) {
 		getMainWindows: () => (window.document ? [window] : []),
 	};
 	window.eval(read("src/content/lib/katex.min.js").replace(/^!function\(e,t\)\{/, "!function(e,t){var exports,module,define;"));
-	window.Services = { scriptloader: { loadSubScript: (url, scope) => {
+	window.Services = { appinfo: { XPCOMABI: "x86_64-gcc3" }, scriptloader: { loadSubScript: (url, scope) => {
 		if (url.endsWith("eventsource-parser.js")) {
 			window.eval(read("src/content/lib/eventsource-parser.js"));
 			scope.ZusiaEventSource = window.ZusiaEventSource;

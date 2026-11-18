@@ -899,3 +899,108 @@ test("the shipped agent can be removed like any other and stays removed", () => 
 	const next = loadPlugin({ prefs: env.prefs });
 	assert.equal(next.plugin.BACKENDS["acp:commandcode"], undefined);
 });
+
+// Entries shaped as the registry at cdn.agentclientprotocol.com lists them.
+const npxEntry = (over = {}) => ({ id: "gemini", name: "Gemini CLI", repository: "https://github.com/google-gemini/gemini-cli", license: "Apache-2.0",
+	distribution: { npx: { package: "@google/gemini-cli@0.68.0", args: ["--acp"] } }, ...over });
+const binaryEntry = (platform, over = {}) => ({ id: "opencode", name: "OpenCode", license: "MIT",
+	distribution: { binary: { [platform]: { archive: "https://example.org/opencode.zip", cmd: "./opencode", args: ["acp"], sha256: "ab12", ...over } } } });
+
+test("a registry entry becomes the command its npx or uvx package runs with", () => {
+	const p = loadPlugin().plugin;
+	assert.deepEqual(plain(p.acpRegistryPreset(npxEntry(), "linux-x86_64")), {
+		name: "Gemini CLI", repository: "https://github.com/google-gemini/gemini-cli", license: "Apache-2.0",
+		source: "npm", package: "@google/gemini-cli@0.68.0", command: "npx", args: ["@google/gemini-cli@0.68.0", "--acp"],
+	});
+	assert.deepEqual(plain(p.acpRegistryPreset({ id: "m", name: "Minion", distribution: { uvx: { package: "minion-code@0.1.44", args: ["acp"] } } }, "darwin-aarch64")), {
+		name: "Minion", repository: "", license: "", source: "PyPI", package: "minion-code@0.1.44", command: "uvx", args: ["minion-code@0.1.44", "acp"],
+	});
+	assert.deepEqual(plain(p.acpRegistryPreset({ id: "pi", name: "pi", distribution: { npx: { package: "pi-acp@0.0.34" } } }, "linux-x86_64")).args,
+		["pi-acp@0.0.34"], "an entry may give no arguments");
+});
+
+test("a binary entry gives its archive, checksum and program for this platform, and no command", () => {
+	const p = loadPlugin().plugin;
+	assert.deepEqual(plain(p.acpRegistryPreset(binaryEntry("linux-x86_64"), "linux-x86_64")), {
+		name: "OpenCode", repository: "", license: "MIT", source: "binary",
+		archive: "https://example.org/opencode.zip", sha256: "ab12", cmd: "./opencode", args: ["acp"],
+	});
+	assert.equal(p.acpRegistryPreset(binaryEntry("windows-x86_64"), "linux-x86_64"), null, "no build for this platform");
+});
+
+test("npx comes first on macOS and Linux, a native build first on Windows, and never a batch file", () => {
+	const p = loadPlugin().plugin;
+	const both = platform => ({ ...npxEntry(), distribution: { ...npxEntry().distribution, ...binaryEntry(platform).distribution } });
+	assert.equal(p.acpRegistryPreset(both("linux-x86_64"), "linux-x86_64").source, "npm");
+	assert.equal(p.acpRegistryPreset(both("windows-x86_64"), "windows-x86_64").source, "binary");
+	const shim = { ...npxEntry(), distribution: { ...npxEntry().distribution, ...binaryEntry("windows-x86_64", { cmd: "./dist-package\\cursor-agent.cmd" }).distribution } };
+	assert.equal(p.acpRegistryPreset(shim, "windows-x86_64").source, "npm", "a .cmd build gives way to npx");
+	assert.equal(p.acpRegistryPreset(binaryEntry("windows-x86_64", { cmd: "agent.BAT " }), "windows-x86_64"), null);
+});
+
+test("a registry entry that needs environment variables is left out", () => {
+	const p = loadPlugin().plugin;
+	const withEnv = npxEntry({ distribution: { npx: { package: "@augmentcode/auggie@0.37.0", args: ["--acp"], env: { AUGMENT_DISABLE_AUTO_UPDATE: "1" } } } });
+	assert.equal(p.acpRegistryPreset(withEnv, "linux-x86_64"), null);
+	assert.equal(p.acpRegistryPreset(binaryEntry("linux-x86_64", { env: { MUSE: "1" } }), "linux-x86_64"), null);
+	const fallback = { ...withEnv, distribution: { ...withEnv.distribution, ...binaryEntry("linux-x86_64").distribution } };
+	assert.equal(p.acpRegistryPreset(fallback, "linux-x86_64").source, "binary", "another way to run it still counts");
+	assert.equal(p.acpRegistryPreset(npxEntry({ distribution: { npx: { package: "a@1", env: {} } } }), "linux-x86_64").source, "npm",
+		"an empty env asks for nothing");
+});
+
+test("a malformed registry entry is dropped, not filled into the form", () => {
+	const p = loadPlugin().plugin;
+	for (const [entry, why] of [
+		[null, "not an object"],
+		["gemini", "a string"],
+		[{ ...npxEntry(), name: "" }, "no name"],
+		[{ ...npxEntry(), name: 7 }, "a name that is not text"],
+		[{ ...npxEntry(), distribution: null }, "no distribution"],
+		[npxEntry({ distribution: { npx: { package: 42 } } }), "a package that is not text"],
+		[npxEntry({ distribution: { npx: { package: "a@1", args: "--acp" } } }), "arguments that are not a list"],
+		[npxEntry({ distribution: { npx: { package: "a@1", args: ["--acp", 1] } } }), "an argument that is not text"],
+		[binaryEntry("linux-x86_64", { archive: "http://example.org/a.zip" }), "an archive not served over https"],
+		[binaryEntry("linux-x86_64", { archive: "javascript:alert(1)" }), "an archive that is no URL"],
+		[binaryEntry("linux-x86_64", { cmd: "" }), "no program to run"],
+	]) {
+		assert.equal(p.acpRegistryPreset(entry, "linux-x86_64"), null, why);
+	}
+});
+
+test("the registry platform follows Zotero's OS and the build's ABI", () => {
+	const env = loadPlugin();
+	const p = env.plugin;
+	for (const [os, abi, platform] of [
+		[{ isMac: true }, "aarch64-gcc3", "darwin-aarch64"],
+		[{ isMac: true }, "x86_64-gcc3", "darwin-x86_64"],
+		[{ isWin: true }, "x86_64-msvc", "windows-x86_64"],
+		[{ isWin: true }, "aarch64-msvc", "windows-aarch64"],
+		[{}, "x86_64-gcc3", "linux-x86_64"],
+		[{}, "aarch64-gcc3", "linux-aarch64"],
+	]) {
+		env.window.Zotero.isWin = !!os.isWin;
+		env.window.Zotero.isMac = !!os.isMac;
+		env.window.Services.appinfo = { XPCOMABI: abi };
+		assert.equal(p.acpPlatform(), platform, abi);
+	}
+});
+
+test("the registry fetch returns this platform's presets and refuses a payload that lists no agents", async () => {
+	const env = loadPlugin();
+	const p = env.plugin;
+	let asked;
+	env.window.Zotero.HTTP.request = async (method, url, options) => {
+		asked = { method, url, responseType: options.responseType };
+		return { response: { version: "1", agents: [npxEntry(), binaryEntry("windows-x86_64"), { id: "broken" }] } };
+	};
+	const { presets, listed } = await p.fetchAcpRegistryPresets("linux-x86_64");
+	assert.deepEqual(asked, { method: "GET", url: p.ACP_REGISTRY_URL, responseType: "json" });
+	assert.deepEqual(plain(presets).map(preset => preset.name), ["Gemini CLI"]);
+	assert.equal(listed, 3);
+	// responseType "json" gives null for a captive portal's HTML page.
+	for (const response of [null, {}, { agents: "none" }]) {
+		env.window.Zotero.HTTP.request = async () => ({ response });
+		await assert.rejects(p.fetchAcpRegistryPresets("linux-x86_64"), /did not answer with a list of agents/, JSON.stringify(response));
+	}
+});

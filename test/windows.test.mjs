@@ -350,3 +350,17 @@ test("windows: a chat written on macOS finds its images on Windows", () => {
 	const path = plugin.imagePaths(PAPER, { images: ["attachments/image-1.png"] })[0];
 	assert.equal(path, PAPER + "\\attachments\\image-1.png");
 });
+
+test("windows: an npx agent from the registry runs as node.exe npx-cli.js, never through npx.cmd", async () => {
+	const NPX_JS = NODE_DIR + "\\node_modules\\npm\\bin\\npx-cli.js";
+	const env = loadWindowsPlugin({ executables: [NODE_DIR + "\\npx", NODE_DIR + "\\npx.cmd", NPX_JS, NODE_EXE], environment: upperPath() });
+	const preset = env.plugin.acpRegistryPreset({ id: "gemini", name: "Gemini CLI",
+		distribution: { npx: { package: "@google/gemini-cli@0.68.0", args: ["--acp"] } } }, "windows-x86_64");
+	const { key } = env.plugin.addAcpAgent({ name: preset.name, command: preset.command, args: preset.args });
+	const found = await env.plugin.findBinary(key);
+	assert.equal(found, NPX_JS);
+	await env.plugin.spawnAgent(found, env.plugin.acpArgs(key), PAPER);
+	const [run] = env.spawns;
+	assert.equal(run.command, NODE_EXE);
+	assert.deepEqual(run.args, [NPX_JS, "@google/gemini-cli@0.68.0", "--acp"]);
+});

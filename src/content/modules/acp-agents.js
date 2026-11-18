@@ -4,6 +4,64 @@ Object.assign(Zusia, {
 
 	MAX_ACP_AGENTS: 20,
 	ACP_AGENT_ID: /^[a-z0-9][a-z0-9-]{0,39}$/,
+	ACP_REGISTRY_URL: "https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json",
+
+	// The registry's platform keys. XPCOMABI is "x86_64-msvc", "aarch64-gcc3" and the like;
+	// the registry's musl builds are left to the reader.
+	acpPlatform() {
+		let os = Zotero.isWin ? "windows" : Zotero.isMac ? "darwin" : "linux";
+		return os + "-" + (/^aarch64/i.test(Services.appinfo.XPCOMABI) ? "aarch64" : "x86_64");
+	},
+
+	// What fills the add form for one registry entry, or null when the entry cannot run here
+	// as the registry states it. The registry is fetched, so every field is checked.
+	acpRegistryPreset(agent, platform) {
+		if (!agent || typeof agent !== "object" || typeof agent.name !== "string" || !agent.name.trim() ||
+			!agent.distribution || typeof agent.distribution !== "object") {
+			return null;
+		}
+		let text = value => (typeof value === "string" && value.trim() ? value.trim() : "");
+		let base = { name: agent.name.trim(), repository: text(agent.repository), license: text(agent.license) };
+		let usable = item => item && typeof item === "object" &&
+			(item.args === undefined || (Array.isArray(item.args) && item.args.every(arg => typeof arg === "string"))) &&
+			// Some entries need env to pin their version or to switch ACP on at all, and an
+			// agent here runs with Zusia's environment only, so without it the command is not
+			// the one the registry gives.
+			(item.env === undefined || (item.env && typeof item.env === "object" && !Object.keys(item.env).length));
+		let dist = agent.distribution;
+		let packaged = () => {
+			for (let [runner, source] of [["npx", "npm"], ["uvx", "PyPI"]]) {
+				let item = dist[runner];
+				if (usable(item) && text(item.package)) {
+					return { ...base, source, package: text(item.package), command: runner, args: [text(item.package), ...(item.args || [])] };
+				}
+			}
+			return null;
+		};
+		let binary = () => {
+			let item = dist.binary && typeof dist.binary === "object" ? dist.binary[platform] : null;
+			if (!usable(item) || !/^https:\/\//.test(text(item.archive)) || !text(item.cmd) ||
+				// Zusia runs no batch file, so a binary that is one could never start.
+				/\.(cmd|bat)[. ]*$/i.test(text(item.cmd))) {
+				return null;
+			}
+			return { ...base, source: "binary", archive: text(item.archive), sha256: text(item.sha256), cmd: text(item.cmd), args: item.args || [] };
+		};
+		// On Windows npx goes through npm's own batch files once it runs the package, so a
+		// native build is the sturdier path there.
+		return platform.startsWith("windows-") ? binary() || packaged() : packaged() || binary();
+	},
+
+	// The presets for this platform, and how many entries the registry listed in all.
+	async fetchAcpRegistryPresets(platform = this.acpPlatform()) {
+		let response = await Zotero.HTTP.request("GET", this.ACP_REGISTRY_URL, { responseType: "json", timeout: 20000 });
+		// A body that is not JSON, such as a captive portal's page, arrives as null.
+		let agents = response.response?.agents;
+		if (!Array.isArray(agents)) {
+			throw new Error("The registry did not answer with a list of agents. Check the connection and try again.");
+		}
+		return { presets: agents.map(agent => this.acpRegistryPreset(agent, platform)).filter(Boolean), listed: agents.length };
+	},
 
 	acpAgents() {
 		let stored = this.getJSONPref("acpAgents", null);

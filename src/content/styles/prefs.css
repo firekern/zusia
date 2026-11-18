@@ -187,6 +187,32 @@
 	margin-bottom: 6px;
 	font-weight: 600;
 }
+.zs-acp-registry {
+	margin-bottom: 10px;
+}
+.zs-acp-registry-note {
+	margin-top: 6px;
+}
+.zs-acp-registry-choice {
+	display: flex;
+	gap: 6px;
+	align-items: center;
+	margin-top: 8px;
+}
+.zs-acp-registry-choice:empty {
+	display: none;
+}
+.zs-acp-registry-choice .zs-select {
+	flex: 1;
+	min-width: 0;
+}
+/* An archive URL or a SHA-256 has no break point of its own. */
+.zs-acp-registry-detail {
+	margin-top: 8px;
+	font-size: 0.88em;
+	line-height: 1.4;
+	overflow-wrap: anywhere;
+}
 .zs-acp-signin-wrap {
 	padding: 10px 14px;
 	border-top: 1px solid var(--zs-stroke);

@@ -84,6 +84,10 @@ Object.assign(Zusia, {
 			"claude.cmd": ["node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe"],
 			"codex.cmd": ["node_modules", "@openai", "codex", "bin", "codex.js"],
 			"command-code.cmd": ["node_modules", "command-code", "dist", "index.mjs"],
+			// What npx.cmd runs, beside node.exe and in %AppData%\npm alike. npx then starts
+			// the package's own .cmd through cmd.exe, which is safe only because an ACP agent
+			// gets the prompt on stdin, never in argv: do not reuse this for a CLI backend.
+			"npx.cmd": ["node_modules", "npm", "bin", "npx-cli.js"],
 		}[OS.Path.basename(path).replace(/[. ]+$/, "").toLowerCase()];
 		if (target) {
 			let resolved = OS.Path.join(OS.Path.dirname(path), ...target);
