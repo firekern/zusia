@@ -7,7 +7,6 @@ var outDir;
 var repo;
 // Prompts the memory jobs would have sent; see run().
 var backgroundCalls = [];
-var GREEN_PNG = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAfUlEQVR4nNXOQREAMAjAsK7+hSFrInhwjYI8hjSJkziJkziJkziJkziJkziJkziJkziJkziJkziJkziJkziJkziJkziJkziJkziJkziJkziJkziJkziJkziJkziJkziJkziJkziJkziJkziJkziJkziJkziJkziJkzivA1sf848BSJ0/9OcAAAAASUVORK5CYII=";
 
 function check(name, ok, detail) {
 	results.checks.push({ name, ok: !!ok, detail: detail === undefined ? null : detail });
@@ -165,10 +164,11 @@ async function testSidebar(win, CS) {
 	// Composer menus open inside the visible pane and change the model.
 	root.querySelector(".zs-model-btn").click();
 	let menu = await waitFor(() => root.querySelector(".zs-menu"), 5000, "model menu");
-	await waitFor(() => root.querySelector(".zs-menu").textContent.includes("Google Antigravity") && !root.querySelector(".zs-menu").textContent.includes("Loading"), 30000, "Antigravity models in menu");
+	await waitFor(() => root.querySelector(".zs-menu").textContent.includes("Google Antigravity"), 5000, "Antigravity section in menu");
 	let antigravity = [...root.querySelectorAll(".zs-menu-section")].find(n => n.textContent.includes("Google Antigravity"));
 	antigravity.click();
-	await waitFor(() => [...root.querySelectorAll(".zs-menu-item")].some(i => i.textContent.includes("Gemini")), 5000, "Antigravity models after expanding");
+	// A folded section lists nothing, so the first `agy models` run starts only here.
+	await waitFor(() => [...root.querySelectorAll(".zs-menu-item")].some(i => i.textContent.includes("Gemini")), 30000, "Antigravity models after expanding");
 	let menuRect = root.querySelector(".zs-menu").getBoundingClientRect();
 	let paneRect0 = win.document.getElementById("zotero-item-pane").getBoundingClientRect();
 	check("model menu fits in the pane", menuRect.left >= paneRect0.left - 1 && menuRect.right <= visibleRight() + 1 && menuRect.height > 100,
@@ -396,6 +396,9 @@ async function testReaderWidth(win, CS) {
 	if (!root) {
 		return;
 	}
+	// The tree selects the attachment as it is imported, which can open this chat before
+	// chat.json was written, and Zotero does not render a section twice for one item.
+	CS.renderMessages(CS._views.get(root), await CS.loadHistory(dir));
 	root.closest("[data-pane]")?.scrollIntoView({ block: "start" });
 	await win.document.fonts.ready;
 	await Zotero.Promise.delay(800);
@@ -473,247 +476,6 @@ async function testReadingMap(CS, attachment, dir, full) {
 		check("reading map (info): Zotero.SDT answered for the test PDF", true,
 			sdt ? { labels: sdt.labels && sdt.labels.slice(0, 5), outline: sdt.outline && sdt.outline.length } : "still building after 5 s");
 	}
-}
-
-// Opt-in (LIVE=1): real Claude Code runs from inside the sandboxed Zotero.
-async function testLive(win, CS) {
-	let item = new Zotero.Item("journalArticle");
-	item.setField("title", "Live test paper");
-	item.setField("abstractNote", "The secret word of this paper is PELICAN.");
-	await item.saveTx();
-	let itemPane = win.ZoteroPane.itemPane;
-	itemPane.data = [item];
-	await itemPane.renderItemPane(item);
-	let root = await waitFor(() => {
-		let r = [...win.document.querySelectorAll(".zs-root")].find(el => el.isConnected);
-		return r && CS._views.get(r) && CS._views.get(r).ctx.paperItem.id === item.id && r;
-	}, 30000, "live sidebar");
-	let view = CS._views.get(root);
-	CS.setPref("backend", "claude");
-	CS.setPref("claude.model", "haiku");
-	CS.setPref("claude.effort", "low");
-
-	let type = (text) => {
-		view.input.value = text;
-		view.input.dispatchEvent(new win.Event("input", { bubbles: true }));
-	};
-	type("What is the secret word in metadata.md? Reply with only that word.");
-	check("live: Send is enabled once text is typed", !root.querySelector(".zs-send").disabled);
-	root.querySelector(".zs-send").click();
-	check("live: Send turns into Stop while running", root.querySelector(".zs-send").classList.contains("zs-stop"));
-	let history = await waitFor(async () => {
-		if (CS._pending.has(view.ctx.dir)) return null;
-		return CS.loadHistory(view.ctx.dir);
-	}, 180000, "live answer");
-	let answer = history[history.length - 1] || {};
-	check("live: Claude answers through the sidebar with the chosen model and effort",
-		/pelican/i.test(answer.text || "") && answer.model === "haiku" && answer.effort === "low",
-		{ text: (answer.text || "").slice(0, 80), model: answer.model, effort: answer.effort,
-			error: root.querySelector(".zs-error")?.textContent });
-	let steps = (answer.activity && answer.activity.steps) || [];
-	check("live: Claude's file reads are recorded as activity", steps.some(st => st.kind === "read"),
-		{ steps: steps.map(st => st.label), thoughtMs: answer.activity && answer.activity.thoughtMs });
-	await waitFor(() => root.querySelector(".zs-turn.zs-last .zs-activity"), 5000, "activity line").catch(() => null);
-	check("live: activity line shows above the answer", !!root.querySelector(".zs-turn.zs-last .zs-activity"),
-		root.querySelector(".zs-turn.zs-last .zs-activity-summary")?.textContent);
-	let logText = await IOUtils.readUTF8(CS.getLogPath()).catch(() => "");
-	check("live: CLI was called with --model haiku --effort low", /'--model' 'haiku'.*'--effort' 'low'/.test(logText));
-
-	type("List the secret word 400 times, numbered 1 to 400, one per line, no other text.");
-	root.querySelector(".zs-send").click();
-	check("live: second run started", CS._pending.has(view.ctx.dir));
-	// Stop only once the answer is visibly streaming.
-	let streaming = await waitFor(() => {
-		let p = CS._pending.get(view.ctx.dir);
-		return p && p.partial.length > 60 ? p : null;
-	}, 90000, "streamed text").catch(() => null);
-	check("live: answer streams into the sidebar before it finishes", !!streaming);
-	check("live: streamed text is rendered live", !!root.querySelector(".zs-live-content")?.textContent.trim());
-	let started = Date.now();
-	root.querySelector(".zs-send").click();
-	await waitFor(() => !CS._pending.has(view.ctx.dir), 20000, "stop to finish");
-	check("live: Stop ends the run quickly", Date.now() - started < 15000, Date.now() - started);
-	await Zotero.Promise.delay(500);
-	check("live: stop shows no error", !root.querySelector(".zs-error"), root.querySelector(".zs-error")?.textContent);
-	let afterStop = await CS.loadHistory(view.ctx.dir);
-	let last = afterStop[afterStop.length - 1] || {};
-	check("live: stopped run keeps the partial answer or returns the question",
-		(last.stopped === true && last.text.length > 0) || view.input.value.includes("400 times"),
-		{ stopped: last.stopped, chars: (last.text || "").length, input: view.input.value.slice(0, 40) });
-	await snapshot(win, "zotero-live", (() => {
-		let r = win.document.getElementById("zotero-item-pane").getBoundingClientRect();
-		return { x: r.x, y: r.y, width: r.width, height: r.height };
-	})());
-}
-
-async function testPreconfiguredAcpAgent(win, CS) {
-	let item = new Zotero.Item("journalArticle");
-	item.setField("title", "ACP test paper");
-	item.setField("abstractNote", "The secret word of this paper is PELICAN.");
-	await item.saveTx();
-	let itemPane = win.ZoteroPane.itemPane;
-	itemPane.data = [item];
-	await itemPane.renderItemPane(item);
-	let root = await waitFor(() => {
-		let r = [...win.document.querySelectorAll(".zs-root")].find(el => el.isConnected);
-		return r && CS._views.get(r) && CS._views.get(r).ctx.paperItem.id === item.id && r;
-	}, 30000, "ACP sidebar");
-	let view = CS._views.get(root);
-	CS.setPref("backend", "acp:commandcode");
-	CS.setPref("acp:commandcode.model", "deepseek/deepseek-v4.1-flash");
-	CS.setPref("acp:commandcode.effort", "low");
-
-	let ask = async (text) => {
-		view.input.value = text;
-		view.input.dispatchEvent(new win.Event("input", { bubbles: true }));
-		root.querySelector(".zs-send").click();
-	};
-	await ask("What is the secret word in metadata.md? Reply with only that word.");
-	let history = await waitFor(async () => {
-		if (CS._pending.has(view.ctx.dir)) return null;
-		return CS.loadHistory(view.ctx.dir);
-	}, 240000, "ACP answer");
-	let answer = history[history.length - 1] || {};
-	check("ACP: a real answer arrives through the sidebar",
-		/pelican/i.test(answer.text || "") && answer.backend === "acp:commandcode" &&
-		answer.model === "deepseek/deepseek-v4.1-flash" && answer.effort === "low",
-		{ text: (answer.text || "").slice(0, 120), backend: answer.backend, model: answer.model, effort: answer.effort,
-			error: root.querySelector(".zs-error")?.textContent });
-
-	await ask("Which word did you just find? Reply with only that word.");
-	let second = await waitFor(async () => {
-		if (CS._pending.has(view.ctx.dir)) return null;
-		let h = await CS.loadHistory(view.ctx.dir);
-		return h.length >= 4 ? h : null;
-	}, 240000, "ACP follow-up");
-	let follow = second[second.length - 1] || {};
-	let debugLog = await IOUtils.readUTF8(CS.getLogPath()).catch(() => "");
-	check("ACP: the conversation resumes over session/load",
-		/pelican/i.test(follow.text || "") && /acp: session \S+ resumed/.test(debugLog),
-		{ text: (follow.text || "").slice(0, 120), error: root.querySelector(".zs-error")?.textContent, resumed: /resumed/.test(debugLog) });
-
-	let imagePath = PathUtils.join(view.ctx.dir, "attachments", "green.png");
-	await IOUtils.makeDirectory(PathUtils.join(view.ctx.dir, "attachments"), { createAncestors: true });
-	await IOUtils.write(imagePath, Uint8Array.from(win.atob(GREEN_PNG), c => c.charCodeAt(0)));
-	CS.startRequest(view, "What colour is this image? Reply with one word.", [imagePath]);
-	let third = await waitFor(async () => {
-		if (CS._pending.has(view.ctx.dir)) return null;
-		let h = await CS.loadHistory(view.ctx.dir);
-		return h.length >= 6 ? h : null;
-	}, 240000, "ACP image answer");
-	let imageAnswer = third[third.length - 1] || {};
-	check("ACP: an attached image reaches the agent", /green/i.test(imageAnswer.text || ""),
-		{ text: (imageAnswer.text || "").slice(0, 120), error: root.querySelector(".zs-error")?.textContent });
-
-	await waitFor(() => root.querySelector(".zs-turn.zs-last .zs-msg"), 5000, "the last answer").catch(() => null);
-	// The thumbnail reads its bytes after the turn is built, and this shot is the evidence it did.
-	await waitFor(() => {
-		let img = [...root.querySelectorAll(".zs-user .zs-thumb img")].pop();
-		return img && img.complete && img.naturalWidth > 0;
-	}, 5000, "the attached image on screen");
-	let rect = root.getBoundingClientRect();
-	await snapshot(win, "zotero-acp", { x: rect.x, y: rect.y, width: rect.width, height: rect.height });
-}
-
-async function testConfiguredAcpAgent(win, CS, realBackgroundCall) {
-	let added = CS.addAcpAgent({ name: "OpenCode", command: "opencode", args: ["acp"] });
-	check("acp agents: an agent added in Settings becomes a backend",
-		!!added && !added.error && added.key === "acp:opencode", { added });
-	if (!added || added.error) {
-		return;
-	}
-
-	let item = new Zotero.Item("journalArticle");
-	item.setField("title", "OpenCode test paper");
-	item.setField("abstractNote", "The secret word of this paper is PELICAN.");
-	await item.saveTx();
-	let itemPane = win.ZoteroPane.itemPane;
-	itemPane.data = [item];
-	await itemPane.renderItemPane(item);
-	let root = await waitFor(() => {
-		let r = [...win.document.querySelectorAll(".zs-root")].find(el => el.isConnected);
-		return r && CS._views.get(r) && CS._views.get(r).ctx.paperItem.id === item.id && r;
-	}, 30000, "configured ACP sidebar");
-	let view = CS._views.get(root);
-	CS.setPref("backend", "acp:opencode");
-	CS.setPref("acp:opencode.model", "");
-	CS.setPref("acp:opencode.effort", "low");
-
-	root.querySelector(".zs-model-btn").click();
-	let menu = await waitFor(() => root.querySelector(".zs-menu"), 5000, "model menu");
-	let opencodeItems = await waitFor(() => {
-		let section = [...menu.querySelectorAll(".zs-menu-section")].find(s => s.textContent === "OpenCode");
-		if (!section) {
-			return null;
-		}
-		let items = [];
-		for (let node = section.nextElementSibling; node && !node.classList.contains("zs-menu-section"); node = node.nextElementSibling) {
-			if (node.classList.contains("zs-menu-item")) {
-				items.push(node);
-			}
-		}
-		return items.length > 1 ? items : null;
-	}, 15000, "OpenCode models").catch(() => null);
-	check("acp agents: the picker lists the agent's models before the first answer",
-		!!opencodeItems, { items: opencodeItems ? opencodeItems.slice(0, 4).map(i => i.textContent.slice(0, 48)) : [] });
-	let opencodeSection = [...menu.querySelectorAll(".zs-menu-section")].find(s => s.textContent === "OpenCode");
-	opencodeSection?.scrollIntoView({ block: "start" });
-	await Zotero.Promise.delay(400);
-	let menuRect = menu.getBoundingClientRect();
-	let menuTop = Math.max(0, menuRect.y);
-	await snapshot(win, "zotero-acp-model-picker", {
-		x: menuRect.x, y: menuTop, width: menuRect.width,
-		height: Math.min(menuRect.height, win.innerHeight - menuTop),
-	});
-	root.querySelector(".zs-model-btn").click();
-
-	view.input.value = "Reply with exactly: pong";
-	view.input.dispatchEvent(new win.Event("input", { bubbles: true }));
-	root.querySelector(".zs-send").click();
-	let history = await waitFor(async () => {
-		if (CS._pending.has(view.ctx.dir)) return null;
-		return CS.loadHistory(view.ctx.dir);
-	}, 240000, "configured ACP answer");
-	let answer = history[history.length - 1] || {};
-	check("acp agents: the added agent answers through the sidebar",
-		/pong/i.test(answer.text || "") && answer.backend === "acp:opencode",
-		{ text: (answer.text || "").slice(0, 120), backend: answer.backend,
-			error: root.querySelector(".zs-error")?.textContent });
-
-	let background = await realBackgroundCall.call(CS, "acp:opencode", "Reply with exactly: pong");
-	check("acp agents: the added agent runs a background memory call",
-		/pong/i.test(background.text || ""), { text: background.text, error: background.error });
-
-	await waitFor(() => root.querySelector(".zs-turn.zs-last .zs-msg"), 5000, "the last answer").catch(() => null);
-	let rect = root.getBoundingClientRect();
-	await snapshot(win, "zotero-acp-agent", { x: rect.x, y: rect.y, width: rect.width, height: rect.height });
-
-	let prefsWin = Zotero.Utilities.Internal.openPreferences(CS.PREFS_PANE_ID);
-	await waitFor(() => prefsWin.document && prefsWin.document.readyState === "complete", 20000, "settings window");
-	let prefs = await waitFor(() => prefsWin.document.querySelector(".zs-prefs"), 20000, "settings pane content");
-	prefsWin.resizeTo(1000, 1500);
-	let agent = await waitFor(() =>
-		prefs.querySelector('.zs-acp-list .zs-agent[data-backend="acp:opencode"]'), 10000, "the added agent in Settings");
-	check("acp agents: Settings lists the added agent and its ACP command",
-		/openCode/i.test(agent.textContent) && /opencode\s+acp/.test(agent.textContent),
-		{ text: agent.textContent.slice(0, 160) });
-	let commandCode = prefs.querySelector('.zs-acp-list .zs-agent[data-backend="acp:commandcode"]');
-	if (commandCode) {
-		commandCode.open = true;
-	}
-	check("acp agents: every ACP card offers Sign in and Remove",
-		[...prefs.querySelectorAll(".zs-acp-list .zs-agent")].every(card =>
-			!!card.querySelector(".zs-acp-signin") && !!card.querySelector(".zs-acp-remove")),
-		[...prefs.querySelectorAll(".zs-acp-list .zs-agent")].map(card => ({
-			backend: card.dataset.backend,
-			signIn: !!card.querySelector(".zs-acp-signin"),
-			remove: !!card.querySelector(".zs-acp-remove"),
-		})));
-	agent.open = true;
-	prefs.querySelector(".zs-acp-section").scrollIntoView({ block: "start" });
-	await Zotero.Promise.delay(500);
-	await snapshot(prefsWin, "zotero-acp-agents");
-	prefsWin.close();
 }
 
 // The headless items tree lays out no rows and cannot select one, so the selection is given
@@ -1149,10 +911,7 @@ async function run() {
 		if (Zotero.Prefs.get("extensions.zusia-tester.live", true)) {
 			await testLive(win, CS);
 		}
-		if (Zotero.Prefs.get("extensions.zusia-tester.acp", true)) {
-			await testPreconfiguredAcpAgent(win, CS);
-			await testConfiguredAcpAgent(win, CS, realBackgroundCall);
-		}
+		await testAcp(win, CS, realBackgroundCall);
 		let logText = await IOUtils.readUTF8(CS.getLogPath()).catch(() => "");
 		let errors = logText.split("\n").filter(l => l.includes("ERROR"));
 		check("plugin logged no errors", errors.length === 0, errors.slice(0, 5));
@@ -1165,7 +924,12 @@ async function run() {
 	Zotero.Utilities.Internal.quit();
 }
 
-function startup() {
+// The opt-in and ACP scenarios have files of their own, loaded into this scope as
+// src/bootstrap.js loads its modules, so they share check(), waitFor() and the results.
+function startup({ rootURI }) {
+	for (let name of ["acp", "live"]) {
+		Services.scriptloader.loadSubScript(rootURI + name + ".js");
+	}
 	run();
 }
 

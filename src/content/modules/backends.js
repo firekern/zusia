@@ -14,6 +14,13 @@ Object.assign(Zusia, {
 				throw new Error("Could not find node.exe, which the npm install of " + args[0] + " needs.", { cause: e });
 			});
 		}
+		// An npm agent starts with "#!/usr/bin/env node", and a Zotero started from the Dock
+		// or a desktop menu has no nvm, fnm or volta folder on PATH. Those, Homebrew and npm's
+		// prefix keep node beside the agents they install, so the folder findBinary found the
+		// agent in, not where a symlink there points, goes first.
+		if (!Zotero.isWin) {
+			environment.PATH = OS.Path.dirname(command) + ":" + environment.PATH;
+		}
 		this.log("Spawning: " + command + " " + args.map(a => "'" + a.slice(0, 60) + "'").join(" ") +
 			(stdinChars ? " with " + stdinChars + " characters on stdin" : ""));
 		return Subprocess.call({
@@ -224,10 +231,6 @@ Object.assign(Zusia, {
 	codexPrompt(request) {
 		return request.session ? this.questionPrompt(request) : this.sessionPrompt(request);
 	},
-
-
-
-
 
 	antigravityArgs(request) {
 		let args = ["--output-format", "stream-json", "--sandbox"];
@@ -527,11 +530,4 @@ Object.assign(Zusia, {
 			(final ? "Antigravity finished with status " + final.status + "." : "agy exited with code " + exitCode);
 		return { text: "", error, sessionId, resumeFailed: exitCode !== 0 || !final || final.status === "ERROR" };
 	},
-
-
-
-
-
-
-
 });

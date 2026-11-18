@@ -29,6 +29,12 @@ Object.assign(Zusia, {
 		}
 	},
 
+	// Every assistant, kind by kind in KINDS order (the CLIs, the ACP agents, the APIs): an
+	// agent registers after the APIs, and would otherwise be listed after them.
+	orderedBackends() {
+		return Object.keys(this.KINDS).flatMap(kind => Object.entries(this.BACKENDS).filter(([, info]) => info.kind === kind));
+	},
+
 	getBackend() {
 		let backend = this.getPref("backend");
 		return this.BACKENDS[backend] ? backend : "claude";
@@ -50,9 +56,11 @@ Object.assign(Zusia, {
 		return this.BACKENDS[backend].efforts.includes(effort) ? effort : "";
 	},
 
-	// The models offered for a backend: the fixed ones, then whatever its kind listed live.
+	// The fixed models, then the live ones its kind lists, then a stored one neither offers,
+	// so an earlier choice still shows.
 	getModels(backend) {
 		let info = this.BACKENDS[backend];
+		// A clarification answered by an agent since removed still asks for its model's name.
 		if (!info) {
 			return [];
 		}
@@ -81,7 +89,7 @@ Object.assign(Zusia, {
 	},
 
 	acpLiveModels(backend) {
-		return this._acpModels[backend];
+		return this.acpModelEntry(backend).models;
 	},
 
 	apiLiveModels(backend) {
@@ -117,8 +125,6 @@ Object.assign(Zusia, {
 		return "Antigravity is not signed in. Run `agy` once in a terminal to sign in.";
 	},
 
-
-
 	async loadAgyModels() {
 		if (Array.isArray(this._agyModels)) {
 			return this._agyModels;
@@ -144,6 +150,27 @@ Object.assign(Zusia, {
 			})();
 		}
 		return this._agyModelsPromise;
+	},
+
+	// Of the CLIs only Antigravity lists its models; Codex's come from Settings.
+	async loadCliModels(backend) {
+		return backend === "agy" ? this.loadAgyModels() : [];
+	},
+
+	// Every kind's live model list through one door, then every chat's controls, so a
+	// model's name replaces its id wherever it shows. Never rejects: an API list that
+	// fails is logged here, an agent keeps its failure for its card and its menu note.
+	async loadLiveModels(backend, { retry = false } = {}) {
+		let { label, kind } = this.BACKENDS[backend];
+		try {
+			await this[this.KINDS[kind].loadModels](backend, { retry });
+		}
+		catch (e) {
+			this.log("Could not list " + label + " models: " + e);
+		}
+		for (let root of this.allRoots()) {
+			this.updateControls(root);
+		}
 	},
 
 	getAppearance() {

@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { loadPlugin, openChat } from "./load-plugin.mjs";
 
 const PREFIX = "extensions.zusia.";
@@ -73,6 +74,52 @@ test("model menu starts with only the current provider expanded", () => {
 	section("Google Antigravity").click();
 	assert.equal(section("Google Antigravity").getAttribute("aria-expanded"), "false", "clicking it again closes it");
 	assert.ok(![...root.querySelectorAll(".zs-menu-item")].some(i => i.textContent.includes("Gemini")), "its models are hidden again");
+});
+
+test("the model menu asks only an open section for its models, whatever the kind", async () => {
+	const { root, plugin } = sidebar({ [PREFIX + "ollama.model"]: "qwen3:4b" });
+	const asked = [];
+	plugin.loadAgyModels = async () => { asked.push("agy"); return []; };
+	plugin.loadAPIModels = async (backend) => { asked.push(backend); return []; };
+	root.querySelector(".zs-model-btn").click();
+	await new Promise(resolve => setTimeout(resolve, 0));
+	assert.deepEqual(asked, [], "folded, Antigravity starts no process and Ollama fetches no list");
+	const section = label => [...root.querySelectorAll(".zs-menu-section")].find(n => n.textContent.includes(label));
+	section("Google Antigravity").click();
+	section("Ollama API").click();
+	assert.deepEqual(asked, ["agy", "ollama"], "each is asked once its section opens");
+	section("Google Antigravity").click();
+	assert.deepEqual(asked, ["agy", "ollama"], "folding asks nothing");
+});
+
+test("an open section carries one note: the program is missing, or why its list failed", () => {
+	const { root, plugin } = sidebar();
+	plugin._agyModels = [];
+	plugin._agyModelsError = "Antigravity is not signed in. Run `agy` once in a terminal to sign in.";
+	root.querySelector(".zs-model-btn").click();
+	const section = label => [...root.querySelectorAll(".zs-menu-section")].find(n => n.textContent.includes(label));
+	section("OpenAI Codex").click();
+	section("Google Antigravity").click();
+	assert.deepEqual([...root.querySelectorAll(".zs-menu-note")].map(n => n.textContent), [
+		"Not installed. " + plugin.commandFixHint("codex"),
+		"Models could not be loaded. Antigravity is not signed in. Run `agy` once in a terminal to sign in.",
+	]);
+	assert.deepEqual([...root.querySelectorAll(".zs-menu-note")].map(n => n.title), [...root.querySelectorAll(".zs-menu-note")].map(n => n.textContent),
+		"a note cut at three lines keeps all of it as its tooltip");
+	assert.match(plugin.commandFixHint("codex"), /full path as Command path/);
+});
+
+// The visual harness (test/harness.html) fakes findBinary, and a stub off its contract
+// shows a menu no reader sees.
+test("the visual harness's missing Codex reads as not installed, as a real missing one does", async () => {
+	const stub = readFileSync(new URL("harness.html", import.meta.url), "utf8").match(/^\tCS\.findBinary = .*$/m);
+	assert.ok(stub, "test/harness.html no longer stubs CS.findBinary on one line");
+	const { root, plugin } = sidebar({ [PREFIX + "backend"]: "codex" });
+	new Function("CS", stub[0])(plugin);
+	await plugin.checkInstalledBackends(root);
+	root.querySelector(".zs-model-btn").click();
+	assert.deepEqual([...root.querySelectorAll(".zs-menu-note")].map(n => n.textContent),
+		["Not installed. " + plugin.commandFixHint("codex")]);
 });
 
 test("effort menu offers the levels the current backend supports", () => {
@@ -285,6 +332,36 @@ test("menus: arrow keys move focus, Home/End jump, Escape closes back to the but
 	key("Escape");
 	assert.equal(root.querySelector(".zs-menu"), null);
 	assert.equal(doc.activeElement, button);
+});
+
+test("the arrow keys reach a folded section, which keeps focus as it opens and as its list arrives", async () => {
+	const { root, window, plugin } = sidebar();
+	let list;
+	plugin.loadAgyModels = () => new Promise((resolve) => {
+		list = () => resolve(plugin._agyModels = [{ id: "gemini-3.1-pro-high", label: "Gemini 3.1 Pro (High)" }]);
+	});
+	await new Promise(resolve => setTimeout(resolve, 0));
+	root._installed = { claude: "/bin/claude", codex: null, agy: "/bin/agy" };
+	root.querySelector(".zs-model-btn").click();
+	await new Promise(resolve => setTimeout(resolve, 0));
+	const doc = root.ownerDocument;
+	const key = k => doc.dispatchEvent(new window.KeyboardEvent("keydown", { key: k, bubbles: true }));
+	const antigravity = () => root.querySelector('.zs-menu-section-toggle[data-menu-key="agy"]');
+	assert.equal(antigravity().getAttribute("role"), "menuitem");
+	for (let i = 0; i < 12 && doc.activeElement !== antigravity(); i++) {
+		key("ArrowDown");
+	}
+	assert.equal(doc.activeElement, antigravity(), "ArrowDown reaches the Antigravity section");
+	// Enter on a focused button clicks it.
+	antigravity().click();
+	assert.equal(antigravity().getAttribute("aria-expanded"), "true");
+	assert.equal(doc.activeElement, antigravity(), "the section keeps focus once it opens");
+	list();
+	await new Promise(resolve => setTimeout(resolve, 0));
+	assert.ok(menuLabels(root).includes("Gemini 3.1 Pro (High)"), "its list came in");
+	assert.equal(doc.activeElement, antigravity(), "and keeps it through the refresh the list brings");
+	key("ArrowDown");
+	assert.equal(doc.activeElement.dataset.menuKey, "agy/", "the next stop is its first model, the default");
 });
 
 test("long model names drop the assistant prefix; the tooltip keeps both", () => {

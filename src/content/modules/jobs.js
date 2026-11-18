@@ -12,15 +12,15 @@ Object.assign(Zusia, {
 	},
 
 	// The assistant that runs memory jobs: the one in use, when it can run with nothing to
-	// read. Codex cannot: its read-only sandbox still reads the whole home folder. An ACP
-	// agent is a program of its own, so its card asks first.
+	// read. Named, never by default: Claude and Antigravity can (backgroundArgs), Codex
+	// cannot, as its read-only sandbox still reads the whole home folder. An ACP agent's own
+	// tools are out of Zusia's sight unless it asks, so its card has to allow it first.
 	jobBackend() {
 		let backend = this.getBackend();
-		let info = this.BACKENDS[backend];
-		if (!info) return null;
-		if (info.kind === "api") return backend === "openai" && !this.getAPIConfig(backend).background ? null : backend;
-		if (info.kind === "acp") return this.acpAgentConfig(backend)?.background ? backend : null;
-		return backend === "codex" ? null : backend;
+		let { kind } = this.BACKENDS[backend];
+		if (kind === "api") return backend === "openai" && !this.getAPIConfig(backend).background ? null : backend;
+		if (kind === "acp") return this.acpAgentConfig(backend)?.background ? backend : null;
+		return backend === "claude" || backend === "agy" ? backend : null;
 	},
 
 	memoryJobsAvailable() {
@@ -142,13 +142,13 @@ Object.assign(Zusia, {
 			{ role: "user", content: prompt }];
 	},
 
-	// One prompt on stdin, no session, in an empty folder. Resolves to {text, error,
-	// rateLimited}; `job`, when given, can stop the call.
+	// Resolves to {text, error, rateLimited}; `job`, when given, can stop the call.
 	async runBackgroundCall(backend, prompt, job = null) {
 		let kind = this.BACKENDS[backend].kind;
 		return this[this.KINDS[kind].background](backend, prompt, job);
 	},
 
+	// API callers may supply a prompt factory receiving the prepared model config.
 	async runApiBackground(backend, prompt, job) {
 		try {
 			let config = this.getAPIConfig(backend);
@@ -167,8 +167,9 @@ Object.assign(Zusia, {
 		finally { if (job) job.proc = null; }
 	},
 
-	// One empty folder per call, a timeout that kills the process, and the folder removed after.
-	// `run` gets the folder and a spawn hook, and returns {text, error, rateLimited}.
+	// A call that hangs is killed at JOB_TIMEOUT_MS so the queue moves on, and its folder is
+	// removed whatever happened. `run` gets the folder and a spawn hook, and returns {text,
+	// error, rateLimited}.
 	async runJob(job, run) {
 		let cwd = await this.makeJobDir();
 		let proc = null;
@@ -191,8 +192,10 @@ Object.assign(Zusia, {
 		};
 		try {
 			let result = await run({ cwd, onSpawn });
+			// A CLI that keeps retrying a rate limit is the usual one to hang, and what it wrote
+			// before the kill says so: the jobs then pause instead of failing the batch.
 			if (timedOut) {
-				return { text: "", error: "no answer within " + Math.round(this.JOB_TIMEOUT_MS / 60000) + " minutes", rateLimited: false };
+				return { text: "", error: "no answer within " + Math.round(this.JOB_TIMEOUT_MS / 60000) + " minutes", rateLimited: result.rateLimited };
 			}
 			return result;
 		}
@@ -212,6 +215,8 @@ Object.assign(Zusia, {
 		}
 	},
 
+	// One prompt on stdin, no session, in an empty folder. A CLI that cannot be found or
+	// started is an error like one that answered nothing, so the failure counts apply.
 	async runCliBackground(backend, prompt, job) {
 		let command;
 		try {
@@ -252,35 +257,15 @@ Object.assign(Zusia, {
 		});
 	},
 
+	// The prompt alone, in a new session in the empty folder: the permission rule then
+	// leaves the agent nothing to read.
 	async runAcpBackground(backend, prompt, job = null) {
 		return this.runJob(job, async ({ cwd, onSpawn }) => {
-			try {
-				let result = await this.runAcp(backend, {
-					ctx: { dir: cwd },
-					files: {},
-					history: [],
-					session: null,
-					question: prompt,
-					raw: true,
-					model: this.getModel(backend),
-					effort: this.getEffort(backend, { deferCapabilities: true }),
-					onProgress: () => {},
-					onSpawn,
-				});
-				let error = result.error || "";
-				if (error) {
-					return { text: "", error, rateLimited: this.isRateLimited(error) };
-				}
-				let text = (result.text || "").trim();
-				if (!text) {
-					return { text: "", error: backend + " returned no text", rateLimited: false };
-				}
-				return { text, error: "", rateLimited: false };
-			}
-			catch (e) {
-				this.logError("running an ACP memory job", e);
-				return { text: "", error: String((e && e.message) || e), rateLimited: this.isRateLimited(e && e.message) };
-			}
+			let { text, error } = await this.acpTurn(backend, {
+				cwd, onSpawn, prompt: () => prompt,
+				model: this.getModel(backend), effort: this.getEffort(backend),
+			});
+			return error ? { text: "", error, rateLimited: this.isRateLimited(error) } : { text, error: "", rateLimited: false };
 		});
 	},
 });

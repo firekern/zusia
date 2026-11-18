@@ -7,6 +7,7 @@
 # Results: test/integration/out/results.json and zotero-*.png, or $OUT if set
 #   HEADED=1 bash test/integration/run.sh   # macOS, with a window: also the reader checks
 #   XPI=1 bash test/integration/run.sh      # the packaged zusia.xpi, after npm run build
+#   ACP=1 bash test/integration/run.sh      # also the real Command Code and OpenCode, signed in
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 repo="$(cd "$here/../.." && pwd)"
@@ -34,6 +35,9 @@ user_pref("extensions.zusia-tester.live", $([ "${LIVE:-0}" = 1 ] && echo true ||
 user_pref("extensions.zusia-tester.acp", $([ "${ACP:-0}" = 1 ] && echo true || echo false));
 user_pref("ui.systemUsesDarkTheme", $([ "${DARK:-0}" = 1 ] && echo 1 || echo 0));
 PREFS
+# Settings lists an agent's models by starting it, and the shipped Command Code would
+# then run under your login. Without ACP=1 no agent is configured; the tester adds a stub.
+[ "${ACP:-0}" = 1 ] || echo 'user_pref("extensions.zusia.acpAgents", "[]");' >> "$base/profile/user.js"
 
 # KEYRING=1 lets this test instance (only) reach the Secret Service keyring,
 # which Antigravity needs for its login inside the Flatpak sandbox.
@@ -70,11 +74,17 @@ fi
 node -e '
 const r = require(process.argv[1]);
 let failed = 0;
+let skipped = 0;
 for (const c of r.checks) {
+	if (c.skipped) {
+		console.log("  – " + c.name + "  (skipped: " + c.skipped + ")");
+		skipped++;
+		continue;
+	}
 	console.log((c.ok ? "  ✔ " : "  ✖ ") + c.name + (c.ok || c.detail === null ? "" : "  → " + JSON.stringify(c.detail)));
 	failed += !c.ok;
 }
 for (const e of r.errors) { console.log("  ERROR " + e); failed++; }
-console.log(failed ? failed + " failed" : "all " + r.checks.length + " checks passed");
+console.log(failed ? failed + " failed" : "all " + (r.checks.length - skipped) + " checks passed" + (skipped ? ", " + skipped + " skipped" : ""));
 process.exit(failed ? 1 : 0);
 ' "$out/results.json"

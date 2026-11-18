@@ -450,7 +450,13 @@
 .zs-history-menu .zs-menu-item {
 	min-height: 36px;
 }
+/* An agent's error can run to a stack trace: three lines, the rest in the tooltip. */
 .zs-menu-note {
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 3;
+	overflow: hidden;
+	overflow-wrap: anywhere;
 	padding: 4px 8px 6px;
 	font-size: 0.85em;
 	color: var(--zs-muted);

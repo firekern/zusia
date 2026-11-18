@@ -223,12 +223,18 @@ Object.assign(Zusia, {
 				menu.style.bottom = "";
 			}
 		};
+		// Rebuilding drops the focused entry, a section toggle just pressed above all, and with
+		// it the keyboard's place; its key finds the entry that replaces it.
 		menu.refresh = () => {
 			let top = menu.scrollTop;
+			let focused = menu.contains(doc.activeElement) ? doc.activeElement.dataset.menuKey : undefined;
 			menu.textContent = "";
 			build(menu);
 			position();
 			menu.scrollTop = top;
+			if (focused !== undefined) {
+				[...menu.querySelectorAll("[data-menu-key]")].find(node => node.dataset.menuKey === focused)?.focus();
+			}
 		};
 		menu.refresh();
 
@@ -237,7 +243,9 @@ Object.assign(Zusia, {
 				this.closeMenu(root);
 			}
 		};
-		// Roving focus, as in Beaver's menus: arrows move, Home/End jump, Tab closes.
+		// Roving focus, as in Beaver's menus: arrows move, Home/End jump, Tab closes. A section
+		// that folds is one of the stops, or the keyboard could never open it.
+		let stops = ".zs-menu-item:not(:disabled), .zs-menu-section-toggle";
 		let onKey = (event) => {
 			if (event.key === "Escape") {
 				event.preventDefault();
@@ -249,7 +257,7 @@ Object.assign(Zusia, {
 				this.closeMenu(root);
 				return;
 			}
-			let items = [...menu.querySelectorAll(".zs-menu-item:not(:disabled)")];
+			let items = [...menu.querySelectorAll(stops)];
 			if (!items.length || !["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
 				return;
 			}
@@ -268,27 +276,34 @@ Object.assign(Zusia, {
 			doc.removeEventListener("keydown", onKey, true);
 		};
 		win.setTimeout(() => (menu.querySelector('.zs-menu-item[aria-checked="true"]:not(:disabled)')
-			|| menu.querySelector(".zs-menu-item:not(:disabled)"))?.focus(), 0);
+			|| menu.querySelector(stops))?.focus(), 0);
 		return menu;
 	},
 
-	menuSection(doc, menu, label, { collapsible = false, expanded = true, onToggle = null } = {}) {
-		let section = collapsible
-			? this.el(doc, "button", "zs-menu-section zs-menu-section-toggle", label)
-			: this.el(doc, "div", "zs-menu-section", label);
-		if (collapsible) {
-			section.type = "button";
-			section.setAttribute("aria-expanded", String(!!expanded));
-			section.appendChild(this.svgIcon(doc, "chevron", "zs-menu-chevron"));
-			section.addEventListener("click", () => onToggle && onToggle());
+	// A heading. Given `toggle`, { key, expanded, onToggle }, it folds the entries under it and
+	// is itself a menu item, which a refresh keeps focused by its key.
+	menuSection(doc, menu, label, toggle) {
+		if (!toggle) {
+			return menu.appendChild(this.el(doc, "div", "zs-menu-section", label));
 		}
+		let section = this.el(doc, "button", "zs-menu-section zs-menu-section-toggle", label);
+		section.type = "button";
+		section.setAttribute("role", "menuitem");
+		section.setAttribute("aria-expanded", String(toggle.expanded));
+		section.dataset.menuKey = toggle.key;
+		section.appendChild(this.svgIcon(doc, "chevron", "zs-menu-chevron"));
+		section.addEventListener("click", toggle.onToggle);
 		menu.appendChild(section);
 		return section;
 	},
 
-	menuItem(doc, menu, { label, desc, checked, disabled, onSelect }) {
+	// `key`, when given, keeps the item focused across a refresh.
+	menuItem(doc, menu, { key, label, desc, checked, disabled, onSelect }) {
 		let item = this.el(doc, "button", "zs-menu-item");
 		item.type = "button";
+		if (key !== undefined) {
+			item.dataset.menuKey = key;
+		}
 		item.setAttribute("role", checked === undefined ? "menuitem" : "menuitemradio");
 		if (checked !== undefined) {
 			item.setAttribute("aria-checked", String(!!checked));

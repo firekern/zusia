@@ -1,8 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync, readdirSync } from "node:fs";
 import { loadPlugin } from "./load-plugin.mjs";
 
 const PREFIX = "extensions.zusia.";
+const source = path => readFileSync(new URL("../" + path, import.meta.url), "utf8");
 
 function pane(prefs = {}) {
 	const env = loadPlugin({ prefs });
@@ -23,6 +25,21 @@ test("settings pane renders its cards", () => {
 	assert.deepEqual([...container.querySelectorAll(".zs-card-title")].map(h => h.textContent),
 		["Assistants", "Chat", "Appearance", "Behaviour", "Troubleshooting"]);
 	assert.equal(container.querySelectorAll(".zs-agent").length, 7);
+});
+
+test("Answer with lists the CLIs, then the ACP agents, then the APIs, also after an Add", () => {
+	const { container, window } = pane();
+	const assistants = card(container, "Assistants");
+	const answerWith = () => [...assistants.querySelector(".zs-select").options].map(o => o.value);
+	assert.deepEqual(answerWith(), ["claude", "codex", "agy", "acp:commandcode", "ollama", "unsloth", "openai"]);
+	const form = assistants.querySelector(".zs-acp-add");
+	const [name, command] = form.querySelectorAll("input");
+	change(window, name, "OpenCode");
+	change(window, command, "opencode");
+	form.querySelector(".zs-acp-add-button").click();
+	assert.deepEqual(answerWith(), ["claude", "codex", "agy", "acp:commandcode", "acp:opencode", "ollama", "unsloth", "openai"]);
+	assert.deepEqual([...assistants.querySelectorAll(".zs-agent")].map(a => a.dataset.backend), answerWith(),
+		"in the order of the cards below it");
 });
 
 test("assistant, default model and effort are saved per backend", () => {
@@ -329,25 +346,6 @@ test("clarifications file: records are appended to clarifications.json in the pa
 	assert.deepEqual([...await plugin.loadClarifications("/d")], [], "a damaged file does not break the panel");
 });
 
-test("the ACP registry fills the add form", async () => {
-	const env = pane();
-	const assistants = card(env.container, "Assistants");
-	env.window.Zotero.HTTP.request = async () => ({ response: { agents: [
-		{ id: "gemini", name: "Gemini CLI", description: "Google",
-			distribution: { npx: { package: "@google/gemini-cli@1", args: ["--acp"] } } },
-	] } });
-	assistants.querySelector(".zs-acp-browse").click();
-	await new Promise(resolve => setTimeout(resolve, 0));
-	const picker = assistants.querySelector(".zs-acp-registry-choice .zs-select");
-	assert.ok(picker, "the registry picker appears");
-	assert.deepEqual([...picker.options].map(o => o.value), ["gemini"]);
-	assistants.querySelector(".zs-acp-use").click();
-	const inputs = assistants.querySelectorAll(".zs-acp-add input");
-	assert.equal(inputs[0].value, "Gemini CLI");
-	assert.equal(inputs[1].value, "npx");
-	assert.equal(assistants.querySelector(".zs-acp-add textarea").value, "@google/gemini-cli@1\n--acp");
-});
-
 test("an ACP agent can be asked to sign in from Settings", async () => {
 	const { container, window, plugin } = pane();
 	const assistants = card(container, "Assistants");
@@ -362,10 +360,42 @@ test("an ACP agent can be asked to sign in from Settings", async () => {
 	let asked = null;
 	plugin.acpAuthenticate = async (backend) => {
 		asked = backend;
-		return { methods: [{ name: "Google" }, { name: "API key" }], method: { name: "Google" }, result: {} };
+		return { methods: [{ id: "oauth", name: "Google" }, { id: "key", name: "API key" }] };
 	};
 	agent.querySelector(".zs-acp-signin").click();
 	await new Promise(resolve => setTimeout(resolve, 0));
 	assert.equal(asked, "acp:opencode");
-	assert.match(agent.querySelector(".zs-acp-signin-wrap .zs-row-hint").textContent, /API key/);
+	const note = agent.querySelector(".zs-acp-signin-wrap .zs-row-hint");
+	assert.equal(note.textContent, "Sign-in step sent to OpenCode.", "no word of methods the card cannot pick");
+	assert.equal(note.getAttribute("role"), "status", "a screen reader hears how it went");
+});
+
+test("Settings' stylesheet styles only classes the modules set", () => {
+	// A rule for a control that moved to another branch, or was never built, is dead weight.
+	const modules = readdirSync(new URL("../src/content/modules/", import.meta.url))
+		.map(name => source("src/content/modules/" + name)).join("\n");
+	const styled = new Set([...source("src/content/styles/prefs.css").matchAll(/\.(zs-[\w-]+)/g)].map(m => m[1]));
+	assert.deepEqual([...styled].filter(name => !new RegExp("[\"' ]" + name + "[\"' ]").test(modules)), []);
+});
+
+test("a stylesheet reads the chat's red only inside the error card that declares it", () => {
+	// Elsewhere --zs-red is unset, so its fallback would paint a red the chat never shows.
+	for (const name of readdirSync(new URL("../src/content/styles/", import.meta.url))) {
+		for (const [, selector, body] of source("src/content/styles/" + name).matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+			if (body.includes("var(--zs-red")) {
+				assert.match(selector, /\.zs-error\b/, name + ": " + selector.trim());
+			}
+		}
+	}
+});
+
+test("an agent's error is cut at three lines in the menu and on its card, wrapping anywhere", () => {
+	// A stack trace or a long path has no spaces to break at, and would push the menu wide.
+	const rule = (file, selector) => source("src/content/styles/" + file).match(new RegExp("\\n" + selector.replace(".", "\\.") + " \\{([^}]*)\\}"))[1];
+	for (const [file, selector] of [["composer.css", ".zs-menu-note"], ["prefs.css", ".zs-acp-model-error"]]) {
+		const body = rule(file, selector);
+		for (const declaration of ["display: -webkit-box", "-webkit-box-orient: vertical", "-webkit-line-clamp: 3", "overflow: hidden", "overflow-wrap: anywhere"]) {
+			assert.ok(body.includes(declaration + ";"), selector + " has " + declaration);
+		}
+	}
 });

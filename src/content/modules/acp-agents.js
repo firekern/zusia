@@ -4,47 +4,6 @@ Object.assign(Zusia, {
 
 	MAX_ACP_AGENTS: 20,
 	ACP_AGENT_ID: /^[a-z0-9][a-z0-9-]{0,39}$/,
-	ACP_REGISTRY_URL: "https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json",
-	acpPlatform() {
-		let os = Zotero.isWin ? "windows" : Zotero.isMac ? "darwin" : "linux";
-		let abi = (Services.appinfo && Services.appinfo.XPCOMABI) || "";
-		return os + "-" + (/aarch64|arm64/i.test(abi) ? "aarch64" : "x86_64");
-	},
-	acpRegistryPreset(agent, platform = this.acpPlatform()) {
-		if (!agent || typeof agent !== "object" || !agent.distribution) {
-			return null;
-		}
-		let dist = agent.distribution;
-		let base = { id: agent.id, name: agent.name, description: agent.description || "" };
-		for (let runner of ["npx", "uvx"]) {
-			let item = dist[runner];
-			if (item && item.package) {
-				return {
-					...base,
-					command: runner,
-					args: [item.package].concat(Array.isArray(item.args) ? item.args : []),
-					source: runner,
-				};
-			}
-		}
-		let binary = dist.binary && dist.binary[platform];
-		if (binary && binary.archive) {
-			return {
-				...base,
-				command: "",
-				args: Array.isArray(binary.args) ? binary.args.slice() : [],
-				source: "binary",
-				archive: binary.archive,
-				cmd: binary.cmd || "",
-			};
-		}
-		return null;
-	},
-	acpRegistryPresets(payload) {
-		let agents = payload && Array.isArray(payload.agents) ? payload.agents : [];
-		return agents.map(agent => this.acpRegistryPreset(agent)).filter(Boolean);
-	},
-	_acpAgentsLoaded: false,
 
 	acpAgents() {
 		let stored = this.getJSONPref("acpAgents", null);
@@ -76,10 +35,10 @@ Object.assign(Zusia, {
 	},
 
 	saveAcpAgentConfigs(configs) {
-		this.setPref("acpAgents", JSON.stringify(configs || []));
+		this.setPref("acpAgents", JSON.stringify(configs));
 	},
 
-	acpSlug(name, taken) {
+	acpSlug(name, taken = new Set()) {
 		let base = String(name || "")
 			.normalize("NFKD")
 			.replace(/\p{M}+/gu, "")
@@ -88,9 +47,8 @@ Object.assign(Zusia, {
 			.replace(/^-+|-+$/g, "")
 			.slice(0, 40)
 			.replace(/-+$/g, "") || "agent";
-		let ids = taken && typeof taken.has === "function" ? taken : new Set(Array.isArray(taken) ? taken : []);
 		let id = base;
-		for (let n = 2; ids.has(id); n++) {
+		for (let n = 2; taken.has(id); n++) {
 			let suffix = "-" + n;
 			id = base.slice(0, 40 - suffix.length).replace(/-+$/g, "") + suffix;
 		}
@@ -109,7 +67,8 @@ Object.assign(Zusia, {
 		if (/[\u0000-\u001f\u007f-\u009f]/.test(name)) {
 			return { error: "The agent's name cannot contain line breaks or control characters." };
 		}
-		let command = typeof agent.command === "string" ? agent.command.trim() : "";
+		// Explorer's "Copy as path" wraps the path in quotes, which no file name starts with.
+		let command = typeof agent.command === "string" ? agent.command.trim().replace(/^(["'])(.*)\1$/, "$2").trim() : "";
 		if (!command || command.length > 500) {
 			return { error: "Give the agent a command of 1 to 500 characters." };
 		}
@@ -171,7 +130,7 @@ Object.assign(Zusia, {
 			fullName: config.name,
 			command: config.command,
 			kind: "acp",
-			acpArgs: Array.isArray(config.args) ? config.args.slice() : [],
+			acpArgs: config.args,
 			models: [{ id: "", label: "Default", desc: "The agent's default model" }],
 			efforts: ["", "low", "medium", "high", "max"],
 			images: true,
@@ -181,27 +140,24 @@ Object.assign(Zusia, {
 		return key;
 	},
 
+	// Once, from init(): an agent added later registers itself.
 	loadAcpAgents() {
-		if (this._acpAgentsLoaded) {
-			return;
-		}
-		this._acpAgentsLoaded = true;
 		try {
 			let configs = this.acpAgents();
 			for (let config of configs) {
 				this.registerAcpAgent(config);
 			}
-			this.log("Custom ACP agents loaded: " + configs.length);
+			this.log("ACP agents loaded: " + configs.length);
 		}
 		catch (e) {
-			this.log("Could not load the custom ACP agents: " + e);
+			this.log("Could not load the ACP agents: " + e);
 		}
 	},
 
 	addAcpAgent({ name, command, args } = {}) {
 		let configs = this.acpAgents();
 		if (configs.length >= this.MAX_ACP_AGENTS) {
-			return { error: "Zusia runs at most " + this.MAX_ACP_AGENTS + " custom ACP agents. Remove one before adding another." };
+			return { error: "Zusia runs at most " + this.MAX_ACP_AGENTS + " ACP agents. Remove one before adding another." };
 		}
 		let wanted = typeof name === "string" ? name.trim() : "";
 		if (wanted && configs.some(config => config.name.toLowerCase() === wanted.toLowerCase())) {
@@ -215,7 +171,7 @@ Object.assign(Zusia, {
 		configs.push(config);
 		this.saveAcpAgentConfigs(configs);
 		let key = this.registerAcpAgent(config);
-		this.loadAcpModels(key).catch(() => {});
+		this.loadLiveModels(key);
 		return { key, config };
 	},
 
@@ -229,8 +185,6 @@ Object.assign(Zusia, {
 		delete this.BACKENDS[backend];
 		delete this.BACKEND_ICONS[backend];
 		delete this._acpModels[backend];
-		delete this._acpModelPromises[backend];
-		delete this._acpModelErrors[backend];
 		this.unwatchBackendPrefs(backend);
 		for (let name of ["model", "effort", "api"]) {
 			Zotero.Prefs.clear(this.PREF_PREFIX + backend + "." + name, true);
@@ -241,15 +195,9 @@ Object.assign(Zusia, {
 		return true;
 	},
 
+	// Quoted only where a space would split it, and never escaped, so a Windows path reads
+	// as the reader typed it and can be pasted back.
 	acpCommandLine(config) {
-		if (!config) {
-			return "";
-		}
-		let show = (part) => {
-			let text = String(part === undefined || part === null ? "" : part);
-			return /\s/.test(text) ? JSON.stringify(text) : text;
-		};
-		let args = Array.isArray(config.args) ? config.args : [];
-		return [config.command].concat(args).map(show).join(" ");
+		return [config.command, ...config.args].map(part => (/\s/.test(part) ? '"' + part + '"' : part)).join(" ");
 	},
 });

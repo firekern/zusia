@@ -2,27 +2,47 @@
 
 Object.assign(Zusia, {
 
-	acpPermissionReply(toolCall, options) {
-		// The agent reads the paper folder and nothing else: no network, no change, no command.
-		let kind = String((toolCall && toolCall.kind) || "").toLowerCase();
-		let wanted = ["read", "search", "think"].includes(kind) ? "allow" : "reject";
-		let best = null;
-		let bestRank = -1;
-		for (let option of options || []) {
-			let optionKind = String((option && option.kind) || "").toLowerCase();
-			if (!optionKind.startsWith(wanted)) {
-				continue;
-			}
-			let rank = optionKind === wanted + "_always" ? 2 : optionKind === wanted + "_once" ? 1 : 0;
-			if (rank > bestRank) {
-				bestRank = rank;
-				best = option;
-			}
+	// Zusia answers the agent's permission prompts itself. Thinking is allowed, and so is a
+	// read or a search whose every named path lies in the folder; anything else (a change,
+	// a command, the network, a path elsewhere or none at all) is refused. This binds only
+	// an agent that asks: one that reads with its own tools unasked is beyond Zusia's reach,
+	// which is why an agent runs memory jobs only once its card allows it.
+	acpPermissionReply(toolCall, options, dir) {
+		let raw = toolCall.rawInput || {};
+		let named = list => list.filter(path => typeof path === "string" && path);
+		let paths = named((Array.isArray(toolCall.locations) ? toolCall.locations : []).map(location => location && location.path));
+		if (!paths.length) {
+			paths = named([raw.path, raw.file_path, raw.AbsolutePath]);
 		}
-		if (!best || !best.optionId) {
+		let allow = toolCall.kind === "think" ||
+			(["read", "search"].includes(toolCall.kind) && paths.length > 0 && paths.every(path => this.acpInside(dir, path)));
+		let find = kind => options.find(option => option && option.kind === kind && option.optionId);
+		// Never allow_always: the agent would remember it and skip this check for later paths.
+		let pick = (allow && find("allow_once")) || find("reject_once") || find("reject_always");
+		if (!pick) {
 			return { outcome: { outcome: "cancelled" } };
 		}
-		return { outcome: { outcome: "selected", optionId: best.optionId } };
+		return { outcome: { outcome: "selected", optionId: pick.optionId } };
+	},
+
+	// The native full path `path` names when it is `dir` or lies under it, else null. Gecko on
+	// Windows takes only "\" and Windows compares names without case; elsewhere only "/"
+	// separates, so a "\" is part of a name.
+	acpInside(dir, path) {
+		let win = Zotero.isWin;
+		let sep = win ? "\\" : "/";
+		let native = text => (win ? text.replace(/\//g, "\\") : text);
+		let fold = text => (win ? text.toLowerCase() : text);
+		let base = native(dir).replace(win ? /\\+$/ : /\/+$/, "");
+		let given = native(path);
+		if (given.split(sep).includes("..")) {
+			return null;
+		}
+		// A drive, even "C:x", or a leading "\" (a \\server share among them) is never
+		// joined onto the folder.
+		let absolute = win ? /^([A-Za-z]:|\\)/.test(given) : given.startsWith("/");
+		let full = absolute ? given : OS.Path.join(base, given);
+		return fold(full) === fold(base) || fold(full).startsWith(fold(base) + sep) ? full : null;
 	},
 
 	acpStep({ title, kind, rawInput } = {}) {
@@ -53,22 +73,15 @@ Object.assign(Zusia, {
 			error.code = code;
 			return error;
 		};
-		if (!path) {
+		if (typeof path !== "string" || !path) {
 			throw fail(-32602, "fs/read_text_file needs a path");
 		}
-		let base = String(dir || "").replace(/[\\/]+$/, "");
-		let outside = () => fail(-32001, "Zusia only reads inside the paper folder: " + path);
-		if (String(path).split(/[\\/]/).includes("..")) {
-			throw outside();
-		}
-		let absolute = /^([\\/]|[A-Za-z]:[\\/])/.test(path);
-		let full = absolute ? String(path) : OS.Path.join(dir, path);
-		if (!(full === base || full.startsWith(base + "/") || full.startsWith(base + "\\"))) {
-			throw outside();
+		let full = this.acpInside(dir, path);
+		if (!full) {
+			throw fail(-32001, "Zusia only reads inside the paper folder: " + path);
 		}
 
 		let text = await Zotero.File.getContentsAsync(full);
-		text = typeof text === "string" ? text : String(text || "");
 		let lines = text.split("\n");
 		let start = Math.max(1, Math.floor(Number(line) || 1)) - 1;
 		let count = Math.floor(Number(limit) || 0);
@@ -81,25 +94,36 @@ Object.assign(Zusia, {
 
 	async acpPromptBlocks(text, images) {
 		let blocks = [{ type: "text", text }];
-		for (let path of images || []) {
+		for (let path of images) {
 			let { data, mimeType } = await this.imageBase64(path);
 			blocks.push({ type: "image", data, mimeType });
 		}
 		return blocks;
 	},
 
+	// The agent's option for "model" or "effort": found by the spec's category (a reasoning
+	// level is "thought_level"), or by the id agents used before there were categories.
+	acpConfigOption(configOptions, which) {
+		let category = which === "effort" ? "thought_level" : which;
+		return (Array.isArray(configOptions) ? configOptions : []).find(o => o && (o.category === category || o.id === which)) || null;
+	},
+
+	// A select's values, flat: the spec lets an agent group them as { group, name, options }.
+	acpSelectValues(option) {
+		return (Array.isArray(option.options) ? option.options : [])
+			.flatMap(o => (o && Array.isArray(o.options) ? o.options : [o]))
+			.filter(o => o && o.value !== undefined);
+	},
+
 	acpModelChoices(configOptions) {
-		let option = (configOptions || []).find(o => o && (o.category === "model" || o.id === "model"));
-		if (!option || !Array.isArray(option.options)) {
-			return [];
-		}
-		return option.options
-			.filter(o => o && o.value !== undefined)
-			.map(o => ({ id: o.value, label: o.name || o.value, desc: o.description || "" }));
+		let option = this.acpConfigOption(configOptions, "model");
+		return option
+			? this.acpSelectValues(option).map(o => ({ id: o.value, label: o.name || o.value, desc: o.description || "" }))
+			: [];
 	},
 
 	acpArgs(backend) {
-		return this.BACKENDS[backend].acpArgs.slice();
+		return this.BACKENDS[backend].acpArgs;
 	},
 
 	acpInitialize(connection) {
@@ -110,192 +134,210 @@ Object.assign(Zusia, {
 		});
 	},
 
-	// One agent process for one exchange: find it, start it, say hello, and close it whatever happens.
-	async withAcpConnection(backend, cwd, exchange) {
+	// Each exchange starts the agent afresh and closes it whatever happens, so no agent
+	// outlives the question, the sign-in or the model list that needed it.
+	async withAcpConnection(backend, cwd, { onSpawn, onNotification, onRequest, timeoutMs = 0 }, exchange) {
+		let label = this.BACKENDS[backend].label;
 		let connection = null;
+		let done = false;
+		let timedOut = false;
 		try {
 			let command = await this.findBinary(backend);
 			let proc = await this.spawnAgent(command, this.acpArgs(backend), cwd);
-			connection = this.createAcpConnection(proc);
+			if (onSpawn) {
+				onSpawn(proc);
+			}
+			connection = this.createAcpConnection(proc, { label, onNotification, onRequest });
+			if (timeoutMs) {
+				// Closing kills the agent and rejects what it still owes, which ends the exchange.
+				Zotero.Promise.delay(timeoutMs).then(() => {
+					if (!done) {
+						timedOut = true;
+						connection.close();
+					}
+				});
+			}
 			let hello = await this.acpInitialize(connection);
 			return await exchange(connection, hello);
 		}
+		catch (e) {
+			if (timedOut) {
+				throw new Error(label + " did not answer within " + Math.round(timeoutMs / 1000) + " s.", { cause: e });
+			}
+			throw e;
+		}
 		finally {
+			done = true;
 			if (connection) {
 				await connection.close();
 			}
 		}
 	},
 
-	// A failure is kept until the reader asks again from the card, so opening the menu twice
-	// does not start an agent twice, and an npx agent is not downloaded again.
-	async loadAcpModels(backend, { retry = false } = {}) {
-		if (Array.isArray(this._acpModels[backend])) {
-			return this._acpModels[backend];
-		}
-		if (this._acpModelPromises[backend]) {
-			return this._acpModelPromises[backend];
-		}
-		if (!retry && this._acpModelErrors[backend]) {
-			return [];
-		}
-		delete this._acpModelErrors[backend];
-		this._acpModelPromises[backend] = (async () => {
-			try {
-				let opened = await this.withAcpConnection(backend, this.getDataDir(), connection =>
-					connection.request("session/new", { cwd: this.getDataDir(), mcpServers: [] }));
-				if (!this.BACKENDS[backend]) {
-					return [];
-				}
-				this.rememberAcpConfig(backend, opened.configOptions);
-				if (!Array.isArray(this._acpModels[backend])) {
-					this._acpModels[backend] = [];
-				}
-				this.refreshAllSidebars();
-				return this._acpModels[backend];
-			}
-			catch (e) {
-				if (this.BACKENDS[backend]) {
-					this._acpModelErrors[backend] = String((e && e.message) || e);
-				}
-				this.log("Could not list " + (this.BACKENDS[backend] ? this.BACKENDS[backend].label : backend) + " models: " + e);
-				return [];
-			}
-			finally {
-				delete this._acpModelPromises[backend];
-			}
-		})();
-		return this._acpModelPromises[backend];
+	// An agent's models: null until it has listed them, then the list; why the last listing
+	// failed; and the listing in flight.
+	acpModelEntry(backend) {
+		return this._acpModels[backend] ??= { models: null, error: "", promise: null };
 	},
 
+	// A failure is kept until the reader asks again from the card, so opening the menu twice
+	// does not start an agent twice, and an npx agent is not downloaded again. Resolves to
+	// the list, empty when it failed, and never rejects.
+	loadAcpModels(backend, { retry = false } = {}) {
+		let entry = this.acpModelEntry(backend);
+		if (entry.promise) {
+			return entry.promise;
+		}
+		if (entry.models || (entry.error && !retry)) {
+			return Promise.resolve(entry.models || []);
+		}
+		let label = this.BACKENDS[backend].label;
+		entry.error = "";
+		entry.promise = (async () => {
+			try {
+				let opened = await this.withAcpConnection(backend, this.getDataDir(), { timeoutMs: this.ACP_MODELS_TIMEOUT_MS }, connection =>
+					connection.request("session/new", { cwd: this.getDataDir(), mcpServers: [] }));
+				this.rememberAcpConfig(backend, opened.configOptions);
+				// Listed, even when the agent offers no choice of model.
+				entry.models = entry.models || [];
+			}
+			catch (e) {
+				entry.error = e.message;
+				this.log("Could not list " + label + " models: " + e);
+			}
+			finally {
+				entry.promise = null;
+			}
+			return entry.models || [];
+		})();
+		return entry.promise;
+	},
+
+	// Resolves to {methods} once the agent took the first sign-in method, or {error, methods};
+	// never rejects.
 	async acpAuthenticate(backend) {
 		try {
-			return await this.withAcpConnection(backend, this.getDataDir(), async (connection, hello) => {
+			return await this.withAcpConnection(backend, this.getDataDir(), {}, async (connection, hello) => {
 				let methods = hello.authMethods || [];
 				if (!methods.length) {
 					return { error: "This agent has no ACP sign-in methods. Sign in with its own CLI in a terminal.", methods: [] };
 				}
-				let method = methods[0];
 				try {
-					let result = await connection.request("authenticate", { methodId: method.id });
-					return { method, methods, result };
+					await connection.request("authenticate", { methodId: methods[0].id });
+					return { methods };
 				}
 				catch (e) {
-					return { error: e.message, methods, method };
+					return { error: e.message, methods };
 				}
 			});
 		}
 		catch (e) {
-			return { error: String((e && e.message) || e), methods: [] };
+			return { error: e.message, methods: [] };
 		}
 	},
-	async runAcp(backend, request) {
-		let { ctx, onProgress, onSpawn } = request;
-		let label = this.BACKENDS[backend].label;
-		let command = await this.findBinary(backend);
-		let proc = await this.spawnAgent(command, this.acpArgs(backend), ctx.dir);
-		if (onSpawn) {
-			onSpawn(proc);
-		}
 
-		let state = { text: "", narration: "", thinking: false, thoughtAt: 0, tools: new Map(), emitted: new Set() };
-		// Only the prompt produces updates worth reading; a session/load or a config change does not.
-		let onUpdate = null;
-		let connection = this.createAcpConnection(proc, {
-			onNotification: (method, params) => {
-				if (method === "session/update" && onUpdate && params && params.update) {
-					onUpdate(params.update);
-				}
-			},
-			onRequest: (method, params) => this.acpRequest(method, params, ctx.dir, label),
+	// A chat question. A resumed session already holds the paper and the instructions, so it
+	// gets the question alone; a new one gets the whole prompt with the chat so far.
+	runAcp(backend, request) {
+		return this.acpTurn(backend, {
+			...request,
+			cwd: request.ctx.dir,
+			prompt: resumed => (resumed ? this.questionPrompt(request) : this.sessionPrompt({ ...request, session: null })),
 		});
+	},
 
+	// One prompt, `prompt(resumed)`, through a fresh agent process: `session` resumed when the
+	// agent can load it, else a new one, the model and effort applied, and the answer streamed
+	// to onProgress. Resolves to {text, error, sessionId, partialText, truncated, resumeFailed},
+	// with a sessionId only from an agent that can load it again.
+	async acpTurn(backend, { cwd, prompt, session = null, images = [], model, effort, onProgress = () => {}, onSpawn }) {
+		let label = this.BACKENDS[backend].label;
+		let state = { text: "", narration: "", thinking: false, thoughtAt: 0, tools: new Map(), emitted: new Set() };
+		// Only the prompt produces updates worth reading; the turns a session/load replays and
+		// a config change do not.
+		let onUpdate = null;
 		let sessionId = null;
+		let resumable = false;
 		let resumed = false;
+		// Only a session the agent can load again is worth keeping: ask() would otherwise take
+		// the next question for a follow-up and record no instructions for what it sends.
+		let kept = () => (resumable && sessionId ? { sessionId } : {});
 		try {
-			let hello = await this.acpInitialize(connection);
-			if (request.images && request.images.length &&
-				!(hello.agentCapabilities && hello.agentCapabilities.promptCapabilities && hello.agentCapabilities.promptCapabilities.image)) {
-				return { text: "", error: label + " does not accept images. Remove the attachment or switch assistant." };
-			}
-
-			let configOptions = null;
-			if (request.session && hello.agentCapabilities && hello.agentCapabilities.loadSession) {
-				try {
-					let loaded = await connection.request("session/load", {
-						sessionId: request.session.id, cwd: ctx.dir, mcpServers: [],
-					});
-					sessionId = request.session.id;
-					configOptions = loaded.configOptions || null;
-					resumed = true;
-					this.log("acp: session " + sessionId + " resumed");
-				}
-				catch (e) {
-					let help = this.acpSignInHelp(backend, e.message);
-					if (help) {
-						return { text: "", error: help, sessionId: request.session.id };
+			return await this.withAcpConnection(backend, cwd, {
+				onSpawn,
+				onNotification: (method, params) => {
+					if (method === "session/update" && onUpdate && params && params.update) {
+						onUpdate(params.update);
 					}
-					this.log("acp: session " + request.session.id + " could not be loaded (" + e.message + ")");
-					return { text: "", error: e.message, sessionId: request.session.id, resumeFailed: true };
+				},
+				onRequest: (method, params) => this.acpRequest(method, params, cwd, label),
+			}, async (connection, hello) => {
+				let capabilities = hello.agentCapabilities || {};
+				resumable = !!capabilities.loadSession;
+				if (images.length && !(capabilities.promptCapabilities && capabilities.promptCapabilities.image)) {
+					return { text: "", error: label + " does not accept images. Remove the attachment or switch assistant." };
 				}
-			}
-			if (!sessionId) {
-				let opened;
-				try {
-					opened = await connection.request("session/new", { cwd: ctx.dir, mcpServers: [] });
+
+				let configOptions = null;
+				if (session && resumable) {
+					try {
+						let loaded = await connection.request("session/load", { sessionId: session.id, cwd, mcpServers: [] });
+						sessionId = session.id;
+						configOptions = loaded.configOptions || null;
+						resumed = true;
+						this.log("acp: session " + sessionId + " resumed");
+					}
+					catch (e) {
+						let help = this.acpSignInHelp(label, e.message);
+						if (help) {
+							return { text: "", error: help };
+						}
+						this.log("acp: session " + session.id + " could not be loaded (" + e.message + ")");
+						return { text: "", error: e.message, resumeFailed: true };
+					}
 				}
-				catch (e) {
-					return { text: "", error: this.acpSignInHelp(backend, e.message) || e.message };
+				if (!sessionId) {
+					let opened;
+					try {
+						opened = await connection.request("session/new", { cwd, mcpServers: [] });
+					}
+					catch (e) {
+						return { text: "", error: this.acpSignInHelp(label, e.message) || e.message };
+					}
+					sessionId = opened.sessionId;
+					configOptions = opened.configOptions || null;
 				}
-				sessionId = opened.sessionId;
-				configOptions = opened.configOptions || null;
-			}
 
-			this.rememberAcpConfig(backend, configOptions);
-			let refused = await this.applyAcpOptions(connection, sessionId, configOptions, request.model, request.effort, label);
-			if (refused) {
-				return { text: "", error: refused, sessionId };
-			}
+				this.rememberAcpConfig(backend, configOptions);
+				let refused = await this.applyAcpOptions(connection, sessionId, configOptions, model, effort, label);
+				if (refused) {
+					return { text: "", error: refused, ...kept() };
+				}
 
-			let prompt = request.raw
-				? request.question
-				: resumed
-					? this.questionPrompt(request)
-					: this.sessionPrompt(Object.assign({}, request, { session: null }));
-			let blocks = await this.acpPromptBlocks(prompt, request.images);
-			onUpdate = update => this.acpProgress(update, state, onProgress);
-			let answer = await connection.request("session/prompt", { sessionId, prompt: blocks });
-			onUpdate = null;
-			this.flushAcpTools(state, onProgress);
+				let blocks = await this.acpPromptBlocks(prompt(resumed), images);
+				onUpdate = update => this.acpProgress(update, state, onProgress);
+				let answer = await connection.request("session/prompt", { sessionId, prompt: blocks });
+				onUpdate = null;
+				this.flushAcpTools(state, onProgress);
 
-			let text = (state.text || state.narration).trim();
-			if (answer.stopReason === "cancelled") {
-				return { text: "", error: label + " stopped the answer.", sessionId, partialText: text };
-			}
-			if (!text) {
-				return { text: "", error: answer.stopReason === "refusal" ? label + " declined to answer." : label + " returned no text.", sessionId };
-			}
-			return { text, sessionId, truncated: answer.stopReason === "max_tokens" };
+				let text = (state.text || state.narration).trim();
+				if (!text) {
+					return { text: "", error: answer.stopReason === "refusal" ? label + " declined to answer." : label + " returned no text.", ...kept() };
+				}
+				return { text, ...kept(), truncated: answer.stopReason === "max_tokens" };
+			});
 		}
 		catch (e) {
 			onUpdate = null;
-			let { stderr, exitCode } = await connection.close();
 			let partialText = (state.text || state.narration).trim();
-			let help = this.acpSignInHelp(backend, e.message);
+			let help = this.acpSignInHelp(label, e.message);
 			if (help) {
-				return { text: "", error: help, sessionId };
+				return { text: "", error: help, ...kept() };
 			}
 			if (!e.acpClosed) {
 				this.logError(label + " ACP", e);
 			}
-			let why = exitCode === null ? "closed its output" : "exited with code " + exitCode;
-			let error = e.acpClosed
-				? label + " " + why + (stderr.trim() ? ": " + stderr.trim().slice(-1000) : ".")
-				: (e.message || label + " ACP failed.");
-			return { text: "", error, sessionId, partialText, resumeFailed: resumed && !partialText };
-		}
-		finally {
-			await connection.close();
+			return { text: "", error: e.message, ...kept(), partialText, resumeFailed: resumed && !partialText };
 		}
 	},
 
@@ -381,7 +423,7 @@ Object.assign(Zusia, {
 
 	async acpRequest(method, params, dir, label) {
 		if (method === "session/request_permission") {
-			return this.acpPermissionReply(params.toolCall || {}, params.options || []);
+			return this.acpPermissionReply(params.toolCall || {}, params.options || [], dir);
 		}
 		if (method === "fs/read_text_file") {
 			return this.acpReadFile(dir, params || {});
@@ -392,17 +434,17 @@ Object.assign(Zusia, {
 	},
 
 	async applyAcpOptions(connection, sessionId, configOptions, model, effort, label) {
-		let current = configOptions || [];
-		let set = async (id, value, required) => {
+		let current = configOptions;
+		let set = async (which, value, required) => {
 			if (!value) {
 				return null;
 			}
-			let option = current.find(o => o.id === id || o.category === id);
+			let option = this.acpConfigOption(current, which);
 			if (!option) {
 				return null;
 			}
-			if (!Array.isArray(option.options) || !option.options.some(o => o.value === value)) {
-				return required ? label + " does not offer " + (option.name || id) + " “" + value + "”." : null;
+			if (!this.acpSelectValues(option).some(o => o.value === value)) {
+				return required ? label + " does not offer " + (option.name || which) + " “" + value + "”." : null;
 			}
 			let result;
 			try {
@@ -411,28 +453,33 @@ Object.assign(Zusia, {
 			catch (e) {
 				return required ? label + " could not use " + value + ": " + e.message : null;
 			}
-			current = result.configOptions || current;
+			// A change can reshape the other options, the efforts a model offers above all.
+			current = Array.isArray(result && result.configOptions) ? result.configOptions : current;
 			return null;
 		};
 		let refused = await set("model", model, true);
 		return refused ? refused : set("effort", effort, false);
 	},
 
-	acpSignInHelp(backend, output) {
-		if (!/not authenticated|not signed in|authentication required/i.test(output || "")) {
+	// Takes the label, not the backend: the agent may have been removed while it answered.
+	acpSignInHelp(label, output) {
+		if (!/not authenticated|not signed in|authentication required/i.test(output)) {
 			return null;
 		}
-		return this.BACKENDS[backend].label + " is not signed in. Sign in with its own CLI in a terminal, then ask again.";
+		return label + " is not signed in. Sign in with its own CLI in a terminal, then ask again.";
 	},
 
 	rememberAcpConfig(backend, configOptions) {
+		// An agent removed while it answered leaves no list behind for a later one of its id.
 		if (!this.BACKENDS[backend]) {
 			return;
 		}
+		let entry = this.acpModelEntry(backend);
 		let models = this.acpModelChoices(configOptions);
+		// A session/load may come back without options; that keeps the list it had.
 		if (models.length) {
-			this._acpModels[backend] = models;
+			entry.models = models;
 		}
-		delete this._acpModelErrors[backend];
+		entry.error = "";
 	},
 });

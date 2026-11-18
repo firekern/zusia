@@ -1,10 +1,10 @@
 "use strict";
 
 Object.assign(Zusia, {
-	// The JSON-RPC pipe to an agent: one request per id, notifications, an agent's own
-	// request answered by the caller, and a close that leaves nothing pending.
+	// The JSON-RPC pipe to an agent: one request per id, the agent's notifications and
+	// its own requests answered by the caller, and a close that leaves nothing pending.
 
-	createAcpConnection(proc, { onNotification, onRequest } = {}) {
+	createAcpConnection(proc, { label, onNotification, onRequest } = {}) {
 		let pending = new Map();
 		let nextId = 1;
 		let stderr = "";
@@ -21,6 +21,7 @@ Object.assign(Zusia, {
 				exitCode = result && typeof result.exitCode === "number" ? result.exitCode : null;
 			}
 			catch (e) {
+				// A wait that fails still means the process is gone, only without a code to report.
 				exited = true;
 			}
 		})();
@@ -33,6 +34,7 @@ Object.assign(Zusia, {
 				}
 			}
 			catch (e) {
+				this.log("reading the ACP stderr: " + e);
 			}
 		})();
 
@@ -45,16 +47,16 @@ Object.assign(Zusia, {
 			promise.then(done, done);
 		});
 
-		let lastStderrLine = () => {
-			let lines = stderr.split("\n").map(line => line.trim()).filter(Boolean);
-			return lines.length ? lines[lines.length - 1] : "";
-		};
-
+		// The one account of an agent that went away, for a question, a sign-in or a model
+		// list alike: its exit code when it gave one, and the end of its stderr, which is
+		// where an agent says why (signed out, a rate limit, a crash).
 		let closedError = () => {
-			let why = exited && exitCode !== null ? "The agent exited with code " + exitCode : "The agent closed its output";
-			let last = lastStderrLine();
-			let error = new Error(why + " before the reply arrived" + (last ? ": " + last : "."));
+			let code = exited ? exitCode : null;
+			let tail = stderr.trim().slice(-1000);
+			let error = new Error(label + (code === null ? " closed its output" : " exited with code " + code) + (tail ? ": " + tail : "."));
 			error.acpClosed = true;
+			error.exitCode = code;
+			error.stderr = tail;
 			return error;
 		};
 
@@ -184,8 +186,6 @@ Object.assign(Zusia, {
 			return promise;
 		};
 
-		let notify = (method, params) => write({ jsonrpc: "2.0", method, params });
-
 		let close = () => {
 			if (!closing) {
 				closing = (async () => {
@@ -195,27 +195,25 @@ Object.assign(Zusia, {
 						await proc.stdin.close();
 					}
 					catch (e) {
-						log("closing the ACP stdin: " + e);
+						this.log("closing the ACP stdin: " + e);
 					}
 					await waitFor(exitPromise, 150);
-					let code = exited ? exitCode : null;
 					if (!exited) {
 						// The same for a process that has gone away since the last check.
 						try {
 							proc.kill();
 						}
 						catch (e) {
-							log("killing the ACP agent: " + e);
+							this.log("killing the ACP agent: " + e);
 						}
 					}
 					await waitFor(stderrDone, 150);
 					rejectPending();
-					return { stderr, exitCode: code };
-				})().catch(() => ({ stderr, exitCode: exited ? exitCode : null }));
+				})();
 			}
 			return closing;
 		};
 
-		return { request, notify, close };
+		return { request, close };
 	},
 });
