@@ -20,7 +20,7 @@ const LOG = `doc.querySelector('${ACTIVE} .zs-log')`;
 
 // ---------------------------------------------------------------------------
 
-async function setUp(s, { paper, page = 0, modes = {}, look = LOOK, onboarded = true, effort = "medium" } = {}) {
+async function setUp(s, { paper, page = 0, modes = {}, look = LOOK, onboarded = true, effort = "high" } = {}) {
 	await s.run(`
 		let CS = Zotero.Zusia;
 		Zotero.Prefs.set("extensions.zusia.appearance", ${JSON.stringify(JSON.stringify(look))}, true);
@@ -117,6 +117,65 @@ async function readAnswer(s, { from = "question", stepPx = 300, pause = 1400 } =
 	}
 }
 
+// Claude through its ACP adapter, as the official registry lists it: the agent runs with the
+// Claude Code login already on the Mac. The ACP scenes add it from the registry the way a
+// reader would, so they film the adapter's real models and its real permission requests.
+const AGENT = "Claude Agent";
+const PREFS_WIN = `Services.wm.getMostRecentWindow("zotero:pref")`;
+
+// Off camera: the registry's entry for the agent, added if the demo profile lacks it, with
+// its models listed, since a first listing downloads the adapter and can take seconds.
+async function addAgent(s) {
+	let result = await s.run(`let CS = Zotero.Zusia;
+		let config = CS.acpAgents().find(c => c.name === ${JSON.stringify(AGENT)});
+		let key = config && CS.acpAgentKey(config.id);
+		if (!key) {
+			let { presets } = await CS.fetchAcpRegistryPresets();
+			let preset = presets.find(p => p.name === ${JSON.stringify(AGENT)} && p.source !== "binary");
+			if (!preset) return { error: "the registry lists no npx build of ${AGENT}" };
+			let added = CS.addAcpAgent({ name: preset.name, command: preset.command, args: preset.args.join("\\n") });
+			if (added.error) return { error: added.error };
+			key = added.key;
+		}
+		await CS.loadLiveModels(key);
+		let entry = CS.acpModelEntry(key);
+		if (entry.error) return { error: entry.error };
+		return { key, models: CS.getModels(key).map(m => ({ id: m.id, label: m.label })) };`);
+	if (result.error) {
+		throw new Error(AGENT + " is not ready as an ACP agent: " + result.error);
+	}
+	return result;
+}
+
+// The adapter's Opus, at high effort: the strongest answer the demo can give.
+function opusOf(agent) {
+	let wanted = process.env.ZUSIA_AGENT_MODEL;
+	// "opus" is the adapter's alias for the newest Opus; the dated ids below it are older ones.
+	let model = agent.models.find(m => m.id === (wanted || "opus") || m.label === wanted);
+	if (!model) {
+		throw new Error("no Opus among " + AGENT + "'s models: " + agent.models.map(m => m.label).join(", "));
+	}
+	return model;
+}
+
+// On camera: open the model menu, unfold the agent's section, pick Opus, then High effort.
+async function pickAgent(s, agent) {
+	let model = opusOf(agent);
+	await s.click(`${ACTIVE} .zs-model-btn`, { after: 900 });
+	s.mark("model menu");
+	// The menu opens on the assistant in use: after an earlier scene that is already the
+	// agent, whose section a click would fold.
+	let listed = await s.run(`return [...doc.querySelectorAll('${ACTIVE} .zs-menu .zs-menu-item')].some(i => i.textContent.includes(${JSON.stringify(model.label)}));`);
+	if (!listed) {
+		await s.clickText(AGENT, { after: 1100, scope: PANE });
+	}
+	s.mark("agent open");
+	await s.clickText(model.label, { after: 1000, scope: PANE });
+	await s.click(`${ACTIVE} .zs-effort-btn`, { after: 900 });
+	await s.clickText("High", { after: 1000, scope: PANE });
+	s.mark("agent picked");
+}
+
 // ---------------------------------------------------------------------------
 
 const SCENES = {
@@ -124,7 +183,7 @@ const SCENES = {
 	explain: {
 		async setup(s) {
 			await setUp(s, { paper: PAPERS.resnet, page: 0 });
-			await s.run(`await Zotero.Zusia.saveHistory(${dirOf(PAPERS.resnet)}, []);
+			await s.run(`await Zotero.Zusia.saveHistory(${dirOf(PAPERS.resnet)}, []); await Zotero.Zusia.saveSessions(${dirOf(PAPERS.resnet)}, {}); await IOUtils.remove(Zotero.Zusia.memoryPath(${dirOf(PAPERS.resnet)}), { ignoreAbsent: true });
 				await Zotero.Zusia.saveClarifications(${dirOf(PAPERS.resnet)}, []);
 				let view = Zotero.Zusia._views.get([...doc.querySelectorAll('${ACTIVE}')].find(r => r.getBoundingClientRect().width));
 				Zotero.Zusia.renderMessages(view, []);`);
@@ -147,7 +206,7 @@ const SCENES = {
 	figure: {
 		async setup(s) {
 			await setUp(s, { paper: PAPERS.vit, page: 2 });
-			await s.run(`await Zotero.Zusia.saveHistory(${dirOf(PAPERS.vit)}, []);
+			await s.run(`await Zotero.Zusia.saveHistory(${dirOf(PAPERS.vit)}, []); await Zotero.Zusia.saveSessions(${dirOf(PAPERS.vit)}, {}); await IOUtils.remove(Zotero.Zusia.memoryPath(${dirOf(PAPERS.vit)}), { ignoreAbsent: true });
 				let view = Zotero.Zusia._views.get([...doc.querySelectorAll('${ACTIVE}')].find(r => r.getBoundingClientRect().width));
 				Zotero.Zusia.renderMessages(view, []);`);
 		},
@@ -228,7 +287,7 @@ const SCENES = {
 	theorems: {
 		async setup(s) {
 			await setUp(s, { paper: PAPERS.adam, page: 3, modes: { latex: true }, effort: "high" });
-			await s.run(`await Zotero.Zusia.saveHistory(${dirOf(PAPERS.adam)}, []);
+			await s.run(`await Zotero.Zusia.saveHistory(${dirOf(PAPERS.adam)}, []); await Zotero.Zusia.saveSessions(${dirOf(PAPERS.adam)}, {}); await IOUtils.remove(Zotero.Zusia.memoryPath(${dirOf(PAPERS.adam)}), { ignoreAbsent: true });
 				let view = Zotero.Zusia._views.get([...doc.querySelectorAll('${ACTIVE}')].find(r => r.getBoundingClientRect().width));
 				Zotero.Zusia.renderMessages(view, []);`);
 		},
@@ -472,11 +531,114 @@ const SCENES = {
 		},
 	},
 
+	// Settings → Assistants → ACP agents: fill the form from the official registry and add
+	// Claude Agent, whose card then lists the adapter's own models.
+	acpRegistry: {
+		async setup(s) {
+			await setUp(s, { paper: PAPERS.adam, page: 3 });
+			await s.run(`let CS = Zotero.Zusia;
+				for (let config of CS.acpAgents().filter(c => c.name === ${JSON.stringify(AGENT)})) CS.removeAcpAgent(CS.acpAgentKey(config.id));
+				Zotero.Utilities.Internal.openPreferences("zusia-prefs");
+				for (let i = 0; i < 40 && !${PREFS_WIN}?.document.querySelector(".zs-prefs"); i++) await Zotero.Promise.delay(150);
+				let pw = ${PREFS_WIN};
+				pw.resizeTo(760, 820); pw.moveTo(200, 170);
+				await Zotero.Promise.delay(700);
+				let d = pw.document;
+				d.querySelector("#prefs-search")?.blur();
+				d.querySelector(".zs-acp-section").scrollIntoView({ block: "start" });
+				d.getElementById("prefs-content").scrollTop -= 12;
+				pw.focus();
+				return true;`);
+			await s.front();
+			await s.moveTo({ x: 700, y: 620 }, { ms: 250 });
+		},
+		async run(s) {
+			let inPrefs = selector => s.rectOf(`return ${PREFS_WIN}.document.querySelector(${JSON.stringify(selector)});`);
+			s.mark("start");
+			await sleep(1200);
+			await s.click(await inPrefs(".zs-acp-browse"), { after: 400 });
+			for (let i = 0; i < 60 && !(await s.run(`return !!${PREFS_WIN}.document.querySelector(".zs-acp-registry-choice select")`)); i++) await sleep(250);
+			await sleep(900);
+			s.mark("registry");
+			// A native drop-down is drawn outside the window, so the film shows the choice made.
+			await s.moveTo(await inPrefs(".zs-acp-registry-choice select"), { ms: 500 });
+			await s.run(`let select = ${PREFS_WIN}.document.querySelector(".zs-acp-registry-choice select");
+				select.selectedIndex = [...select.options].findIndex(o => o.textContent.startsWith(${JSON.stringify(AGENT)}) && !o.textContent.includes("binary"));
+				select.dispatchEvent(new Event("change", { bubbles: true }));`);
+			await sleep(900);
+			await s.click(await inPrefs(".zs-acp-use"), { after: 1600 });
+			s.mark("filled");
+			await s.run(`${PREFS_WIN}.document.querySelector(".zs-acp-add-button").scrollIntoView({ block: "center", behavior: "smooth" });`);
+			await sleep(1200);
+			await s.click(await inPrefs(".zs-acp-add-button"), { after: 600 });
+			s.mark("added");
+			await s.run(`let card = [...${PREFS_WIN}.document.querySelectorAll(".zs-acp-list > *")].pop(); card.scrollIntoView({ block: "center", behavior: "smooth" });`);
+			for (let i = 0; i < 240 && (await s.run(`let CS = Zotero.Zusia; let c = CS.acpAgents().find(c => c.name === ${JSON.stringify(AGENT)});
+				let e = c && CS.acpModelEntry(CS.acpAgentKey(c.id)); return !e || !!e.promise || (!e.models && !e.error);`)); i++) await sleep(250);
+			await sleep(1500);
+			s.mark("models");
+			await sleep(1500);
+			await s.run(`${PREFS_WIN}.close();`);
+			await sleep(600);
+		},
+	},
+
+	// A hard question through Claude Agent, over ACP: the proof of Adam's Theorem 4.1 has a known gap
+	// (Reddi et al., 2018), so a right answer can be checked against the literature.
+	acpProof: {
+		async setup(s) {
+			await setUp(s, { paper: PAPERS.adam, page: 3, modes: { latex: true } });
+			s.agent = await addAgent(s);
+			await s.run(`await Zotero.Zusia.saveHistory(${dirOf(PAPERS.adam)}, []); await Zotero.Zusia.saveSessions(${dirOf(PAPERS.adam)}, {}); await IOUtils.remove(Zotero.Zusia.memoryPath(${dirOf(PAPERS.adam)}), { ignoreAbsent: true });
+				let view = Zotero.Zusia._views.get([...doc.querySelectorAll('${ACTIVE}')].find(r => r.getBoundingClientRect().width));
+				Zotero.Zusia.renderMessages(view, []);`);
+		},
+		async run(s) {
+			s.mark("start");
+			await sleep(900);
+			await pickAgent(s, s.agent);
+			await s.click(`${ACTIVE} .zs-input`, { after: 200 });
+			await s.type("Is the proof of Theorem 4.1 correct? Find the exact step that fails, state it as a lemma, and give a counterexample.", { perChar: 22 });
+			await sleep(400);
+			await s.click(`${ACTIVE} .zs-send`, { after: 300 });
+			s.mark("sent");
+			await waitForAnswer(s);
+			await readAnswer(s, { stepPx: 300, pause: 1500 });
+			s.mark("read");
+			await sleep(1500);
+		},
+	},
+
+	// A derivation with a drawing, through the same agent.
+	acpDerive: {
+		async setup(s) {
+			await setUp(s, { paper: PAPERS.attention, page: 3, modes: { latex: true, drawing: true } });
+			s.agent = await addAgent(s);
+			await s.run(`await Zotero.Zusia.saveHistory(${dirOf(PAPERS.attention)}, []); await Zotero.Zusia.saveSessions(${dirOf(PAPERS.attention)}, {}); await IOUtils.remove(Zotero.Zusia.memoryPath(${dirOf(PAPERS.attention)}), { ignoreAbsent: true });
+				let view = Zotero.Zusia._views.get([...doc.querySelectorAll('${ACTIVE}')].find(r => r.getBoundingClientRect().width));
+				Zotero.Zusia.renderMessages(view, []);`);
+		},
+		async run(s) {
+			s.mark("start");
+			await sleep(900);
+			await pickAgent(s, s.agent);
+			await s.click(`${ACTIVE} .zs-input`, { after: 200 });
+			await s.type("Derive why q·k grows like √d_k, then draw what the softmax does to its gradient without the scaling.", { perChar: 22 });
+			await sleep(400);
+			await s.click(`${ACTIVE} .zs-send`, { after: 300 });
+			s.mark("sent");
+			await waitForAnswer(s);
+			await readAnswer(s, { stepPx: 300, pause: 1500 });
+			s.mark("read");
+			await sleep(1500);
+		},
+	},
+
 	// The same sidebar, a different assistant.
 	assistants: {
 		async setup(s) {
 			await setUp(s, { paper: PAPERS.gpt3, page: 5 });
-			await s.run(`await Zotero.Zusia.saveHistory(${dirOf(PAPERS.gpt3)}, []);
+			await s.run(`await Zotero.Zusia.saveHistory(${dirOf(PAPERS.gpt3)}, []); await Zotero.Zusia.saveSessions(${dirOf(PAPERS.gpt3)}, {}); await IOUtils.remove(Zotero.Zusia.memoryPath(${dirOf(PAPERS.gpt3)}), { ignoreAbsent: true });
 				let view = Zotero.Zusia._views.get([...doc.querySelectorAll('${ACTIVE}')].find(r => r.getBoundingClientRect().width));
 				Zotero.Zusia.renderMessages(view, []);`);
 		},

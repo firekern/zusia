@@ -32,7 +32,7 @@ mkdir -p "$base/pdfs" "$raw" "$out/candidates"
 # The scenes of the README, in the order they are recorded: introStyle restyles the
 # chat introChat leaves behind. For each, the video's name, and the GIF's rate and width.
 scenes=("$@")
-[ ${#scenes[@]} -gt 0 ] || scenes=(introChat introStyle theorems explainBetter figure)
+[ ${#scenes[@]} -gt 0 ] || scenes=(introChat introStyle theorems explainBetter figure acpRegistry acpProof acpDerive)
 video_of() {
 	case "$1" in
 		introChat) echo "zusia-chat 9 860" ;;
@@ -40,6 +40,9 @@ video_of() {
 		theorems) echo "zusia-proof 6 720" ;;
 		explainBetter) echo "zusia-explain-better 7 760" ;;
 		figure) echo "zusia-figure 10 900" ;;
+		acpRegistry) echo "zusia-acp-registry 10 900" ;;
+		acpProof) echo "zusia-acp-proof 7 760" ;;
+		acpDerive) echo "zusia-acp-derive 7 760" ;;
 		*) echo "no README video is made from the scene $1" >&2; return 1 ;;
 	esac
 }
