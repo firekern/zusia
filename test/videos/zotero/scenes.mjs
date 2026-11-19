@@ -634,6 +634,57 @@ const SCENES = {
 		},
 	},
 
+	// What Zusia keeps about a paper: a /remember note, then the Memory sheet with where the
+	// reader is, the reading map and the memory a background call wrote from the chat.
+	memory: {
+		async setup(s) {
+			await setUp(s, { paper: PAPERS.adam, page: 3, modes: { latex: true } });
+			let dir = dirOf(PAPERS.adam);
+			let answers = await s.run(`return (await Zotero.Zusia.loadHistory(${dir})).filter(m => m.role === "assistant").length`);
+			if (answers < 2) {
+				await askOffCamera(s, PAPERS.adam, "Why does Adam correct the bias of m_t and v_t? Two sentences.");
+			}
+			// The memory is written by the real background call, not by the scene.
+			let filled = await s.run(`let CS = Zotero.Zusia; let dir = ${dir};
+				await IOUtils.remove(CS.memoryPath(dir), { ignoreAbsent: true });
+				CS.queueConsolidation(dir, { reason: "leave" });
+				for (let i = 0; i < 240; i++) {
+					let memory = await CS.loadMemory(dir);
+					if (memory.summary || (memory.items || []).length) return true;
+					await Zotero.Promise.delay(500);
+				}
+				return false;`);
+			if (!filled) {
+				throw new Error("the background call wrote no memory for Adam in two minutes");
+			}
+			await s.run(`let view = Zotero.Zusia._views.get([...doc.querySelectorAll('${ACTIVE}')].find(r => r.getBoundingClientRect().width));
+				Zotero.Zusia.renderMessages(view, await Zotero.Zusia.loadHistory(${dir}));`);
+		},
+		async run(s) {
+			s.mark("start");
+			await sleep(1000);
+			await s.click(`${ACTIVE} .zs-input`, { after: 200 });
+			await s.type("/remember I like proofs split into numbered lemmas", { perChar: 24 });
+			await sleep(400);
+			await s.click(`${ACTIVE} .zs-send`, { after: 1400 });
+			s.mark("remembered");
+			await s.click(`${ACTIVE} .zs-context-chip`, { after: 1600 });
+			s.mark("sheet");
+			await s.run(`let body = doc.querySelector('${ACTIVE} .zs-memory-panel .zs-panel-body') || doc.querySelector('${ACTIVE} .zs-panel-body');
+				let map = body.querySelector(".zs-memory-map");
+				if (map) body.scrollTo({ top: map.offsetTop - 12, behavior: "smooth" });`);
+			await sleep(2600);
+			s.mark("map");
+			await s.run(`let body = doc.querySelector('${ACTIVE} .zs-memory-panel .zs-panel-body') || doc.querySelector('${ACTIVE} .zs-panel-body');
+				let items = body.querySelector(".zs-memory-items");
+				let start = Date.now(), from = body.scrollTop, to = items ? items.offsetTop - 12 : body.scrollHeight;
+				while (Date.now() - start < 1600) { let t = (Date.now() - start) / 1600; body.scrollTop = from + (to - from) * t; await new Promise(r => win.requestAnimationFrame(r)); }`);
+			await sleep(3200);
+			s.mark("items");
+			await sleep(1500);
+		},
+	},
+
 	// The same sidebar, a different assistant.
 	assistants: {
 		async setup(s) {
