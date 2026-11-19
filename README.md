@@ -74,7 +74,21 @@
 
 <p align="center"><a href="docs/videos/zusia-acp-derive.mp4">▶ Watch in full quality (MP4)</a></p>
 
-## 5. Didn't click? Ask again, better
+> **Keep it.** Every drawing has a save button: PNG, SVG, or **Add to a note**, which files it as a Zotero note under the paper.
+
+<p align="center"><img src="docs/videos/zusia-note.gif" alt="Under the softmax drawing in the answer, open the save menu, choose Add to a note, and see the note with the drawing appear under Attention Is All You Need in the library" width="100%"></p>
+
+<p align="center"><a href="docs/videos/zusia-note.mp4">▶ Watch in full quality (MP4)</a></p>
+
+## 5. Explain a passage
+
+> **Select text in the PDF → *Explain this*.** Zusia asks about exactly that passage, quotes it above the answer and keeps it with your clarifications. *Ask your assistant about this* adds your own question to it.
+
+<p align="center"><img src="docs/videos/zusia-explain.gif" alt="In Zotero on the ResNet paper, select the first sentence of the abstract, click Explain this, and read an answer that quotes the passage and explains the degradation problem" width="100%"></p>
+
+<p align="center"><a href="docs/videos/zusia-explain.mp4">▶ Watch in full quality (MP4)</a></p>
+
+## 6. Didn't click? Ask again, better
 
 > **One button under every answer.** It comes back with the intuition first, then the steps, an example and the usual trap.
 
@@ -82,15 +96,23 @@
 
 <p align="center"><a href="docs/videos/zusia-explain-better.mp4">▶ Watch in full quality (MP4)</a></p>
 
-## 6. Ask about a figure
+## 7. Ask about an image
 
-> **📎 → *Current PDF page*.** The page you are looking at goes with the question, so figures and tables can be asked about. Upload, paste, drop or screenshot work too.
+> **📎 → *Current PDF page*.** The page you are looking at goes with the question, so figures and tables can be asked about. Upload, paste, drop or screenshot any other image the same way.
 
 <p align="center"><img src="docs/videos/zusia-figure.gif" alt="In Zotero on the Vision Transformer paper, attach the current PDF page and ask what Figure 1 shows" width="100%"></p>
 
 <p align="center"><a href="docs/videos/zusia-figure.mp4">▶ Watch in full quality (MP4)</a></p>
 
-## 7. Make it yours
+## 8. It remembers each paper
+
+> **Click the paper chip above the message box.** The Reading memory sheet shows where you are, the reading map with what you have read and each section's printed pages, and what Zusia remembers: a running summary, what you understood, what is still unclear, how you like answers. A short background call keeps it up to date; `/remember` adds a note of your own and `/forget` drops one. Everything in it can be edited or deleted.
+
+<p align="center"><img src="docs/videos/zusia-memory.gif" alt="On the Adam paper, type /remember I like proofs split into numbered lemmas, then click the paper chip: the Reading memory sheet shows where the reader is, the reading map with page ranges, and the summary and preferences Zusia keeps" width="100%"></p>
+
+<p align="center"><a href="docs/videos/zusia-memory.mp4">▶ Watch in full quality (MP4)</a></p>
+
+## 9. Make it yours
 
 > **Settings → Zusia → Appearance → *Layout*.** Four ways to see the chat. *Minimal*: the conversation and the message box. *Standard*: the tools as icons, one click away. *Rich*: a card for the paper with your reading progress, the tools by name. *Visual*: your buddy beside each answer, bubbles, prompt cards and colour. The setup wizard asks on first run.
 
