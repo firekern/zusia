@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.8.0
 
 - 🔌 **Agent Client Protocol support.** An ACP agent can answer in the panel. The model menu lists the agent's own models, and the reasoning effort you pick is passed on when the agent offers that level. A follow-up question resumes the agent's session when the agent can load it again, and otherwise starts a new one with the recent chat.
 - 🔒 **Zusia answers the agent's permission requests.** A read or a search is allowed once, and only when every path it names is inside the paper's folder. Changes, commands, network calls, and reads elsewhere or naming no path are refused, and Zusia serves file reads only from that folder. This binds only an agent that asks: what an agent does with its own tools without asking follows its own settings.
