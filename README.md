@@ -19,10 +19,13 @@
 **TL;DR**
 
 - 💬 A chat **next to the PDF** that reads the **whole paper**, in its own panel at the side of the window.
-- ✏️ Answers with **LaTeX**, **drawings** and numbered **theorem boxes**.
-- 🔌 Uses **Claude Code, Codex, Antigravity, or any ACP agent**, added from the [ACP registry](#2-bring-any-acp-agent) in one click, with your own login.
-- 🔑 **No API keys**: nothing to buy from me, no Zusia server in between.
-- 🖥️ Optionally connect **Ollama, Unsloth or a custom API**: [connect a local model](#connect-a-local-model).
+- ✏️ **LaTeX made for the model**: maths rendered with KaTeX, definitions, lemmas and theorems as numbered boxes, every `\ref` a link with **Back**.
+- 🎨 **Drawings** in the same answer as the maths, in your colours; save any of them as a Zotero note.
+- 🖼️ **Reads images**: the page you are on, a screenshot, a pasted or dropped picture. Figures and tables included.
+- 📑 **Reads efficiently**: the paper is split into pages with their printed numbers and a [reading map](#what-the-assistant-reads) of every equation, figure and table, so the assistant opens only the pages it needs and cites them. Follow-ups don't send the paper again.
+- 🧠 **Remembers each paper**: what you understood, what is still unclear, how you like answers, your `/remember` notes.
+- 🔌 **Any brain on top**: your subscription through **Claude Code, Codex or Antigravity**, **any ACP agent** from the [ACP registry](#2-bring-any-acp-agent) in one click, your own API key, or a **local LLM** through [Ollama or Unsloth](#connect-a-local-model).
+- 🔑 **No API key to buy**: nothing from me, no Zusia server in between.
 - ⏱️ Install in 2 minutes: [jump to Install](#install).
 
 <p align="center"><img src="docs/how-it-works.svg" alt="How Zusia works: the paper open in Zotero goes to the Zusia panel, which asks the assistant you already use with your own login (Claude Code, Codex, Antigravity, an ACP agent, or a local Ollama or Unsloth); only that assistant talks to its provider. No Zusia server, no Zusia account, no API key." width="100%"></p>
