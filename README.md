@@ -20,9 +20,12 @@
 
 - 💬 A chat **next to the PDF** that reads the **whole paper**, in its own panel at the side of the window.
 - ✏️ Answers with **LaTeX**, **drawings** and numbered **theorem boxes**.
-- 🔑 Uses **Claude Code, Codex, Antigravity, or any ACP agent** with your own login. No API keys.
+- 🔌 Uses **Claude Code, Codex, Antigravity, or any ACP agent**, added from the [ACP registry](#2-bring-any-acp-agent) in one click, with your own login.
+- 🔑 **No API keys**: nothing to buy from me, no Zusia server in between.
 - 🖥️ Optionally connect **Ollama, Unsloth or a custom API**: [connect a local model](#connect-a-local-model).
 - ⏱️ Install in 2 minutes: [jump to Install](#install).
+
+<p align="center"><img src="docs/how-it-works.svg" alt="How Zusia works: the paper open in Zotero goes to the Zusia panel, which asks the assistant you already use with your own login (Claude Code, Codex, Antigravity, an ACP agent, or a local Ollama or Unsloth); only that assistant talks to its provider. No Zusia server, no Zusia account, no API key." width="100%"></p>
 
 <p align="center"><img src="docs/rule.svg" alt="" width="100%"></p>
 
@@ -30,13 +33,61 @@
 
 > **Open a paper and ask.** Zusia is the panel on the right of the window, beside your library and the PDF. It follows the paper you select or open; drag its edge to resize it, and **⌥Z** (Alt+Z) hides it and brings it back. Turn on *Drawing* and *LaTeX* for a diagram and real maths.
 >
-> Recorded in a real Zotero on a Mac: *Attention Is All You Need*, a live answer from Claude. 22 seconds, with the wait sped up.
+> Recorded in a real Zotero on a Mac: *Attention Is All You Need*, a live answer from Claude Opus 5.5 at high effort. 18 seconds, with the wait sped up.
 
-<p align="center"><img src="docs/videos/zusia-chat.gif" alt="In Zotero, open Zusia's panel beside Attention Is All You Need, turn on Drawing and LaTeX, ask how Q, K and V flow and why attention divides by the square root of d_k, and read Claude's answer with its diagram and lemmas" width="100%"></p>
+<p align="center"><img src="docs/videos/zusia-chat.gif" alt="In Zotero, open Zusia's panel beside Attention Is All You Need, turn on Drawing and LaTeX, ask how Q, K and V flow and why attention divides by the square root of d_k, and read Claude's answer with its diagram and equations" width="100%"></p>
 
 <p align="center"><a href="docs/videos/zusia-chat.mp4">▶ Watch in full quality (MP4)</a></p>
 
-## 2. Make it yours
+## 2. Bring any ACP agent
+
+> **Settings → Zusia → Assistants → ACP agents → *Browse the ACP registry*.** Pick an agent from the official [ACP registry](https://agentclientprotocol.com), check the command it fills in, and click **Add agent**. Its own models and reasoning efforts appear in the model menu, and it runs with its own login. Here: Claude Agent, the ACP adapter for Claude.
+
+<p align="center"><img src="docs/videos/zusia-acp-registry.gif" alt="In Zotero Settings, under ACP agents, browse the ACP registry, pick Claude Agent, let it fill the name, command and arguments, click Add agent and watch its card list Claude's models" width="100%"></p>
+
+<p align="center"><a href="docs/videos/zusia-acp-registry.mp4">▶ Watch in full quality (MP4)</a></p>
+
+> **Then ask it something hard.** Claude Agent, Opus 5.5 at *High*, on *Adam*: is the proof of Theorem 4.1 correct? It finds the step that fails between pp. 14 and 15, states the lemma the proof uses without proving it, and gives a counterexample to that lemma. It also says what this does not show, and marks what it knows from outside the paper (Reddi et al., 2018).
+>
+> Zusia answers the agent's permission requests itself: a read inside the paper's folder is allowed, anything else is refused.
+
+<p align="center"><img src="docs/videos/zusia-acp-proof.gif" alt="In Zotero on the Adam paper, open the model menu, unfold Claude Agent, pick Opus 5.5 and High effort, ask whether the proof of Theorem 4.1 is correct, and read the answer: the failing telescoping step, the missing lemma and a counterexample" width="100%"></p>
+
+<p align="center"><a href="docs/videos/zusia-acp-proof.mp4">▶ Watch in full quality (MP4)</a></p>
+
+## 3. Follow a proof
+
+> **Turn on *LaTeX*.** Definitions, lemmas and theorems come back as numbered boxes, and every `\ref` is a link: click to jump, **Back** (⌥←) to return.
+
+<p align="center"><img src="docs/videos/zusia-proof.gif" alt="In Zotero on the Adam paper, ask for Theorem 4.1 in a theorem box and its proof as lemmas; the answer arrives as a numbered theorem and lemmas that link to each other, clicking a link jumps to its lemma and Back returns" width="100%"></p>
+
+<p align="center"><a href="docs/videos/zusia-proof.mp4">▶ Watch in full quality (MP4)</a></p>
+
+## 4. Derive it, then draw it
+
+> **Turn on *Drawing* and *LaTeX* together.** The derivation and the picture come back in one answer. Here, through Claude Agent: why $q\cdot k$ grows like $\sqrt{d_k}$, and what the softmax does to its gradient without the scaling, drawn to scale.
+
+<p align="center"><img src="docs/videos/zusia-acp-derive.gif" alt="In Zotero on Attention Is All You Need, pick Claude Agent with Opus 5.5 and High effort, ask why q dot k grows like the square root of d_k and to draw the softmax gradient without scaling; the answer derives the variance and draws the softmax slope against the score gap, scaled and unscaled" width="100%"></p>
+
+<p align="center"><a href="docs/videos/zusia-acp-derive.mp4">▶ Watch in full quality (MP4)</a></p>
+
+## 5. Didn't click? Ask again, better
+
+> **One button under every answer.** It comes back with the intuition first, then the steps, an example and the usual trap.
+
+<p align="center"><img src="docs/videos/zusia-explain-better.gif" alt="In Zotero on the BERT paper, a dense answer about the masked language model, then the Explain better button produces the intuition, the steps and a worked example" width="100%"></p>
+
+<p align="center"><a href="docs/videos/zusia-explain-better.mp4">▶ Watch in full quality (MP4)</a></p>
+
+## 6. Ask about a figure
+
+> **📎 → *Current PDF page*.** The page you are looking at goes with the question, so figures and tables can be asked about. Upload, paste, drop or screenshot work too.
+
+<p align="center"><img src="docs/videos/zusia-figure.gif" alt="In Zotero on the Vision Transformer paper, attach the current PDF page and ask what Figure 1 shows" width="100%"></p>
+
+<p align="center"><a href="docs/videos/zusia-figure.mp4">▶ Watch in full quality (MP4)</a></p>
+
+## 7. Make it yours
 
 > **Settings → Zusia → Appearance → *Layout*.** Four ways to see the chat. *Minimal*: the conversation and the message box. *Standard*: the tools as icons, one click away. *Rich*: a card for the paper with your reading progress, the tools by name. *Visual*: your buddy beside each answer, bubbles, prompt cards and colour. The setup wizard asks on first run.
 
@@ -51,30 +102,6 @@
 <p align="center"><img src="docs/palette.svg" alt="The eight accent colours: Zotero, Red, Clay, Rose, Violet, Teal, Forest and Graphite" width="560"></p>
 
 <p align="center"><sub>Eight accents. Red on black is the one in every video here.</sub></p>
-
-## 3. Follow a proof
-
-> **Turn on *LaTeX*.** Definitions, lemmas and theorems come back as numbered boxes, and every `\ref` is a link: click to jump, **Back** (⌥←) to return.
-
-<p align="center"><img src="docs/videos/zusia-proof.gif" alt="In Zotero on the Adam paper, ask for Theorem 4.1 in a theorem box and its proof as lemmas; the answer arrives as a numbered theorem and lemmas that link to each other, clicking a link jumps to its lemma and Back returns" width="100%"></p>
-
-<p align="center"><a href="docs/videos/zusia-proof.mp4">▶ Watch in full quality (MP4)</a></p>
-
-## 4. Didn't click? Ask again, better
-
-> **One button under every answer.** It comes back with the intuition first, then the steps, an example and the usual trap.
-
-<p align="center"><img src="docs/videos/zusia-explain-better.gif" alt="In Zotero on the BERT paper, a dense answer about the masked language model, then the Explain better button produces the intuition, the steps and a worked example" width="100%"></p>
-
-<p align="center"><a href="docs/videos/zusia-explain-better.mp4">▶ Watch in full quality (MP4)</a></p>
-
-## 5. Ask about a figure
-
-> **📎 → *Current PDF page*.** The page you are looking at goes with the question, so figures and tables can be asked about. Upload, paste, drop or screenshot work too.
-
-<p align="center"><img src="docs/videos/zusia-figure.gif" alt="In Zotero on the Vision Transformer paper, attach the current PDF page and ask what Figure 1 shows" width="100%"></p>
-
-<p align="center"><a href="docs/videos/zusia-figure.mp4">▶ Watch in full quality (MP4)</a></p>
 
 <p align="center"><img src="docs/rule.svg" alt="" width="100%"></p>
 
@@ -176,7 +203,7 @@ CI runs both the general and API fixture suites in official Zotero 7, 8, 9 and 1
 
 Real-provider checks are separate from fixtures and require an explicit endpoint and installed model. Set `ZUSIA_LIVE_BACKEND` (`ollama` or `unsloth`), `ZUSIA_LIVE_URL` (including `/v1`) and `ZUSIA_LIVE_MODEL` (exact ID). If authentication is needed, pass `ZUSIA_LIVE_KEY` through the process environment; the probe keeps it only in memory. Optional `ZUSIA_LIVE_IMAGE` points to a synthetic green PNG for vision verification. `ZUSIA_LIVE_CONTEXT_TOKENS` explicitly applies an Ollama context override; `ZUSIA_LIVE_OUTPUT_TOKENS` changes the default 1024-token output budget. The probe checks streaming, usage, profiles, non-streaming, tools and reasoning when declared, Stop and a Zotero restart. It uses a new profile and synthetic document; Unsloth must already have the selected model and saved profile loaded, otherwise a read-only guard stops the run. Ollama may load its selected local model. It never downloads models or silently changes providers. Responses are model-dependent, so a failed evidence or tool assertion needs inspection even when transport succeeds. Results and the disposable profile are written under `test/out/`; remove that run directory after retaining the report. `ZOTERO_BIN`, `ZUSIA_LIVE_OUT` and `ZUSIA_LIVE_TIMEOUT` override the executable, output directory and timeout in milliseconds. Both runners refuse a nonempty output directory.
 
-The videos are recorded in a real Zotero with its own demo profile and library, so your library is never used. The scenes move the real pointer: don't touch the Mac while they run. Needs `ffmpeg`, `cliclick`, the `claude` CLI, and Screen Recording and Accessibility permission for the app the terminal runs in. With `INSIDE=1` neither permission is needed, nor `cliclick`: Zotero draws its own window into every frame, clicks and typing reach it as events, and the pointer and the window's buttons are drawn into the film afterwards, so the Mac's pointer stays yours; keep the demo window uncovered while it runs. The videos on this page were made this way. With `REHEARSE=1` nothing is recorded, the pointer stays where it is and no assistant is called, so neither permission is needed: every scene is walked through with events sent to Zotero and a canned answer, and what the window shows at each step is saved under `~/.cache/zusia-demo/rehearsal/`. Run it after the interface changes, to see that the scenes still find their way.
+The videos are recorded in a real Zotero with its own demo profile and library, so your library is never used. The scenes move the real pointer: don't touch the Mac while they run. Needs `ffmpeg`, `cliclick`, the `claude` CLI signed in, `npx` for the ACP scenes (they add Claude Agent from the ACP registry), and Screen Recording and Accessibility permission for the app the terminal runs in. With `INSIDE=1` neither permission is needed, nor `cliclick`: Zotero draws its own window into every frame, clicks and typing reach it as events, and the pointer and the window's buttons are drawn into the film afterwards, so the Mac's pointer stays yours; keep the demo window uncovered while it runs. The videos on this page were made this way. With `REHEARSE=1` nothing is recorded, the pointer stays where it is and no assistant is called, so neither permission is needed: every scene is walked through with events sent to Zotero and a canned answer, and what the window shows at each step is saved under `~/.cache/zusia-demo/rehearsal/`. Run it after the interface changes, to see that the scenes still find their way.
 
 ## Release
 

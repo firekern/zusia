@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 360" width="1280" height="360" role="img" aria-label="How Zusia works: the paper open in Zotero goes to the Zusia panel, which asks the assistant you already use with your own login (Claude Code, Codex, Antigravity, an ACP agent, or a local model through Ollama, Unsloth or an API); only that assistant talks to its provider. Everything except the provider runs on your computer, with no Zusia server and no API key.">
+	<defs>
+		<marker id="head" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+			<path d="M0 0 L10 5 L0 10 z" fill="#9aa0ab"/>
+		</marker>
+	</defs>
+	<rect width="1280" height="360" rx="14" fill="#111111"/>
+	<g font-family="-apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif">
+		<!-- Your computer -->
+		<rect x="30" y="34" width="930" height="252" rx="12" fill="none" stroke="#3a3d45" stroke-width="1.5" stroke-dasharray="6 6"/>
+		<text x="52" y="62" font-size="12" font-weight="600" letter-spacing="1.6" fill="#9aa0ab">YOUR COMPUTER</text>
+
+		<!-- 1. Zotero -->
+		<rect x="52" y="84" width="260" height="176" rx="10" fill="#1b1c20" stroke="#2c2e35"/>
+		<rect x="52" y="84" width="260" height="5" rx="2.5" fill="#d42a3c"/>
+		<text x="74" y="124" font-size="20" font-weight="700" fill="#f2f2f4">Zotero</text>
+		<text x="74" y="150" font-size="14" fill="#e3a0a8">the paper you have open</text>
+		<text x="74" y="184" font-size="13.5" fill="#9aa0ab">full text, split by page</text>
+		<text x="74" y="206" font-size="13.5" fill="#9aa0ab">the page on screen</text>
+		<text x="74" y="228" font-size="13.5" fill="#9aa0ab">your selection and highlights</text>
+
+		<!-- 2. Zusia -->
+		<rect x="366" y="84" width="260" height="176" rx="10" fill="#1b1c20" stroke="#2c2e35"/>
+		<rect x="366" y="84" width="260" height="5" rx="2.5" fill="#c03a64"/>
+		<text x="388" y="124" font-size="20" font-weight="700" fill="#f2f2f4">Zusia</text>
+		<text x="388" y="150" font-size="14" fill="#e3a0bd">the panel beside the PDF</text>
+		<text x="388" y="184" font-size="13.5" fill="#9aa0ab">gives the paper and its map</text>
+		<text x="388" y="206" font-size="13.5" fill="#9aa0ab">renders LaTeX and drawings</text>
+		<text x="388" y="228" font-size="13.5" fill="#9aa0ab">links theorems and lemmas</text>
+
+		<!-- 3. Your assistant -->
+		<rect x="680" y="84" width="260" height="176" rx="10" fill="#1b1c20" stroke="#2c2e35"/>
+		<rect x="680" y="84" width="260" height="5" rx="2.5" fill="#0d7f78"/>
+		<text x="702" y="124" font-size="20" font-weight="700" fill="#f2f2f4">Your assistant</text>
+		<text x="702" y="150" font-size="14" fill="#8fd1cb">with your own login</text>
+		<text x="702" y="184" font-size="13.5" fill="#9aa0ab">Claude Code · Codex</text>
+		<text x="702" y="206" font-size="13.5" fill="#9aa0ab">Antigravity · any ACP agent</text>
+		<text x="702" y="228" font-size="13.5" fill="#9aa0ab">or a local Ollama or Unsloth</text>
+
+		<!-- 4. Provider, outside -->
+		<rect x="1010" y="84" width="240" height="176" rx="10" fill="#16171a" stroke="#2c2e35"/>
+		<rect x="1010" y="84" width="240" height="5" rx="2.5" fill="#5a6070"/>
+		<text x="1032" y="124" font-size="20" font-weight="700" fill="#f2f2f4">Its provider</text>
+		<text x="1032" y="150" font-size="14" fill="#b9bdc6">as when you use it alone</text>
+		<text x="1032" y="184" font-size="13.5" fill="#9aa0ab">Anthropic, OpenAI, Google…</text>
+		<text x="1032" y="206" font-size="13.5" fill="#9aa0ab">or none at all:</text>
+		<text x="1032" y="228" font-size="13.5" fill="#9aa0ab">a local model stays local</text>
+
+		<!-- arrows: question goes right, answer comes back -->
+		<g stroke="#9aa0ab" stroke-width="1.8" fill="none">
+			<line x1="316" y1="164" x2="360" y2="164" marker-start="url(#head)" marker-end="url(#head)"/>
+			<line x1="630" y1="164" x2="674" y2="164" marker-start="url(#head)" marker-end="url(#head)"/>
+			<line x1="944" y1="164" x2="1004" y2="164" marker-start="url(#head)" marker-end="url(#head)" stroke-dasharray="4 4"/>
+		</g>
+
+		<!-- footer -->
+		<text x="640" y="324" font-size="15" fill="#d0d2d8" text-anchor="middle">No Zusia server, no Zusia account, no API key: the assistant you already use does the answering.</text>
+	</g>
+</svg>
