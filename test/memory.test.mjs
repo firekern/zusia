@@ -863,13 +863,31 @@ test("archives: restoring a chat that was still owed drops it from the list, as 
 	await plugin.newChat(root);
 	await plugin.jobsIdle();
 	const [owed] = memoryOf(env).pendingArchives;
-	// Another last timestamp than the archive's, or both would get one file name.
 	files.set("/d/chat.json", JSON.stringify(turns(1, { from: 5 }).map(m => ({ ...m, ts: 99 }))));
 	await plugin.restoreChat(root, { path: "/d/" + owed.file });
 	await plugin.jobsIdle();
 	const files_ = memoryOf(env).pendingArchives.map(a => a.file);
 	assert.equal(files_.includes(owed.file), false);
 	assert.equal(files_.length, 1, "the chat it replaced is owed now");
+});
+
+test("archives: restoring a chat that ended at the same moment as the current one keeps the one it replaces", async () => {
+	const env = loadPlugin();
+	const { plugin, files } = env;
+	const root = chatView(env);
+	const archives = () => [...files.keys()].filter(k => /^\/d\/chat-.+\.json$/.test(k));
+	const at = (history, ts) => history.map(m => ({ ...m, ts }));
+	files.set("/d/chat.json", JSON.stringify(at(turns(1), 99)));
+	answerJobs(env, "No JSON.");
+	await plugin.newChat(root);
+	await plugin.jobsIdle();
+	const [earlier] = archives();
+	files.set("/d/chat.json", JSON.stringify(at(turns(1, { from: 5 }), 99)));
+	await plugin.restoreChat(root, { path: earlier });
+	await plugin.jobsIdle();
+	assert.deepEqual(JSON.parse(files.get("/d/chat.json")), at(turns(1), 99));
+	assert.equal(archives().length, 1);
+	assert.deepEqual(JSON.parse(files.get(archives()[0])), at(turns(1, { from: 5 }), 99), "the replaced chat, not deleted with the restored one");
 });
 
 test("reset: a consolidation running or queued when the memory is reset changes nothing, and an edited item outlives a late patch", async () => {

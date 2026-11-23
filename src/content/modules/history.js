@@ -8,7 +8,12 @@ Object.assign(Zusia, {
 			return null;
 		}
 		let stamp = new Date(history[history.length - 1].ts || Date.now()).toISOString().replace(/[:.]/g, "-");
+		// Two chats can end at the same moment, and the archive a chat is restored from is
+		// removed after this one is written: a shared name would lose the chat put away.
 		let name = "chat-" + stamp + ".json";
+		for (let n = 2; await OS.File.exists(OS.Path.join(dir, name)); n++) {
+			name = "chat-" + stamp + "-" + n + ".json";
+		}
 		await Zotero.File.putContentsAsync(OS.Path.join(dir, name), JSON.stringify(history, null, 2));
 		return name;
 	},
