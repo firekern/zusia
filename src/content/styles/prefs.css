@@ -234,7 +234,8 @@
 	overflow-wrap: anywhere;
 	margin-bottom: 6px;
 }
-.zs-acp-error {
+.zs-acp-error,
+.zs-bg-error {
 	margin-top: 8px;
 	font-size: 0.88em;
 	line-height: 1.4;

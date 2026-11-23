@@ -51,6 +51,20 @@ test("agy card: a failed sign-in check shows one Sign-in row however often the s
 	assert.equal(signIns(), 0);
 });
 
+test("background image: a file that cannot be used is said in the row, without a blocking dialog", async () => {
+	const { plugin, container, window } = pane();
+	let alerted = false;
+	window.alert = () => { alerted = true; };
+	plugin.pickBackground = async () => { throw new Error("Choose a PNG, JPEG, GIF, WebP or AVIF image."); };
+	const row = [...card(container, "Appearance").querySelectorAll(".zs-row")].find(r => r.querySelector(".zs-row-label").textContent === "Background image");
+	[...row.querySelectorAll("button")].find(b => b.textContent === "Choose image…").click();
+	await new Promise(resolve => setTimeout(resolve, 0));
+	assert.equal(alerted, false);
+	const status = row.querySelector('[role="status"]');
+	assert.equal(status.textContent, "Choose a PNG, JPEG, GIF, WebP or AVIF image.");
+	assert.equal(status.hidden, false);
+});
+
 test("Answer with lists the CLIs, then the ACP agents, then the APIs, also after an Add", () => {
 	const { container, window } = pane();
 	const assistants = card(container, "Assistants");

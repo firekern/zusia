@@ -668,7 +668,11 @@ Object.assign(Zusia, {
 		let preview = this.el(doc, "span", "zs-bg-preview");
 		let chooseImage = this.el(doc, "button", "zs-button", "Choose image…");
 		chooseImage.type = "button";
+		let imageError = this.el(doc, "div", "zs-bg-error");
+		imageError.setAttribute("role", "status");
+		imageError.hidden = true;
 		chooseImage.addEventListener("click", async () => {
+			imageError.hidden = true;
 			try {
 				let name = await this.pickBackground(doc.defaultView);
 				if (name) {
@@ -679,7 +683,8 @@ Object.assign(Zusia, {
 			}
 			catch (e) {
 				this.logError("pickBackground", e);
-				doc.defaultView.alert(String((e && e.message) || e));
+				imageError.textContent = String((e && e.message) || e);
+				imageError.hidden = false;
 			}
 		});
 		let removeImage = this.el(doc, "button", "zs-button", "Remove");
@@ -729,7 +734,7 @@ Object.assign(Zusia, {
 				appearance.pattern, v => update({ pattern: v })), null, { stack: true }),
 			row("Button labels", this.segmented(doc, [["icons", "Icons only"], ["text", "Icons + text"]], appearance.labels, v => update({ labels: v }))),
 			row("Accent colour", swatches, "Used for the send button, links, theorem boxes and drawings."),
-			row("Background image", imageControls, "Shown behind the chat."),
+			row("Background image", [imageControls, imageError], "Shown behind the chat."),
 			...imageRows,
 			...glassRows,
 			...glowRows,
