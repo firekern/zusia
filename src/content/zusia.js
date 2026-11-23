@@ -452,6 +452,8 @@ Zusia = {
 	_fits: new WeakMap(),
 	// The capturing side-nav click listener added to each main window.
 	_sidenavListeners: new WeakMap(),
+	// The "loadingdone" listener on each window's document.fonts (watchFonts).
+	_fontListeners: new WeakMap(),
 
 	init({ id, version, rootURI }) {
 		if (this.initialized) {

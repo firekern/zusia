@@ -63,9 +63,8 @@ Object.assign(Zusia, {
 		// Refit formulas and tables when the pane is resized or the maths font arrives.
 		let win = doc.defaultView;
 		if (doc.fonts && doc.fonts.addEventListener) {
-			let refit = () => log.isConnected && this.fitWideContent(log, { fresh: true });
-			doc.fonts.addEventListener("loadingdone", refit);
-			doc.fonts.ready.then(refit);
+			this.watchFonts(doc);
+			doc.fonts.ready.then(() => log.isConnected && this.fitWideContent(log, { fresh: true }));
 		}
 		if (win && win.ResizeObserver) {
 			let pendingFit = null;

@@ -271,6 +271,31 @@ test("edit icon puts a question back in the composer", () => {
 	assert.equal(root.querySelector(".zs-send").disabled, false);
 });
 
+test("the maths font arriving refits every chat in the window through one listener, kept until the window goes", async () => {
+	const env = loadPlugin();
+	const { plugin, document, window } = env;
+	const listeners = new Set();
+	document.fonts = {
+		ready: Promise.resolve(),
+		addEventListener: (type, fn) => listeners.add(fn),
+		removeEventListener: (type, fn) => listeners.delete(fn),
+	};
+	const bodies = [0, 1, 2].map(() => document.body.appendChild(document.createElement("div")));
+	for (const body of bodies) plugin.renderSkeleton(document, body);
+	// The item pane renders its section again, over the same body.
+	plugin.renderSkeleton(document, bodies[0]);
+	bodies[2].remove();
+	assert.equal(listeners.size, 1);
+	await Promise.resolve();
+	const fitted = [];
+	plugin.fitWideContent = (log, opts) => fitted.push([log, opts]);
+	for (const fn of listeners) fn();
+	assert.deepEqual(fitted.map(([log]) => log), [bodies[0], bodies[1]].map(b => b.querySelector(".zs-log")));
+	assert.deepEqual(fitted.map(([, opts]) => JSON.stringify(opts)), ['{"fresh":true}', '{"fresh":true}']);
+	plugin.removeFromWindow(window);
+	assert.equal(listeners.size, 0);
+});
+
 test("keyboard: ArrowUp recalls the last question, Escape stops a running answer", async () => {
 	const env = loadPlugin();
 	const { plugin, document, window } = env;

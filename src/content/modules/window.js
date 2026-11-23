@@ -37,8 +37,28 @@ Object.assign(Zusia, {
 		}
 	},
 
+	// One listener per window, not one per render: Zotero renders the section again for
+	// every item, and each listener kept its detached chat alive.
+	watchFonts(doc) {
+		if (this._fontListeners.has(doc)) {
+			return;
+		}
+		let refit = () => {
+			for (let log of doc.querySelectorAll(".zs-root .zs-log")) {
+				this.fitWideContent(log, { fresh: true });
+			}
+		};
+		doc.fonts.addEventListener("loadingdone", refit);
+		this._fontListeners.set(doc, refit);
+	},
+
 	removeFromWindow(window) {
 		let doc = window.document;
+		let refit = this._fontListeners.get(doc);
+		if (refit) {
+			doc.fonts.removeEventListener("loadingdone", refit);
+			this._fontListeners.delete(doc);
+		}
 		doc.querySelectorAll(".zusia-stylesheet").forEach(link => link.remove());
 		doc.querySelector('[href="zusia.ftl"]')?.remove();
 		doc.documentElement.removeAttribute(this.VIEW_ATTR);
