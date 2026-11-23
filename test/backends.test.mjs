@@ -418,6 +418,15 @@ test("antigravity: the prompt goes on stdin", async () => {
 	assert.ok(runs[0].closed);
 });
 
+test("CLI output: a line of valid JSON that is not an event is skipped, not a crash", () => {
+	const { plugin: p } = loadPlugin();
+	const stdout = ["null", "42", "\"text\"", "[1]", JSON.stringify({ type: "result", result: "The answer." })].join("\n");
+	assert.deepEqual(JSON.parse(JSON.stringify(p.parseJsonLines(stdout))), [{ type: "result", result: "The answer." }]);
+	for (const parse of [p.parseClaudeEvents, p.parseCodexEvents, p.parseAntigravityEvents]) {
+		parse.call(p, p.parseJsonLines("null\n"));
+	}
+});
+
 // Claude writes "Let me check the page…" before a tool call; the eval on the textbook
 // showed that narration landing in stored answers, so only what follows the last
 // tool call is the answer.

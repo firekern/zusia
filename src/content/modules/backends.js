@@ -109,11 +109,20 @@ Object.assign(Zusia, {
 			if (!line) {
 				continue;
 			}
+			let event;
 			try {
-				events.push(JSON.parse(line));
+				event = JSON.parse(line);
 			}
 			catch (e) {
 				this.log("Skipping non-JSON output line: " + line.slice(0, 200));
+				continue;
+			}
+			// Every parser reads fields off an event: a bare `null` or number is not one.
+			if (event && typeof event === "object" && !Array.isArray(event)) {
+				events.push(event);
+			}
+			else {
+				this.log("Skipping output line that is not an event: " + line.slice(0, 200));
 			}
 		}
 		return events;
