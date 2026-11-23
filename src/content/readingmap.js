@@ -475,7 +475,7 @@ var ZusiaMap = {
 
 	// Contiguous ranges {id, title, level, start, end} over all `pageCount` pages. Entries
 	// give `start` or a printed `label`; one starting before the previous is dropped. A
-	// "Front matter" entry covers the pages before the first one; with no entries the
+	// "Front matter" entry covers the pages before the first top-level one; with no entries the
 	// text is cut into fixed chunks. An entry ends where the next one at its level or
 	// above starts. Top-level ranges partition the pages, so of two top-level entries on
 	// one page only the later stays; two subsections that begin on one page both hold it.
@@ -497,7 +497,9 @@ var ZusiaMap = {
 		let top = Math.min(...list.map(e => e.level));
 		list = list.map(e => ({ ...e, level: e.level - top + 1 }));
 		list = list.filter((e, k) => e.level > 1 || list.slice(k + 1).find(other => other.level === 1)?.start !== e.start);
-		if (list[0].start > 0) {
+		// Top-level ranges partition the pages, so it is the first top-level entry that
+		// decides: a subsection before it would leave its pages in no section file.
+		if (list.find(e => e.level === 1).start > 0) {
 			list.unshift({ id: "front", title: "Front matter", level: 1, start: 0 });
 		}
 		return list.map((e, k) => {

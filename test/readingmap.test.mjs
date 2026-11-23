@@ -361,6 +361,17 @@ test("outlineRanges resolves labels, drops entries out of order and falls back t
 	assert.deepEqual(chunks.map(e => [e.title, e.start, e.end]), [["Pages 1–20", 0, 19], ["Pages 21–40", 20, 39], ["Pages 41–45", 40, 44]]);
 });
 
+test("outlineRanges: pages before the first top-level entry are front matter, even under a subsection", () => {
+	const outline = plain(M.outlineRanges([
+		{ id: "1.1", title: "Preliminaries", level: 2, start: 0 },
+		{ id: "2", title: "Main", level: 1, start: 3 },
+	], null, 10));
+	assert.deepEqual(outline.map(e => [e.id, e.level, e.start, e.end]), [["front", 1, 0, 2], ["1.1", 2, 0, 2], ["2", 1, 3, 9]]);
+	const pages = Array.from({ length: 10 }, (_, i) => "Page " + i + " text. ".repeat(40));
+	const covered = new Set(plain(M.splitSections(pages, outline, { min: 2000, max: 6000 })).flatMap(f => Array.from({ length: f.end - f.start + 1 }, (_, k) => f.start + k)));
+	assert.equal(covered.size, 10, "every page is in a section file");
+});
+
 test("outlineRanges keeps top-level ranges disjoint when two start on one page", () => {
 	const outline = plain(M.outlineRanges([
 		{ id: "1", title: "A", level: 1, start: 0 },
