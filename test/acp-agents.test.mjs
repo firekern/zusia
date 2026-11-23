@@ -246,7 +246,7 @@ test("registering a stored agent replaces the backend of the same id", () => {
 	assert.equal(p.BACKEND_ICONS["acp:opencode"], "code");
 });
 
-test("the command line quotes only the parts that contain whitespace", () => {
+test("the command line quotes only the parts that contain whitespace or a quote", () => {
 	const p = loadPlugin().plugin;
 	assert.equal(p.acpCommandLine({ command: "opencode", args: ["acp"] }), "opencode acp");
 	assert.equal(p.acpCommandLine({ command: "/usr/bin/opencode", args: [] }), "/usr/bin/opencode");
@@ -254,6 +254,8 @@ test("the command line quotes only the parts that contain whitespace", () => {
 		'opencode acp --flag=x --dir "/tmp/my papers"');
 	assert.equal(p.acpCommandLine({ command: "C:\\Program Files\\Agent\\agent.exe", args: ["acp"] }),
 		'"C:\\Program Files\\Agent\\agent.exe" acp', "a Windows path keeps its single backslashes");
+	assert.equal(p.acpCommandLine({ command: "agent", args: ['--prompt=say "hi"', 'a"b'] }), 'agent "--prompt=say \\"hi\\"" "a\\"b"',
+		"a quote inside a part is escaped, or a paste into a shell splits it elsewhere");
 });
 
 test("a pasted command loses the quotes around it, and only those", () => {

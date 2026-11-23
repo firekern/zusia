@@ -253,9 +253,10 @@ Object.assign(Zusia, {
 		return true;
 	},
 
-	// Quoted only where a space would split it, and never escaped, so a Windows path reads
-	// as the reader typed it and can be pasted back.
+	// Quoted only where a space or a quote would split it, and only quotes escaped, so a
+	// Windows path keeps its backslashes, reads as the reader typed it and can be pasted back.
 	acpCommandLine(config) {
-		return [config.command, ...config.args].map(part => (/\s/.test(part) ? '"' + part + '"' : part)).join(" ");
+		return [config.command, ...config.args]
+			.map(part => (/[\s"]/.test(part) ? '"' + part.replace(/"/g, '\\"') + '"' : part)).join(" ");
 	},
 });
