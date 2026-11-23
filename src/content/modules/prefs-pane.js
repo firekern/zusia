@@ -191,9 +191,13 @@ Object.assign(Zusia, {
 			}
 			card.body.appendChild(details);
 
+			// Checked again whenever the path changes: the row of the last check goes first.
+			let signIn = null;
 			let refreshStatus = () => {
 				let refused = {};
 				return this.probeBinary(key, refused).then(async (found) => {
+					signIn?.remove();
+					signIn = null;
 					details.dataset.found = String(!!found);
 					// An npm .cmd on Windows with no program beside it is installed, yet cannot start,
 					// for the reason the model menu gives too.
@@ -204,7 +208,8 @@ Object.assign(Zusia, {
 						if (this._agyModelsError) {
 							details.dataset.found = "false";
 							status.textContent = "Signed-in check failed — open for details";
-							body.insertBefore(this.row(doc, "Sign-in", this.el(doc, "div", "zs-row-hint", this._agyModelsError), null, { stack: true }), body.firstChild);
+							signIn = this.row(doc, "Sign-in", this.el(doc, "div", "zs-row-hint", this._agyModelsError), null, { stack: true });
+							body.insertBefore(signIn, body.firstChild);
 						}
 					}
 				});

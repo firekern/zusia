@@ -27,6 +27,30 @@ test("settings pane renders its cards", () => {
 	assert.equal(container.querySelectorAll(".zs-agent").length, 7);
 });
 
+test("agy card: a failed sign-in check shows one Sign-in row however often the status is checked, and none once it passes", async () => {
+	const env = loadPlugin();
+	const { plugin, document, window } = env;
+	plugin.probeBinary = async key => (key === "agy" ? "/bin/agy" : null);
+	plugin.loadLiveModels = async () => {};
+	plugin._agyModelsError = "Antigravity is not signed in.";
+	const container = document.body.appendChild(document.createElement("div"));
+	plugin.renderPrefsPane(document, container);
+	const agy = container.querySelector('[data-backend="agy"]');
+	const settle = () => new Promise(resolve => setTimeout(resolve, 0));
+	const signIns = () => [...agy.querySelectorAll(".zs-row-label")].filter(l => l.textContent === "Sign-in").length;
+	await settle();
+	const path = [...agy.querySelectorAll(".zs-row")].find(r => r.querySelector(".zs-row-label").textContent === "Command path").querySelector("input");
+	for (let k = 0; k < 3; k++) {
+		change(window, path, "");
+		await settle();
+	}
+	assert.equal(signIns(), 1);
+	plugin._agyModelsError = null;
+	change(window, path, "");
+	await settle();
+	assert.equal(signIns(), 0);
+});
+
 test("Answer with lists the CLIs, then the ACP agents, then the APIs, also after an Add", () => {
 	const { container, window } = pane();
 	const assistants = card(container, "Assistants");
