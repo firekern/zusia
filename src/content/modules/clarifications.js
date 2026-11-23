@@ -37,7 +37,7 @@ Object.assign(Zusia, {
 			return;
 		}
 		let doc = root.ownerDocument;
-		let { panel, head, body } = this.openPanel(root, { label: "Clarifications", icon: "clarifications" });
+		let { panel, head, body, close } = this.openPanel(root, { label: "Clarifications", icon: "clarifications" });
 		let back = this.iconButton(doc, "zs-small zs-panel-back", "All clarifications", "previous", () => showList());
 		head.prepend(back);
 		let closePanel = () => panel.remove();

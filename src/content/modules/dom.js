@@ -98,7 +98,8 @@ Object.assign(Zusia, {
 		let head = this.el(doc, "div", "zs-panel-head");
 		let title = this.el(doc, "div", "zs-panel-title");
 		title.append(this.svgIcon(doc, icon), this.el(doc, "span", null, label));
-		head.append(title, this.iconButton(doc, "zs-small zs-panel-close", "Close", "remove", () => panel.remove()));
+		let close = this.iconButton(doc, "zs-small zs-panel-close", "Close", "remove", () => panel.remove());
+		head.append(title, close);
 		let body = this.el(doc, "div", "zs-panel-body");
 		panel.append(head, body);
 		panel.addEventListener("keydown", (event) => {
@@ -109,7 +110,7 @@ Object.assign(Zusia, {
 			}
 		});
 		root.appendChild(panel);
-		return { panel, head, body };
+		return { panel, head, body, close };
 	},
 
 	// The accent colours as radio swatches; markAccent() says which one is chosen.

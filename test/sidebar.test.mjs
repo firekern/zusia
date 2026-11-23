@@ -901,6 +901,16 @@ test("clarifications panel: lists saved clarifications newest first, opens a det
 	assert.ok(panel.querySelector(".zs-clar-item"), "back to the list");
 });
 
+test("clarifications panel: focus goes to the first entry, or to Close when there is none", async () => {
+	for (const [records, selector] of [[[record()], ".zs-clar-item"], [[], ".zs-panel-close"]]) {
+		const env = clarificationPanel(records);
+		const { root, plugin } = env;
+		await plugin.openClarifications(root);
+		await env.tick();
+		assert.equal(root.ownerDocument.activeElement, root.querySelector(".zs-panel " + selector));
+	}
+});
+
 test("clarifications panel: go to the chat message, delete, empty state and Escape", async () => {
 	const env = clarificationPanel([record()]);
 	const { root, plugin, view, window } = env;

@@ -727,6 +727,14 @@ test("memory sheet: the reading map with read state, where we are, the items and
 	assert.equal(root.querySelector(".zs-panel"), null);
 });
 
+test("memory sheet: focus moves into the sheet, so Escape closes it without a click", async () => {
+	const env = sheetEnv();
+	const { plugin, root } = env;
+	await plugin.openMemory(root);
+	await env.tick();
+	assert.equal(root.ownerDocument.activeElement, root.querySelector(".zs-memory-panel .zs-panel-close"));
+});
+
 test("memory sheet: edit, delete and reset change memory.json; the two switches set the prefs", async () => {
 	const env = sheetEnv();
 	const { plugin, root, files, map, prefs } = env;

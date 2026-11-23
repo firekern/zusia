@@ -13,7 +13,7 @@ Object.assign(Zusia, {
 		}
 		let doc = root.ownerDocument;
 		let dir = view.ctx.dir;
-		let { panel, body } = this.openPanel(root, { label: "Reading memory", icon: "memory", className: "zs-memory-panel" });
+		let { panel, body, close } = this.openPanel(root, { label: "Reading memory", icon: "memory", className: "zs-memory-panel" });
 
 		let structure = await this.cachedStructure(dir);
 		let progress = this.trackingReading() ? await this.loadProgress(dir) : null;
