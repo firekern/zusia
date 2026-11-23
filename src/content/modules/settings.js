@@ -446,6 +446,12 @@ Object.assign(Zusia, {
 
 	// Keyboard shortcuts anywhere in the sidebar: toggle Drawing/LaTeX, add an image.
 	handleShortcut(root, event) {
+		// On a Mac, Option with a letter types a character (⌥D is ∂, ⌥L is ¬) and Option with
+		// an arrow moves by word: a text field keeps the key, as for the dock's ⌥Z.
+		let target = event.originalTarget || event.target;
+		if (Zotero.isMac && event.altKey && (target.isContentEditable || /^(input|textarea)$/.test(target.localName))) {
+			return false;
+		}
 		if (event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && event.key === "ArrowLeft") {
 			let view = this._views.get(root);
 			if (view && view.backStack && view.backStack.length) {

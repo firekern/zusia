@@ -557,6 +557,29 @@ test("shortcuts: Alt+D and Alt+L toggle the modes by key position; hidden button
 	assert.match(root.querySelector('.zs-mode[data-mode="drawing"]').title, /\(Alt\+D\)$/);
 });
 
+test("shortcuts: on a Mac, Option with a letter or an arrow typed in a text field stays the field's", () => {
+	const { root, view, prefs, window } = sidebar();
+	const press = (target, code, key) => {
+		const event = new window.KeyboardEvent("keydown", { code, key, altKey: true, bubbles: true, cancelable: true });
+		target.dispatchEvent(event);
+		return event.defaultPrevented;
+	};
+	const input = root.querySelector(".zs-input");
+	const button = root.querySelector('.zs-mode[data-mode="drawing"]');
+	window.Zotero.isMac = true;
+	assert.equal(press(input, "KeyD", "∂"), false, "⌥D types ∂");
+	assert.equal(press(input, "KeyL", "¬"), false);
+	assert.equal(press(input, "KeyI", "¡"), false);
+	view.backStack = [{ top: 0 }];
+	assert.equal(press(input, "ArrowLeft", "ArrowLeft"), false, "⌥← moves a word back");
+	assert.equal(view.backStack.length, 1);
+	assert.notEqual(prefs[PREFIX + "mode.drawing"], true);
+	assert.equal(root.querySelector(".zs-menu"), null);
+	assert.equal(press(button, "KeyD", "∂"), true, "outside a text field it is the shortcut");
+	assert.equal(prefs[PREFIX + "mode.drawing"], true);
+	window.Zotero.isMac = false;
+});
+
 test("streaming: unchanged blocks are kept, only new blocks fade in", () => {
 	const { plugin, document } = sidebar();
 	const container = document.createElement("div");
