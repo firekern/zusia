@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.8.1
+
+- 🐛 **Restoring a chat no longer deletes the one it replaces.** When the restored chat ended at the same moment as the current one, both archives got one file name, and the current chat was lost. Archives never share a name now.
+- 🧠 Opening an earlier chat from **Search all chats** hands the chat it replaces to the reading memory, as **Previous chats** does.
+- 🔎 A search result whose paper was deleted is greyed out, instead of swapping the chats and then doing nothing.
+- 📚 In a book whose outline opens with a subsection before the first chapter, the pages before that chapter were in no section file, so the assistant could not read them. They are front matter now.
+- ⌨️ macOS: in the message box, ⌥D, ⌥L, ⌥I and ⌥← type ∂, ¬ and ¡ or move back a word again, instead of switching Drawing or LaTeX or opening the image menu. Outside a text field they are still shortcuts.
+- 🪟 The Reading memory and Clarifications sheets take the focus when they open, so Escape closes them at once.
+- 📊 A table whose delimiter row uses single hyphens (`|-|-|`, `|:-:|-:|`) is drawn as a table.
+- 🧹 Each paper shown left a listener behind that kept its old chat in memory. Formulas are now refitted when the maths font arrives through one listener per window.
+- 🔧 Settings: the Antigravity card shows its Sign-in row once, not once per check; a background image that cannot be used is reported in its row, not in a dialog; an ACP agent's command line escapes the quotes inside a quoted argument.
+- ⚡ The programs of all assistants are looked for at once when a chat opens, not one after the other.
+- 🐛 A CLI printing a bare `null` line no longer turns the answer into an error.
+
 ## 1.8.0
 
 - 🔌 **Agent Client Protocol support.** An ACP agent can answer in the panel. The model menu lists the agent's own models, and the reasoning effort you pick is passed on when the agent offers that level. A follow-up question resumes the agent's session when the agent can load it again, and otherwise starts a new one with the recent chat.
