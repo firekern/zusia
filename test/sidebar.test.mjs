@@ -21,6 +21,22 @@ function sidebar(prefs = {}) {
 }
 const menuLabels = root => [...root.querySelectorAll(".zs-menu .zs-menu-label")].map(n => n.textContent);
 
+test("the programs of all assistants are looked for at once, not one after the other", async () => {
+	const { root, plugin } = sidebar();
+	const asked = [];
+	const answers = [];
+	plugin.probeBinary = key => new Promise((resolve) => {
+		asked.push(key);
+		answers.push(() => resolve("/bin/" + key));
+	});
+	const done = plugin.checkInstalledBackends(root);
+	await Promise.resolve();
+	assert.deepEqual(asked, Object.keys(plugin.BACKENDS));
+	answers.forEach(answer => answer());
+	await done;
+	assert.equal(root._installed.claude, "/bin/claude");
+});
+
 test("composer shows the assistant, model and effort from prefs", () => {
 	const { root } = sidebar({ [PREFIX + "claude.model"]: "opus", [PREFIX + "claude.effort"]: "high" });
 	assert.equal(root.querySelector(".zs-model-btn .zs-label").textContent, "Claude · Opus");

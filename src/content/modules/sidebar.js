@@ -221,9 +221,10 @@ Object.assign(Zusia, {
 	async checkInstalledBackends(root) {
 		root._installed = root._installed || {};
 		root._refused = {};
-		for (let key of Object.keys(this.BACKENDS)) {
+		// Each search walks PATH, and the chat is drawn again for every item selected.
+		await Promise.all(Object.keys(this.BACKENDS).map(async (key) => {
 			root._installed[key] = await this.probeBinary(key, root._refused);
-		}
+		}));
 		root.querySelector(".zs-menu")?.refresh?.();
 	},
 
