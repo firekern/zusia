@@ -69,19 +69,25 @@ Object.assign(Zusia, {
 			return;
 		}
 		let restored = JSON.parse(await Zotero.File.getContentsAsync(archive.path));
-		let replaced = await this.loadHistory(view.ctx.dir);
-		let archived = await this.archiveHistory(view.ctx.dir, replaced);
-		await this.saveHistory(view.ctx.dir, restored);
+		await this.swapInArchive(view.ctx.dir, archive.path, restored);
+		this.renderMessages(view, restored);
+		this.setBusy(view, false);
+	},
+
+	// Puts the current chat away and makes `restored`, read from the archive at `path`,
+	// the current one (Previous chats, or a search result in an earlier chat).
+	async swapInArchive(dir, path, restored) {
+		let replaced = await this.loadHistory(dir);
+		let archived = await this.archiveHistory(dir, replaced);
+		await this.saveHistory(dir, restored);
 		// The agents' own sessions belong to the chat being replaced; the restored
 		// chat is replayed to them as a transcript on its next question.
-		await this.saveSessions(view.ctx.dir, {});
+		await this.saveSessions(dir, {});
 		// Whether the memory took in the restored chat before is not known, so it counts
 		// as not covered: replayed (up to MEMORY_TRANSCRIPT_CHARS), and folded in again, so
 		// a fold of it still owed is dropped.
-		await this.startMemoryEpoch(view.ctx.dir, replaced, archived, { restored: OS.Path.basename(archive.path) });
-		await OS.File.remove(archive.path);
-		this.renderMessages(view, restored);
-		this.setBusy(view, false);
+		await this.startMemoryEpoch(dir, replaced, archived, { restored: OS.Path.basename(path) });
+		await OS.File.remove(path);
 	},
 
 	formatWhen(ts) {

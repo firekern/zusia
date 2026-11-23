@@ -71,14 +71,20 @@ Object.assign(Zusia, {
 		return results.sort((a, b) => b.ts - a.ts).slice(0, limit);
 	},
 
-	chatTitle(chat) {
+	// The paper a chat belongs to: its title, and whether it can still be opened.
+	chatPaper(chat) {
+		let item;
 		try {
-			let item = Zotero.Items.getByLibraryAndKey(chat.libraryID, chat.key);
-			return (item && this.safeField(item, "title")) || "Deleted item";
+			item = Zotero.Items.getByLibraryAndKey(chat.libraryID, chat.key);
 		}
 		catch (e) {
-			return "Unknown item";
+			this.log("search: no item for " + chat.dir + ": " + e);
+			return { title: "Unknown item", gone: true };
 		}
+		if (!item) {
+			return { title: "Deleted item", gone: true };
+		}
+		return { title: this.safeField(item, "title") || "Untitled", gone: false };
 	},
 
 	// `anchor` is the button the menu hangs from: the header's own, or the More menu's
@@ -113,8 +119,10 @@ Object.assign(Zusia, {
 				return;
 			}
 			for (let result of results) {
+				let paper = this.chatPaper(result.chat);
 				this.menuItem(doc, list, {
-					label: this.chatTitle(result.chat),
+					label: paper.title,
+					disabled: paper.gone,
 					desc: (result.role === "user" ? "You: " : "Answer: ") + result.snippet +
 						(result.ts ? " · " + this.formatWhen(result.ts) : ""),
 					onSelect: () => {
@@ -164,24 +172,23 @@ Object.assign(Zusia, {
 	// and scrolls to the message.
 	async openSearchResult(root, result) {
 		let { chat, index } = result;
+		// The menu disables these, but the paper may have been deleted while it was open,
+		// and its chat is not swapped for nothing.
+		let item = Zotero.Items.getByLibraryAndKey(chat.libraryID, chat.key);
+		if (!item) {
+			return;
+		}
 		if (!chat.current) {
 			if (this._pending.has(chat.dir)) {
 				return;
 			}
-			await this.archiveHistory(chat.dir, await this.loadHistory(chat.dir));
-			await this.saveHistory(chat.dir, chat.history);
-			await this.saveSessions(chat.dir, {});
-			await OS.File.remove(chat.path);
+			await this.swapInArchive(chat.dir, chat.path, chat.history);
 		}
 		this._jump = { dir: chat.dir, index };
 		let view = this._views.get(root);
 		if (view && view.ctx.dir === chat.dir) {
 			this.renderMessages(view, await this.loadHistory(chat.dir));
 			this.applyJump(view);
-			return;
-		}
-		let item = Zotero.Items.getByLibraryAndKey(chat.libraryID, chat.key);
-		if (!item) {
 			return;
 		}
 		let win = Zotero.getMainWindow();

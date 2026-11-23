@@ -890,6 +890,54 @@ test("archives: restoring a chat that ended at the same moment as the current on
 	assert.deepEqual(JSON.parse(files.get(archives()[0])), at(turns(1, { from: 5 }), 99), "the replaced chat, not deleted with the restored one");
 });
 
+test("archives: opening an earlier chat from search starts a memory epoch, as restoring it does", async () => {
+	const env = loadPlugin();
+	const { plugin, files, window } = env;
+	const root = chatView(env);
+	window.Zotero.Items = { getByLibraryAndKey: () => ({ id: 1 }) };
+	window.HTMLElement.prototype.scrollIntoView = function () {};
+	files.set("/d/chat.json", JSON.stringify(turns(1)));
+	answerJobs(env, "No JSON.");
+	await plugin.newChat(root);
+	await plugin.jobsIdle();
+	const [owed] = memoryOf(env).pendingArchives;
+	const { epoch } = memoryOf(env);
+	files.set("/d/chat.json", JSON.stringify(turns(1, { from: 5 }).map(m => ({ ...m, ts: 99 }))));
+	const chat = { dir: "/d", libraryID: 1, key: "PAPERKEY", path: "/d/" + owed.file, current: false, history: turns(1) };
+	await plugin.openSearchResult(root, { chat, index: 1 });
+	await plugin.jobsIdle();
+	const memory = memoryOf(env);
+	assert.equal(memory.epoch, epoch + 1);
+	assert.equal(memory.coveredThrough, -1);
+	const owedNow = memory.pendingArchives.map(a => a.file);
+	assert.equal(owedNow.includes(owed.file), false, "the chat opened is the current one again");
+	assert.equal(owedNow.length, 1, "the chat it replaced is owed now");
+	assert.equal(files.has("/d/" + owed.file), false);
+});
+
+test("archives: a search result whose paper was deleted is disabled, and opening it changes no file", async () => {
+	const env = loadPlugin({ prefs: { [PREFIX + "onboarded"]: true } });
+	const { plugin, files, window } = env;
+	const root = chatView(env);
+	window.Zotero.Items = { getByLibraryAndKey: (lib, key) => (key === "GONE" ? null : { id: 2, getField: () => "Kept paper" }) };
+	const gone = { dir: "/data/1-GONE", libraryID: 1, key: "GONE", path: "/data/1-GONE/chat-x.json", current: false, history: [{ role: "user", text: "fourier", ts: 2 }] };
+	const kept = { dir: "/data/1-KEPT", libraryID: 1, key: "KEPT", path: "/data/1-KEPT/chat.json", current: true, history: [{ role: "user", text: "fourier", ts: 1 }] };
+	files.set(gone.dir + "/chat.json", "[]");
+	files.set(gone.path, JSON.stringify(gone.history));
+	plugin.loadAllChats = async () => [gone, kept];
+	plugin.openSearchMenu(root);
+	await new Promise(resolve => setTimeout(resolve, 0));
+	const input = root.querySelector(".zs-search-input");
+	input.value = "fourier";
+	input.dispatchEvent(new window.Event("input"));
+	await new Promise(resolve => setTimeout(resolve, 150));
+	const rows = [...root.querySelectorAll(".zs-search-results .zs-menu-item")];
+	assert.deepEqual(rows.map(r => [r.querySelector(".zs-menu-label").textContent, r.disabled]), [["Deleted item", true], ["Kept paper", false]]);
+	await plugin.openSearchResult(root, { chat: gone, index: 0 });
+	assert.equal(files.get(gone.dir + "/chat.json"), "[]");
+	assert.ok(files.has(gone.path));
+});
+
 test("reset: a consolidation running or queued when the memory is reset changes nothing, and an edited item outlives a late patch", async () => {
 	const env = sheetEnv();
 	const { plugin, root, files, map } = env;
