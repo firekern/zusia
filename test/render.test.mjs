@@ -26,6 +26,20 @@ test("real FFT answer: every formula renders, table is 4×4, maths after a list 
 	assert.ok(combine.querySelector(".zs-math-block"), "display maths belongs to its list item");
 });
 
+test("tables: a delimiter cell of one hyphen is enough, as in GFM", () => {
+	for (const separator of ["| - | - |", "|-|-|", "|:-:|-:|", "- | -"]) {
+		const c = render(env, "| a | b |\n" + separator + "\n| 1 | 2 |");
+		const table = c.querySelector("table");
+		assert.ok(table, separator);
+		assert.equal(table.rows.length, 2, separator);
+		assert.equal(cellText(table, 1, 1), "2", separator);
+	}
+	const aligned = render(env, "| a | b |\n|:-:|-:|\n| 1 | 2 |").querySelector("table");
+	assert.deepEqual([...aligned.rows[0].cells].map(cell => cell.dataset.align), ["center", "right"]);
+	assert.equal(render(env, "Before\n\n---\n\nAfter").querySelector("table"), null, "a rule stays a rule");
+	assert.equal(render(env, "a | b\n-\n").querySelector("table"), null, "one cell without a pipe is no delimiter row");
+});
+
 test("tables: alignment, math with \\| norms, escaped pipes, pipe-less syntax", () => {
 	const c = render(env, fixture("tables.md"));
 	const tables = c.querySelectorAll("table");

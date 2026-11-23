@@ -85,7 +85,7 @@ Object.assign(Zusia, {
 	},
 
 	tableAlignments(separator) {
-		if (!/^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(separator || "") || !separator.includes("-")) {
+		if (!/^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/.test(separator || "")) {
 			return null;
 		}
 		return this.splitTableRow(separator).map((cell) => {
