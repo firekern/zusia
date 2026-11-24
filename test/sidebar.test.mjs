@@ -173,6 +173,36 @@ test("answers get Explain better, Retry, Copy and a More menu; only the last is 
 	assert.deepEqual(menuLabels(root), ["Save as note", "Copy"]);
 });
 
+test("copying selected assistant text writes that selection to the clipboard", () => {
+	const { root, view, plugin, window, document } = sidebar();
+	const copied = [];
+	window.Zotero.Utilities.Internal.copyTextToClipboard = text => copied.push(text);
+	plugin.renderMessages(view, [
+		{ role: "user", text: "question" },
+		{ role: "assistant", text: "first answer", backend: "claude" },
+	]);
+	const text = root.querySelector(".zs-assistant p").firstChild;
+	const range = document.createRange();
+	range.setStart(text, 0);
+	range.setEnd(text, 5);
+	const selection = window.getSelection();
+	selection.removeAllRanges();
+	selection.addRange(range);
+	const event = new window.Event("copy", { bubbles: true, cancelable: true });
+	document.dispatchEvent(event);
+	assert.deepEqual(copied, ["first"]);
+	assert.equal(event.defaultPrevented, true);
+	const question = root.querySelector(".zs-user-text").firstChild;
+	range.setStart(question, 0);
+	range.setEnd(question, 3);
+	selection.removeAllRanges();
+	selection.addRange(range);
+	const outside = new window.Event("copy", { bubbles: true, cancelable: true });
+	document.dispatchEvent(outside);
+	assert.deepEqual(copied, ["first"], "only assistant replies use Zotero's clipboard helper");
+	assert.equal(outside.defaultPrevented, false, "other copy events keep their native behaviour");
+});
+
 test("answers from different assistants or models are labelled", () => {
 	const { root, view, plugin } = sidebar();
 	plugin.renderMessages(view, [
