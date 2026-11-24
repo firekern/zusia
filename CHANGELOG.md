@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.8.2
+
+- 📋 **Ctrl+C copies what you select in the chat.** Zotero could show a selection in a question or an answer and still leave the clipboard empty, reported on Windows. A selection inside one conversation is now copied as plain text; copying anywhere else in Zotero works as before.
+
 ## 1.8.1
 
 - 🐛 **Restoring a chat no longer deletes the one it replaces.** When the restored chat ended at the same moment as the current one, both archives got one file name, and the current chat was lost. Archives never share a name now.

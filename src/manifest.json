@@ -1,7 +1,7 @@
 {
 	"manifest_version": 2,
 	"name": "Zusia",
-	"version": "1.8.1",
+	"version": "1.8.2",
 	"description": "Zusia, a study buddy for Zotero: ask Claude Code, Codex, Antigravity, or any ACP agent about the paper you're reading.",
 	"applications": {
 		"zotero": {
