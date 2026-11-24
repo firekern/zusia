@@ -161,6 +161,20 @@ async function testSidebar(win, CS) {
 	check("your message bubble is inside the pane", user.right <= visibleRight() + 1, { right: user.right, limit: visibleRight() });
 	check("answer footer on the last answer", !!root.querySelector(".zs-turn.zs-last .zs-explain") && !!root.querySelector(".zs-turn.zs-last .zs-retry"));
 
+	// Ctrl+C on part of an answer puts that text on the clipboard (#7).
+	let selected = root.querySelector(".zs-assistant p");
+	let range = win.document.createRange();
+	range.selectNodeContents(selected);
+	win.getSelection().removeAllRanges();
+	win.getSelection().addRange(range);
+	let expected = win.getSelection().toString();
+	Zotero.Utilities.Internal.copyTextToClipboard("before the copy");
+	win.goDoCommand("cmd_copy");
+	let clipboard = Zotero.Utilities.Internal.getClipboard("text/plain");
+	win.getSelection().removeAllRanges();
+	check("copy: a selection in an answer reaches the clipboard", !!expected && clipboard === expected,
+		{ clipboard, expected, focused: win.document.activeElement?.localName });
+
 	// Composer menus open inside the visible pane and change the model.
 	root.querySelector(".zs-model-btn").click();
 	let menu = await waitFor(() => root.querySelector(".zs-menu"), 5000, "model menu");

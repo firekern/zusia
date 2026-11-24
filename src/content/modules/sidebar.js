@@ -60,6 +60,7 @@ Object.assign(Zusia, {
 			this.trackPin(log);
 			this.updateJump(root);
 		});
+		this.watchCopy(doc);
 		// Refit formulas and tables when the pane is resized or the maths font arrives.
 		let win = doc.defaultView;
 		if (doc.fonts && doc.fonts.addEventListener) {

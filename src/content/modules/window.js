@@ -52,8 +52,35 @@ Object.assign(Zusia, {
 		this._fontListeners.set(doc, refit);
 	},
 
+	// Zotero can show a selection in the chat and still leave the clipboard empty on
+	// Ctrl+C (reported on Windows in #7), so a selection that starts and ends in one
+	// conversation is copied here. Every other copy keeps its native behaviour.
+	watchCopy(doc) {
+		if (this._copyListeners.has(doc)) {
+			return;
+		}
+		let logOf = node => (node?.nodeType === 1 ? node : node?.parentElement)?.closest(".zs-log");
+		let onCopy = event => {
+			let selection = doc.defaultView.getSelection();
+			let text = selection.toString();
+			let log = logOf(selection.anchorNode);
+			if (!text || !log || logOf(selection.focusNode) !== log) {
+				return;
+			}
+			Zotero.Utilities.Internal.copyTextToClipboard(text);
+			event.preventDefault();
+		};
+		doc.addEventListener("copy", onCopy, true);
+		this._copyListeners.set(doc, onCopy);
+	},
+
 	removeFromWindow(window) {
 		let doc = window.document;
+		let onCopy = this._copyListeners.get(doc);
+		if (onCopy) {
+			doc.removeEventListener("copy", onCopy, true);
+			this._copyListeners.delete(doc);
+		}
 		let refit = this._fontListeners.get(doc);
 		if (refit) {
 			doc.fonts.removeEventListener("loadingdone", refit);

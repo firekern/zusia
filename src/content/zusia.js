@@ -454,6 +454,8 @@ Zusia = {
 	_sidenavListeners: new WeakMap(),
 	// The "loadingdone" listener on each window's document.fonts (watchFonts).
 	_fontListeners: new WeakMap(),
+	// The capturing "copy" listener on each window's document (watchCopy).
+	_copyListeners: new WeakMap(),
 
 	init({ id, version, rootURI }) {
 		if (this.initialized) {

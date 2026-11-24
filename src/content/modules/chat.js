@@ -120,29 +120,7 @@ Object.assign(Zusia, {
 		return box;
 	},
 
-	// Zotero's embedded reader can display a text selection but fail to put it on
-	// the system clipboard. Handle only a selection wholly inside an assistant
-	// reply, leaving the browser's normal copy handling untouched everywhere else.
-	installAssistantSelectionCopyHandler(doc) {
-		if (doc.__zusiaAssistantSelectionCopyHandlerInstalled) {
-			return;
-		}
-		doc.__zusiaAssistantSelectionCopyHandlerInstalled = true;
-		doc.addEventListener("copy", event => {
-			let selection = doc.defaultView?.getSelection();
-			let text = selection?.toString();
-			let startsIn = selection?.anchorNode?.parentElement?.closest(".zs-msg.zs-assistant");
-			let endsIn = selection?.focusNode?.parentElement?.closest(".zs-msg.zs-assistant");
-			if (!text || !startsIn || startsIn !== endsIn) {
-				return;
-			}
-			Zotero.Utilities.Internal.copyTextToClipboard(text);
-			event.preventDefault();
-		}, true);
-	},
-
 	appendAssistant(view, msg, options = {}) {
-		this.installAssistantSelectionCopyHandler(view.doc);
 		let turn = this.el(view.doc, "div", "zs-turn");
 		let activity = msg.activity ? this.renderActivity(view.doc, msg.activity) : null;
 		if (activity) {
