@@ -173,6 +173,71 @@ test("answers get Explain better, Retry, Copy and a More menu; only the last is 
 	assert.deepEqual(menuLabels(root), ["Save as note", "Copy"]);
 });
 
+test("copying a selection inside the conversation writes it through Zotero's clipboard helper", () => {
+	const { root, view, plugin, window, document } = sidebar();
+	const copied = [];
+	window.Zotero.Utilities.Internal.copyTextToClipboard = text => copied.push(text);
+	plugin.renderMessages(view, [
+		{ role: "user", text: "question" },
+		{ role: "assistant", text: "first answer", backend: "claude" },
+	]);
+	const selection = window.getSelection();
+	const copy = (select) => {
+		const range = document.createRange();
+		select(range);
+		selection.removeAllRanges();
+		selection.addRange(range);
+		const event = new window.Event("copy", { bubbles: true, cancelable: true });
+		document.dispatchEvent(event);
+		return event.defaultPrevented;
+	};
+	const answer = root.querySelector(".zs-assistant p");
+	assert.equal(copy(range => {
+		range.setStart(answer.firstChild, 0);
+		range.setEnd(answer.firstChild, 5);
+	}), true);
+	assert.deepEqual(copied, ["first"]);
+	// A triple click anchors the selection on the paragraph, not on its text.
+	copy(range => range.selectNodeContents(answer));
+	assert.deepEqual(copied, ["first", "first answer"]);
+	const question = root.querySelector(".zs-user-text");
+	copy(range => {
+		range.setStart(question.firstChild, 0);
+		range.setEnd(answer.firstChild, 5);
+	});
+	assert.equal(copied.at(-1).replace(/\s+/g, " ").trim().startsWith("question"), true, copied.at(-1));
+	assert.match(copied.at(-1), /first$/);
+	const outside = document.body.appendChild(document.createElement("p"));
+	outside.textContent = "elsewhere in Zotero";
+	const count = copied.length;
+	assert.equal(copy(range => range.selectNodeContents(outside)), false, "a copy outside the chat keeps its native behaviour");
+	assert.equal(copied.length, count);
+});
+
+test("the copy listener is one per window, and leaves with the window", () => {
+	const env = loadPlugin();
+	const { plugin, document, window } = env;
+	const added = [];
+	const removed = [];
+	const add = document.addEventListener.bind(document);
+	const remove = document.removeEventListener.bind(document);
+	document.addEventListener = (type, fn, capture) => {
+		if (type === "copy") added.push(fn);
+		add(type, fn, capture);
+	};
+	document.removeEventListener = (type, fn, capture) => {
+		if (type === "copy") removed.push(fn);
+		remove(type, fn, capture);
+	};
+	openChat(env);
+	openChat(env);
+	assert.equal(added.length, 1);
+	plugin.removeFromWindow(window);
+	assert.deepEqual(removed, added);
+	openChat(env);
+	assert.equal(added.length, 2, "a window that gets the chat again gets the listener again");
+});
+
 test("answers from different assistants or models are labelled", () => {
 	const { root, view, plugin } = sidebar();
 	plugin.renderMessages(view, [
